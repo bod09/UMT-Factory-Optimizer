@@ -1205,6 +1205,104 @@ body:has(.builder-fullpage.active) {
   white-space: nowrap;
 }
 
+/* Chain strip - draggable machine pills */
+.builder-chain-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  min-height: 38px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.chain-strip-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.chain-strip-items {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  min-height: 28px;
+}
+
+.chain-strip-arrow {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.chain-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  cursor: grab;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  white-space: nowrap;
+  user-select: none;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.chain-pill:active { cursor: grabbing; }
+.chain-pill:hover { border-color: var(--accent); }
+.chain-pill.selected { border-color: var(--accent); background: #f59e0b15; }
+.chain-pill.dragging { opacity: 0.4; }
+
+.chain-pill .cp-color {
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.chain-pill .cp-name { color: var(--text-primary); font-weight: 500; }
+.chain-pill .cp-val { color: var(--success); font-family: var(--font-mono); font-size: 0.65rem; }
+
+.chain-pill-drop-indicator {
+  width: 2px;
+  height: 24px;
+  background: var(--accent);
+  border-radius: 1px;
+  flex-shrink: 0;
+  display: none;
+}
+
+.chain-pill-drop-indicator.visible { display: block; }
+
+.chain-strip-trash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 100px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.chain-strip-trash.drag-over {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: #ef444415;
+}
+
 .builder-body {
   display: flex;
   flex: 1;

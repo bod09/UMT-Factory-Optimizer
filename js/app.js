@@ -849,7 +849,9 @@ function renderProgression() {
 // === FACTORY BUILDER ===
 let builderChain = []; // array of machine IDs in order
 let builderFilter = "all";
-let builderSelectedNode = -1; // index of selected node in chain, -1 = none (show all machines)
+let builderSelectedNode = -1; // index of selected node in chain, -1 = none
+let builderSelectedPills = new Set(); // multiselect indices
+let builderDragIdx = -1; // index being dragged
 
 function initBuilder() {
   const catContainer = $("#builder-categories");
@@ -979,6 +981,161 @@ function renderBuilderMachines() {
   });
 }
 
+function renderChainStrip() {
+  const container = $("#chain-strip-items");
+  const trash = $("#chain-strip-trash");
+  container.innerHTML = "";
+
+  const oreVal = parseInt($("#builder-ore-select").value) || 350;
+  let val = oreVal;
+
+  builderChain.forEach((machineId, idx) => {
+    const m = MACHINES[machineId];
+    if (!m) return;
+
+    // Calculate running value
+    switch (m.effect) {
+      case "flat": val += m.value; break;
+      case "percent": val *= (1 + m.value); break;
+      case "multiply": val *= m.value; break;
+      case "combine": val *= m.value; break;
+      case "set": val = m.value; break;
+    }
+
+    // Arrow between pills
+    if (idx > 0) {
+      const arrow = document.createElement("span");
+      arrow.className = "chain-strip-arrow";
+      arrow.textContent = "→";
+      container.appendChild(arrow);
+    }
+
+    const pill = document.createElement("div");
+    pill.className = "chain-pill";
+    if (builderSelectedPills.has(idx)) pill.classList.add("selected");
+    pill.draggable = true;
+    pill.dataset.idx = idx;
+
+    const color = CATEGORY_COLORS[m.category] || "#6b7280";
+    pill.innerHTML = `<div class="cp-color" style="background:${color}"></div><span class="cp-name">${m.name}</span><span class="cp-val">${formatMoney(val)}</span>`;
+
+    // Click: select/deselect (shift = multiselect)
+    pill.addEventListener("click", (e) => {
+      if (e.shiftKey) {
+        if (builderSelectedPills.has(idx)) builderSelectedPills.delete(idx);
+        else builderSelectedPills.add(idx);
+      } else {
+        if (builderSelectedPills.has(idx) && builderSelectedPills.size === 1) {
+          builderSelectedPills.clear();
+          builderSelectedNode = -1;
+        } else {
+          builderSelectedPills.clear();
+          builderSelectedPills.add(idx);
+          builderSelectedNode = idx;
+        }
+      }
+      renderChainStrip();
+      renderBuilderMachines();
+    });
+
+    // Drag start
+    pill.addEventListener("dragstart", (e) => {
+      builderDragIdx = idx;
+      pill.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", idx.toString());
+      // If multiselected, drag all selected
+      trash.classList.remove("drag-over");
+    });
+
+    pill.addEventListener("dragend", () => {
+      pill.classList.remove("dragging");
+      builderDragIdx = -1;
+      trash.classList.remove("drag-over");
+      // Remove all drop indicators
+      container.querySelectorAll(".chain-pill-drop-indicator").forEach(d => d.classList.remove("visible"));
+    });
+
+    // Drop target: reorder
+    pill.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    });
+
+    pill.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
+      if (isNaN(fromIdx) || fromIdx === idx) return;
+
+      // Move the dragged item(s)
+      if (builderSelectedPills.size > 1 && builderSelectedPills.has(fromIdx)) {
+        // Multi-move: extract selected, insert at drop point
+        const selected = [...builderSelectedPills].sort((a, b) => a - b);
+        const items = selected.map(i => builderChain[i]);
+        // Remove from high index to low to preserve indices
+        for (let i = selected.length - 1; i >= 0; i--) builderChain.splice(selected[i], 1);
+        // Insert at target (adjust for removed items)
+        let insertAt = idx;
+        for (const s of selected) { if (s < idx) insertAt--; }
+        builderChain.splice(insertAt, 0, ...items);
+        builderSelectedPills.clear();
+      } else {
+        // Single move
+        const [item] = builderChain.splice(fromIdx, 1);
+        const insertAt = fromIdx < idx ? idx : idx;
+        builderChain.splice(insertAt, 0, item);
+      }
+      updateBuilderValue();
+    });
+
+    container.appendChild(pill);
+  });
+
+  // Trash bin drag handlers
+  trash.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    trash.classList.add("drag-over");
+  });
+
+  trash.addEventListener("dragleave", () => {
+    trash.classList.remove("drag-over");
+  });
+
+  trash.addEventListener("drop", (e) => {
+    e.preventDefault();
+    trash.classList.remove("drag-over");
+    const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
+
+    if (builderSelectedPills.size > 1 && builderSelectedPills.has(fromIdx)) {
+      // Delete all selected
+      const selected = [...builderSelectedPills].sort((a, b) => b - a);
+      for (const i of selected) builderChain.splice(i, 1);
+      builderSelectedPills.clear();
+    } else if (!isNaN(fromIdx)) {
+      builderChain.splice(fromIdx, 1);
+    }
+    builderSelectedNode = -1;
+    updateBuilderValue();
+  });
+
+  // Delete key handler
+  if (!container.dataset.keyBound) {
+    container.dataset.keyBound = "true";
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (builderSelectedPills.size > 0 && document.getElementById("tab-builder")?.classList.contains("active")) {
+          const selected = [...builderSelectedPills].sort((a, b) => b - a);
+          for (const i of selected) builderChain.splice(i, 1);
+          builderSelectedPills.clear();
+          builderSelectedNode = -1;
+          updateBuilderValue();
+        }
+      }
+    });
+  }
+}
+
 function updateBuilderValue() {
   const oreVal = parseInt($("#builder-ore-select").value) || 350;
   let val = oreVal;
@@ -1061,6 +1218,7 @@ function updateBuilderValue() {
     canvas.innerHTML = '<div class="builder-empty-hint">Click machines from the sidebar to build your factory chain</div>';
   }
 
+  renderChainStrip();
   renderBuilderMachines();
 }
 
