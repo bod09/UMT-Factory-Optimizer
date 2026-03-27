@@ -207,8 +207,31 @@ class ValueCalculator {
 
         for (const t of types) {
           const input = this.resolveType(t, oreValue, new Set(visiting));
-          if (input && (!bestInput || input.value > bestInput.value)) {
+          if (!input) continue;
+
+          if (types.length === 1) {
+            // Single type - just use it
             bestInput = input;
+          } else {
+            // Union type: simulate applying the machine effect to compare OUTPUT per ore
+            let simValue = input.value;
+            if (machine.effect === "flat") simValue += machine.value;
+            else if (machine.effect === "multiply") simValue *= machine.value;
+            else if (machine.effect === "percent") simValue *= (1 + machine.value);
+            const simPerOre = input.oreCount > 0 ? simValue / input.oreCount : simValue;
+
+            let bestSimPerOre = 0;
+            if (bestInput) {
+              let bv = bestInput.value;
+              if (machine.effect === "flat") bv += machine.value;
+              else if (machine.effect === "multiply") bv *= machine.value;
+              else if (machine.effect === "percent") bv *= (1 + machine.value);
+              bestSimPerOre = bestInput.oreCount > 0 ? bv / bestInput.oreCount : bv;
+            }
+
+            if (!bestInput || simPerOre > bestSimPerOre) {
+              bestInput = input;
+            }
           }
         }
 
@@ -262,12 +285,17 @@ class ValueCalculator {
       let result = { type: targetType, value: outputValue, tags: allTags, oreCount: totalOres, path };
       result = this.applyTypeModifiers(result);
 
-      // Apply transmuter side path for bars (if available and not in a cycle)
+      // Apply transmuter side path for bars (if it improves per-ore value)
       if (targetType === "bar" && this.config.prestigeItems?.transmuters && !visiting.has("__transmuter__")) {
         visiting.add("__transmuter__");
         const enhanced = this.applyTransmuterSidePath(result);
         visiting.delete("__transmuter__");
-        if (enhanced) result = enhanced;
+        if (enhanced) {
+          const regularPerOre = result.value / result.oreCount;
+          const enhancedPerOre = enhanced.value / enhanced.oreCount;
+          if (enhancedPerOre > regularPerOre) result = enhanced;
+          // else: regular bar is better per-ore (happens for flat-bonus destinations)
+        }
       }
 
       // Compare with best
@@ -354,7 +382,8 @@ class ValueCalculator {
     path.push({ machine: "prismatic_crucible", type: "prismatic_gem", value: val });
     path.push({ machine: "gem_to_bar", type: "bar", value: val });
 
-    return { ...barItem, value: val, tags: newTags, path };
+    // 2 bars consumed (2 ores) → 1 enhanced bar
+    return { ...barItem, value: val, tags: newTags, path, oreCount: barItem.oreCount * 2 };
   }
 
   // Get modifiers for a type in optimal order: upgrade_tier → flat → percent → multiply
