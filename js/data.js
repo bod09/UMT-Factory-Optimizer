@@ -223,8 +223,8 @@ const MACHINES = {
 
   // --- STONEWORK ---
   crusher: { name: "Crusher", cost: 1750, category: "stonework", inputTypes: ["any"], outputType: "dust", effect: "set", value: 1, desc: "Crushes anything to Dust ($1)" },
-  sifter: { name: "Sifter", cost: 4000, category: "stonework", inputTypes: ["dust"], outputType: "ore", effect: "chance", value: 0.10, size: "3x3", desc: "10% chance ore from dust" },
-  nano_sifter: { name: "Nano Sifter", cost: null, medals: 1, category: "prestige", inputTypes: ["dust"], outputType: "ore", effect: "chance", value: 0.166, size: "3x3", desc: "16.6% chance ore from dust (better ores)" },
+  sifter: { name: "Sifter", cost: 4000, category: "stonework", inputTypes: ["dust"], outputType: "ore", outputType2: "dust", effect: "chance", value: 0.10, size: "3x3", desc: "10% dust→ore, remaining dust passes through" },
+  nano_sifter: { name: "Nano Sifter", cost: null, medals: 1, category: "prestige", inputTypes: ["dust"], outputType: "ore", outputType2: "dust", effect: "chance", value: 0.166, size: "3x3", desc: "16.6% dust→ore, remaining 83.4% dust passes through" },
   brick_mold: { name: "Brick Mold", cost: 2500, category: "stonework", inputTypes: ["dust"], outputType: "bricks", effect: "set", value: 25, desc: "Dust to Bricks ($25)" },
   cement_mixer: { name: "Cement Mixer", cost: 10000, category: "stonework", inputTypes: ["dust", "stone"], outputType: "cement", effect: "set", value: 30, desc: "Dust + Stone = Cement ($30)" },
   clay_mixer: { name: "Clay Mixer", cost: 20000, category: "stonework", inputTypes: ["dust", "dust"], outputType: "clay", effect: "set", value: 50, desc: "2 Dust = Clay ($50)" },

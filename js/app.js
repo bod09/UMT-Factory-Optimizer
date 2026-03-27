@@ -643,6 +643,7 @@ function renderConnections() {
       return parts.map(p => ITEM_TYPES[p] || p).join(" / ");
     }).join(" + ");
     const output = ITEM_TYPES[m.outputType] || m.outputType || "Same";
+    const output2 = m.outputType2 ? (ITEM_TYPES[m.outputType2] || m.outputType2) : null;
     const byproducts = (m.byproducts || []).map(b => ITEM_TYPES[b] || b).join(", ");
 
     let effectStr = "";
@@ -662,7 +663,8 @@ function renderConnections() {
         <span class="conn-effect">${effectStr}</span>
       </div>
       <div class="conn-row"><span class="conn-label">Inputs:</span> <span class="conn-types">${inputs || "Any"}</span></div>
-      <div class="conn-row"><span class="conn-label">Output:</span> <span class="conn-types conn-output">${output}</span></div>
+      <div class="conn-row"><span class="conn-label">Output 1:</span> <span class="conn-types conn-output">${output}</span></div>
+      ${output2 ? `<div class="conn-row"><span class="conn-label">Output 2:</span> <span class="conn-types conn-output">${output2}</span></div>` : ""}
       ${byproducts ? `<div class="conn-row"><span class="conn-label">Byproduct:</span> <span class="conn-types conn-byproduct">${byproducts}</span></div>` : ""}
       ${m.tag ? `<div class="conn-row"><span class="conn-label">Tag:</span> <span class="conn-tag">${m.tag}</span></div>` : ""}
     `;
@@ -1275,6 +1277,8 @@ function updateBuilderValue() {
         const startY = e.clientY;
         let isDragging = false;
         let ghost = null;
+        let dropIndicator = null;
+        let dropTargetIdx = -1;
 
         const onMove = (me) => {
           const dx = me.clientX - startX;
@@ -1282,44 +1286,69 @@ function updateBuilderValue() {
 
           if (!isDragging && Math.abs(dx) + Math.abs(dy) > 5) {
             isDragging = true;
-            nodeEl.style.opacity = "0.4";
-            nodeEl.style.cursor = "grabbing";
+            nodeEl.style.opacity = "0.3";
+            document.body.style.cursor = "grabbing";
 
-            // Create ghost element following cursor
+            // Ghost label
             ghost = document.createElement("div");
-            ghost.style.cssText = "position:fixed;pointer-events:none;z-index:1000;padding:4px 10px;background:var(--bg-card);border:2px solid var(--accent);border-radius:6px;font-size:12px;color:var(--text-primary);font-family:var(--font-mono);white-space:nowrap;";
+            ghost.style.cssText = "position:fixed;pointer-events:none;z-index:1000;padding:4px 10px;background:#222632;border:2px solid #f59e0b;border-radius:6px;font-size:12px;color:#e8eaf0;font-family:monospace;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.4);";
             ghost.textContent = MACHINES[builderChain[nodeIdx]]?.name || "Node";
             document.body.appendChild(ghost);
+
+            // SVG drop indicator (dotted rect)
+            dropIndicator = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            dropIndicator.setAttribute("width", "160");
+            dropIndicator.setAttribute("height", "52");
+            dropIndicator.setAttribute("rx", "6");
+            dropIndicator.setAttribute("fill", "none");
+            dropIndicator.setAttribute("stroke", "#f59e0b");
+            dropIndicator.setAttribute("stroke-width", "2");
+            dropIndicator.setAttribute("stroke-dasharray", "6 4");
+            dropIndicator.style.display = "none";
+            svg.appendChild(dropIndicator);
           }
 
           if (isDragging && ghost) {
-            ghost.style.left = (me.clientX + 12) + "px";
-            ghost.style.top = (me.clientY - 12) + "px";
+            ghost.style.left = (me.clientX + 14) + "px";
+            ghost.style.top = (me.clientY - 14) + "px";
 
-            // Highlight trash
+            // Trash highlight
             const trashRect = trash.getBoundingClientRect();
-            if (me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
-                me.clientY >= trashRect.top && me.clientY <= trashRect.bottom) {
-              trash.classList.add("drag-over");
-            } else {
-              trash.classList.remove("drag-over");
-            }
+            const overTrash = me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
+                me.clientY >= trashRect.top && me.clientY <= trashRect.bottom;
+            trash.classList.toggle("drag-over", overTrash);
+            if (overTrash) ghost.style.borderColor = "#ef4444";
+            else ghost.style.borderColor = "#f59e0b";
 
-            // Highlight drop target node
+            // Find nearest drop target node and show indicator at its position
+            dropTargetIdx = -1;
+            dropIndicator.style.display = "none";
             svgNodes.forEach(n => {
-              const r = n.querySelector("rect");
-              if (r) r.setAttribute("stroke", n === nodeEl ? "#333848" : "#333848");
+              const rect = n.querySelector("rect");
+              if (rect) { rect.setAttribute("stroke", "#333848"); rect.setAttribute("stroke-width", "1"); }
             });
-            for (const n of svgNodes) {
-              if (n === nodeEl) continue;
-              const targetIdx = parseInt(n.dataset?.chainIdx);
-              if (isNaN(targetIdx) || targetIdx < 0) continue;
-              const r = n.getBoundingClientRect();
-              if (me.clientX >= r.left && me.clientX <= r.right &&
-                  me.clientY >= r.top && me.clientY <= r.bottom) {
-                const rect = n.querySelector("rect");
-                if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
-                break;
+
+            if (!overTrash) {
+              for (const n of svgNodes) {
+                if (n === nodeEl) continue;
+                const tIdx = parseInt(n.dataset?.chainIdx);
+                if (isNaN(tIdx) || tIdx < 0) continue;
+                const r = n.getBoundingClientRect();
+                if (me.clientX >= r.left - 20 && me.clientX <= r.right + 20 &&
+                    me.clientY >= r.top - 20 && me.clientY <= r.bottom + 20) {
+                  dropTargetIdx = tIdx;
+                  // Show dotted indicator at this node's SVG position
+                  const transform = n.getAttribute("transform");
+                  const match = transform?.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                  if (match) {
+                    dropIndicator.setAttribute("x", match[1]);
+                    dropIndicator.setAttribute("y", match[2]);
+                    dropIndicator.style.display = "";
+                  }
+                  const rect = n.querySelector("rect");
+                  if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
+                  break;
+                }
               }
             }
           }
@@ -1329,12 +1358,13 @@ function updateBuilderValue() {
           window.removeEventListener("mousemove", onMove);
           window.removeEventListener("mouseup", onUp);
           nodeEl.style.opacity = "";
-          nodeEl.style.cursor = "grab";
+          document.body.style.cursor = "";
           trash.classList.remove("drag-over");
           if (ghost) { ghost.remove(); ghost = null; }
+          if (dropIndicator) { dropIndicator.remove(); dropIndicator = null; }
 
           if (isDragging) {
-            // Check trash drop
+            // Trash drop
             const trashRect = trash.getBoundingClientRect();
             if (me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
                 me.clientY >= trashRect.top && me.clientY <= trashRect.bottom) {
@@ -1343,33 +1373,18 @@ function updateBuilderValue() {
               updateBuilderValue();
               return;
             }
-
-            // Check drop on another node (reorder)
-            for (const n of svgNodes) {
-              if (n === nodeEl) continue;
-              const targetIdx = parseInt(n.dataset?.chainIdx);
-              if (isNaN(targetIdx) || targetIdx < 0) continue;
-              const r = n.getBoundingClientRect();
-              if (me.clientX >= r.left && me.clientX <= r.right &&
-                  me.clientY >= r.top && me.clientY <= r.bottom) {
-                const [item] = builderChain.splice(nodeIdx, 1);
-                builderChain.splice(targetIdx, 0, item);
-                updateBuilderValue();
-                return;
-              }
+            // Reorder drop
+            if (dropTargetIdx >= 0 && dropTargetIdx !== nodeIdx) {
+              const [item] = builderChain.splice(nodeIdx, 1);
+              builderChain.splice(dropTargetIdx, 0, item);
+              updateBuilderValue();
+              return;
             }
           } else {
-            // Was a click, not a drag - toggle selection
+            // Click = toggle selection
             builderSelectedNode = (builderSelectedNode === nodeIdx) ? -1 : nodeIdx;
+            renderChainStrip();
             renderBuilderMachines();
-            svgNodes.forEach(n => {
-              const rect = n.querySelector("rect");
-              if (rect) { rect.setAttribute("stroke", "#333848"); rect.setAttribute("stroke-width", "1"); }
-            });
-            if (builderSelectedNode === nodeIdx) {
-              const rect = nodeEl.querySelector("rect");
-              if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
-            }
           }
         };
 
