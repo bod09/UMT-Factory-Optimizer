@@ -25,7 +25,9 @@ class FactoryOptimizer {
     return ore.value;
   }
 
-  // Transmuter: bar → gem → gem cutter(1.4x) → pair → prismatic(1.15x) → gem-to-bar = 1.61x
+  // Transmuter SIDE PATH (one-time, not a loop):
+  // bar → bar-to-gem → gem cutter(1.4x) → pair → prismatic(1.15x) → gem-to-bar
+  // Output bar is routed AWAY from bar-to-gem to avoid infinite loop.
   transmuterMultiplier() {
     return this.prestigeItems.transmuters ? 1.61 : 1;
   }
@@ -34,12 +36,17 @@ class FactoryOptimizer {
     return this.hasDoubleSeller ? val * 2 : val;
   }
 
-  // Nano Sifter: bonus ore from stone byproduct per ore smelted
+  // Nano Sifter: ores loop back through FULL processing chain.
+  // Per ore smelted: ~0.5 stone → crush → 16.6% chance = 0.083 bonus ores
+  // Each bonus ore goes through full chain AND produces its own stone → recursive.
+  // Geometric series: total = base / (1 - ratio), converges because ratio ≈ 0.083
   nanoBonus() {
     if (!this.prestigeItems.nanoSifter) return 0;
-    // 0.5 stone per smelt → crush → 16.6% chance ore → process that ore
-    const raw = 0.5 * 0.166 * NANO_SIFTER_AVG_VALUE;
-    return this.applySeller(this.processBar(raw));
+    const chance = 0.5 * 0.166; // 0.083 bonus ores per ore smelted
+    const bonusOreVal = NANO_SIFTER_AVG_VALUE;
+    const processedVal = this.applySeller(this.processBar(bonusOreVal));
+    // Recursive: total = chance * processedVal / (1 - chance)
+    return (chance * processedVal) / (1 - chance);
   }
 
   // --- Core bar processing pipeline ---

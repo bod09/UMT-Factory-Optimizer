@@ -390,15 +390,22 @@ function getChainBreakdown(chainName, ore) {
     v += 10; s.push(stepFlat("Ore Cleaner", "+$10", v));
     v += 10; s.push(stepFlat("Polisher", "+$10", v));
     if (p.philosophersStone) { v *= 1.25; s.push(stepMult("Philosopher's Stone", "x1.25", v)); }
-    v *= 1.20; s.push(stepMult("Ore Smelter", "x1.2 → Bar + Stone", v));
+    v *= 1.20; s.push(stepMult("Ore Smelter → Bar", "x1.2", v));
+    // Stone byproduct routing
+    if (p.nanoSifter) {
+      s.push(stepPlain("  ↳ Stone → Crush → Nano Sifter → ore → back to start", "16.6%", ""));
+    } else {
+      s.push(stepPlain("  ↳ Stone → Crush → Kiln → Glass / Sifter", "byproduct", ""));
+    }
     v *= 2.00; s.push(stepMult("Tempering Forge", "x2.0", v));
     if (p.transmuters) {
-      let loopSteps = "";
-      loopSteps += stepLoop("Bar → Gem Transmuter", "→ Gem", v);
-      v *= 1.40; loopSteps += stepLoop("Gem Cutter", "x1.4", v);
-      v *= 1.15; loopSteps += stepLoop("Prismatic Crucible", "x1.15 (pair 2)", v);
-      loopSteps += stepLoop("Gem → Bar Transmuter", "→ back to Bar", v);
-      s.push(loopGroup(loopSteps));
+      // Side path: bar detours through gem chain once, then routed onward
+      let sideSteps = "";
+      sideSteps += stepLoop("Bar-to-Gem Transmuter", "→ Gem", v);
+      v *= 1.40; sideSteps += stepLoop("Gem Cutter", "x1.4", v);
+      v *= 1.15; sideSteps += stepLoop("Prismatic Crucible (pair 2)", "x1.15", v);
+      sideSteps += stepLoop("Gem-to-Bar Transmuter", "→ Bar (route onward)", v);
+      s.push(loopGroup(sideSteps));
     }
     return { s, v };
   }
@@ -418,11 +425,11 @@ function getChainBreakdown(chainName, ore) {
       let pc = half + 10 + 10;
       s.push(stepFlat("Each → Polisher", "+$10", pc));
       if (p.philosophersStone) { pc *= 1.25; s.push(stepMult("Each → Philosopher's Stone", "x1.25", pc)); }
-      pc *= 1.20; s.push(stepMult("Each → Ore Smelter", "x1.2 → Bar", pc));
+      pc *= 1.20; s.push(stepMult("Each → Ore Smelter → Bar", "x1.2", pc));
       pc *= 2.00; s.push(stepMult("Each → Tempering Forge", "x2.0", pc));
       if (p.transmuters) {
         let lp = "";
-        lp += stepLoop("Each → Bar→Gem", "→ Gem", pc);
+        lp += stepLoop("Each → Bar-to-Gem", "side path →", pc);
         pc *= 1.40; lp += stepLoop("Each → Gem Cutter", "x1.4", pc);
         pc *= 1.15; lp += stepLoop("Each → Prismatic", "x1.15", pc);
         lp += stepLoop("Each → Gem→Bar", "→ back to Bar", pc);
@@ -439,7 +446,7 @@ function getChainBreakdown(chainName, ore) {
       if (hasQA) { v *= 1.20; s.push(stepMult("Quality Assurance", "x1.2", v)); }
       if (hasDS) { v *= 2; s.push(stepSell("Double Seller", "x2", v)); }
     }
-    if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore)", "+bonus", optimizer.nanoBonus()));
+    if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore→back to Ore Cleaner)", "+bonus", optimizer.nanoBonus()));
     return s.join("");
   }
 
@@ -517,7 +524,7 @@ function getChainBreakdown(chainName, ore) {
     if (hasDS) { exp *= 2; s.push(stepSell("Double Seller", "x2", exp)); }
   }
 
-  if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore)", "+bonus/ore", optimizer.nanoBonus()));
+  if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore→back to Ore Cleaner)", "+bonus/ore", optimizer.nanoBonus()));
   return s.join("");
 }
 
@@ -549,7 +556,7 @@ function flowLegend() {
     <span class="flow-legend-item"><span class="flow-legend-color c-flat"></span>Flat bonus</span>
     <span class="flow-legend-item"><span class="flow-legend-color c-mult"></span>Multiplier</span>
     <span class="flow-legend-item"><span class="flow-legend-color c-combine"></span>Combine</span>
-    <span class="flow-legend-item"><span class="flow-legend-color c-loop"></span>Loop back</span>
+    <span class="flow-legend-item"><span class="flow-legend-color c-loop"></span>Side path</span>
     <span class="flow-legend-item"><span class="flow-legend-color c-dup"></span>Duplicator</span>
   </div>`;
 }
