@@ -672,51 +672,47 @@ main {
 
 .flow-step.s-loop .flow-machine { color: var(--purple); }
 
-/* Loop-back group: right-side arrow connector */
+/* Loop-back group: right-side bracket with arrow */
 .flow-loop-group {
   position: relative;
-  margin-right: 20px;
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 300px;
+  max-width: 100%;
+  padding-right: 30px;
 }
 
-/* Vertical line on the right */
+/* Bracket: vertical + top bend + bottom bend */
 .flow-loop-group::before {
   content: "";
   position: absolute;
-  right: -14px;
-  top: 0.4rem;
-  bottom: 0.4rem;
-  width: 2px;
-  background: var(--purple);
+  right: 8px;
+  top: 0.3rem;
+  bottom: 0.3rem;
+  width: 12px;
+  border-right: 2px solid var(--purple);
+  border-top: 2px solid var(--purple);
+  border-bottom: 2px solid var(--purple);
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 
-/* Top arrow (pointing up = item goes back) */
+/* Arrow at top pointing left (item loops back here) */
 .flow-loop-group::after {
   content: "";
   position: absolute;
-  right: -19px;
-  top: 0.15rem;
+  right: 8px;
+  top: calc(0.3rem - 5px);
   width: 0;
   height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 7px solid var(--purple);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-right: 8px solid var(--purple);
 }
 
-/* Bottom dot (start of loop) */
-.flow-loop-end {
-  position: relative;
-}
-
-.flow-loop-end::after {
-  content: "";
-  position: absolute;
-  right: -17px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--purple);
+/* Steps inside the loop group should not stretch to full width */
+.flow-loop-group .flow-step {
+  width: auto;
 }
 
 /* Color legend */
