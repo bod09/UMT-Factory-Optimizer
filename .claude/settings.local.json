@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:umt.miraheze.org)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python -c \"import json; json.load\\(open\\(''data/machines.json''\\)\\)\")",
+      "Bash(grep -n \",$\" data/machines.json)"
     ]
   }
 }

@@ -664,7 +664,7 @@ function renderConnectionsFromData(grid, machines) {
 
     const costStr = m.cost ? formatMoney(m.cost) : m.medals ? `${m.medals} Medals` : "Free";
 
-    // Build outputs list
+    // Build outputs + byproducts
     let outputsHtml = "";
     if (m.outputs && m.outputs.length > 0) {
       m.outputs.forEach((out, i) => {
@@ -672,6 +672,13 @@ function renderConnectionsFromData(grid, machines) {
         const typeLabel = ITEM_TYPES[out.type] || out.type;
         const chanceStr = out.chance < 1.0 ? ` (${(out.chance * 100).toFixed(1)}%)` : "";
         outputsHtml += `<div class="conn-row"><span class="conn-label">${label}</span> <span class="conn-types conn-output">${typeLabel}${chanceStr}</span> <span style="color:var(--text-muted);font-size:0.65rem">${out.desc || ""}</span></div>`;
+      });
+    }
+    if (m.byproducts && m.byproducts.length > 0) {
+      m.byproducts.forEach((bp) => {
+        const typeLabel = ITEM_TYPES[bp.type] || bp.type;
+        const chanceStr = bp.chance < 1.0 ? ` (${(bp.chance * 100).toFixed(1)}%)` : "";
+        outputsHtml += `<div class="conn-row"><span class="conn-label">Byproduct:</span> <span class="conn-types conn-byproduct">${typeLabel}${chanceStr}</span> <span style="color:var(--text-muted);font-size:0.65rem">${bp.desc || ""}</span></div>`;
       });
     }
 
