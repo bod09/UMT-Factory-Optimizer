@@ -221,11 +221,13 @@ function runOptimizer(scrollToResults = false) {
     nanoSifter: true,
     oreUpgrader: true,
     duplicator: true,
+    transmuters: true,
   } : {
     philosophersStone: (parseInt($("#has-philosophers-stone")?.value) || 0) > 0,
     nanoSifter: (parseInt($("#has-nano-sifter")?.value) || 0) > 0,
     oreUpgrader: (parseInt($("#has-ore-upgrader")?.value) || 0) > 0,
     duplicator: (parseInt($("#has-duplicator")?.value) || 0) > 0,
+    transmuters: (parseInt($("#has-transmuters")?.value) || 0) > 0,
   };
 
   optimizer.configure({ prestigeLevel: 0, budget, hasDoubleSeller, prestigeItems });
@@ -367,68 +369,74 @@ function renderChainResults(results, oresAtDepth) {
 
 function getChainBreakdown(chainName, ore) {
   const hasPhilo = optimizer.prestigeItems.philosophersStone;
+  const hasUpgrader = optimizer.prestigeItems.oreUpgrader;
+  const hasNano = optimizer.prestigeItems.nanoSifter;
+  const hasDup = optimizer.prestigeItems.duplicator;
   const hasDS = optimizer.hasDoubleSeller;
   const hasQA = optimizer.budget >= 2000000;
 
-  if (chainName === "Direct Sell") {
-    let steps = [`<div class="chain-step"><span class="chain-step-name">Base ore value</span><span class="chain-step-effect"></span><span class="chain-step-value">$${ore.value}</span></div>`];
-    if (hasDS) steps.push(`<div class="chain-step"><span class="chain-step-name">Double Seller</span><span class="chain-step-effect">x2</span><span class="chain-step-value">$${ore.value * 2}</span></div>`);
+  // Get effective ore value (after upgrader)
+  let oreVal = optimizer.getEffectiveOreValue(ore);
+  const wasUpgraded = oreVal !== ore.value;
+
+  if (chainName.includes("Direct Sell")) {
+    let steps = [];
+    steps.push(stepRow("Base ore", "", ore.value));
+    if (wasUpgraded) steps.push(stepRow("Ore Upgrader", "→ next tier", oreVal));
+    if (hasDS) { oreVal *= 2; steps.push(stepRow("Double Seller", "x2", oreVal)); }
     return steps.join("");
   }
 
-  if (chainName.startsWith("Clean + Polish + Smelt")) {
+  if (chainName.includes("Duplicator")) {
+    let steps = [];
+    steps.push(stepRow("Base ore", "", ore.value));
+    if (wasUpgraded) steps.push(stepRow("Ore Upgrader", "→ next tier", oreVal));
+    let halfVal = oreVal * 0.5;
+    steps.push(stepRow("Duplicator (50% each)", "x0.5 x2 copies", halfVal));
+    let perCopy = halfVal + 10;
+    steps.push(stepRow("Each: Ore Cleaner", "+$10", perCopy));
+    perCopy += 10;
+    steps.push(stepRow("Each: Polisher", "+$10", perCopy));
+    if (hasPhilo) { perCopy *= 1.25; steps.push(stepRow("Each: Philosopher's Stone", "x1.25", perCopy)); }
+    perCopy *= 1.20; steps.push(stepRow("Each: Ore Smelter", "x1.2", perCopy));
+    perCopy *= 2.00; steps.push(stepRow("Each: Tempering Forge", "x2", perCopy));
+    if (hasQA) { perCopy *= 1.20; steps.push(stepRow("Each: Quality Assurance", "x1.2", perCopy)); }
+    let total = perCopy * 2;
+    steps.push(stepRow("Total (2 copies)", "x2", total));
+    if (hasDS) { total *= 2; steps.push(stepRow("Double Seller", "x2", total)); }
+    if (hasNano) { let bonus = optimizer.getNanoSifterBonusPerOre(); total += bonus; steps.push(stepRow("Nano Sifter bonus", "+byproduct", total)); }
+    return steps.join("");
+  }
+
+  // Simple ore processing chains
+  if (chainName.includes("Clean") || chainName.includes("Infuse") || chainName.includes("Full Processing")) {
     let val = ore.value;
     let steps = [];
     steps.push(stepRow("Base ore", "", val));
+    if (wasUpgraded) { val = oreVal; steps.push(stepRow("Ore Upgrader", "→ next tier", val)); }
     val += 10; steps.push(stepRow("Ore Cleaner", "+$10", val));
     val += 10; steps.push(stepRow("Polisher", "+$10", val));
-
-    if (chainName.includes("Infuse")) {
+    if (chainName.includes("Infuse") || (chainName.includes("Full") && hasPhilo)) {
       val *= 1.25; steps.push(stepRow("Philosopher's Stone", "x1.25", val));
     }
-
     val *= 1.20; steps.push(stepRow("Ore Smelter", "x1.2 → Bar", val));
-
-    if (chainName.includes("Temper")) {
+    if (chainName.includes("Temper") || chainName.includes("Full")) {
       val *= 2.00; steps.push(stepRow("Tempering Forge", "x2", val));
     }
-
-    if (chainName.includes("QA")) {
+    if (chainName.includes("QA") || chainName.includes("Full")) {
       val *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", val));
     }
-
     if (hasDS) { val *= 2; steps.push(stepRow("Double Seller", "x2", val)); }
+    if (hasNano) { let bonus = optimizer.getNanoSifterBonusPerOre(); val += bonus; steps.push(stepRow("Nano Sifter bonus", "+byproduct", val)); }
     return steps.join("");
   }
 
-  if (chainName.includes("Engine")) {
-    return multiInputBreakdown("Engine", ore.value, hasPhilo, hasQA, hasDS);
-  }
-  if (chainName.includes("Tablet")) {
-    return multiInputBreakdown("Tablet", ore.value, hasPhilo, hasQA, hasDS);
-  }
-  if (chainName.includes("Superconductor")) {
-    return multiInputBreakdown("Superconductor", ore.value, hasPhilo, hasQA, hasDS);
-  }
-  if (chainName.includes("Power Core")) {
-    return multiInputBreakdown("PowerCore", ore.value, hasPhilo, hasQA, hasDS);
-  }
-  if (chainName.includes("Explosives")) {
-    return multiInputBreakdown("Explosives", ore.value, hasPhilo, hasQA, hasDS);
-  }
-  if (chainName.includes("Full Pre-Processing")) {
-    let val = ore.value;
-    let steps = [];
-    steps.push(stepRow("Base ore", "", val));
-    val += 10; steps.push(stepRow("Ore Cleaner", "+$10", val));
-    val += 10; steps.push(stepRow("Polisher", "+$10", val));
-    if (hasPhilo) { val *= 1.25; steps.push(stepRow("Philosopher's Stone", "x1.25", val)); }
-    val *= 1.20; steps.push(stepRow("Ore Smelter", "x1.2 → Bar", val));
-    val *= 2.00; steps.push(stepRow("Tempering Forge", "x2", val));
-    if (chainName.includes("QA")) { val *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", val)); }
-    if (hasDS) { val *= 2; steps.push(stepRow("Double Seller", "x2", val)); }
-    return steps.join("");
-  }
+  // Multi-input chains
+  if (chainName.includes("Engine")) return multiInputBreakdown("Engine", oreVal, hasPhilo, hasQA, hasDS, hasNano);
+  if (chainName.includes("Tablet")) return multiInputBreakdown("Tablet", oreVal, hasPhilo, hasQA, hasDS, hasNano);
+  if (chainName.includes("Superconductor")) return multiInputBreakdown("Superconductor", oreVal, hasPhilo, hasQA, hasDS, hasNano);
+  if (chainName.includes("Power Core")) return multiInputBreakdown("PowerCore", oreVal, hasPhilo, hasQA, hasDS, hasNano);
+  if (chainName.includes("Explosives")) return multiInputBreakdown("Explosives", oreVal, hasPhilo, hasQA, hasDS, hasNano);
 
   return "";
 }
@@ -437,7 +445,7 @@ function stepRow(name, effect, value) {
   return `<div class="chain-step"><span class="chain-step-name">${name}</span><span class="chain-step-effect">${effect}</span><span class="chain-step-value">${formatMoney(value)}</span></div>`;
 }
 
-function multiInputBreakdown(type, oreValue, hasPhilo, hasQA, hasDS) {
+function multiInputBreakdown(type, oreValue, hasPhilo, hasQA, hasDS, hasNano) {
   let val = oreValue;
   val += 10; // clean
   val += 10; // polish
@@ -527,6 +535,11 @@ function multiInputBreakdown(type, oreValue, hasPhilo, hasQA, hasDS) {
     steps.push(stepRow("Casing x Powder → Explosives", "MULTIPLY", explosivesVal));
     if (hasQA) { explosivesVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", explosivesVal)); }
     if (hasDS) { explosivesVal *= 2; steps.push(stepRow("Double Seller", "x2", explosivesVal)); }
+  }
+
+  if (hasNano) {
+    let bonus = optimizer.getNanoSifterBonusPerOre();
+    steps.push(stepRow("Nano Sifter (stone byproduct)", "+bonus ore", bonus));
   }
 
   return steps.join("");

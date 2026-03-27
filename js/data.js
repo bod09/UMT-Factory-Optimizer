@@ -87,6 +87,40 @@ const GEMS = [
   { name: "Painite", value: 12000, depth: "2100-2500m", hardness: 200, rarity: "Extremely Rare" },
 ];
 
+// Ore Upgrader: upgrades ore to next tier (max Mithril)
+// Order matches ORES array by value
+const ORE_UPGRADE_MAP = {
+  "Tin": "Iron",        // $10 -> $20
+  "Iron": "Lead",       // $20 -> $30
+  "Lead": "Cobalt",     // $30 -> $50
+  "Cobalt": "Aluminium", // $50 -> $65
+  "Aluminium": "Silver", // $65 -> $150
+  "Silver": "Uranium",  // $150 -> $180
+  "Uranium": "Vanadium", // $180 -> $240
+  "Vanadium": "Tungsten", // $240 -> $300
+  "Tungsten": "Gold",   // $300 -> $350
+  "Gold": "Titanium",   // $350 -> $400
+  "Titanium": "Molybdenum", // $400 -> $600
+  "Molybdenum": "Plutonium", // $600 -> $1000
+  "Plutonium": "Palladium", // $1000 -> $1200
+  "Palladium": "Mithril", // $1200 -> $2000
+  // Mithril and above cannot be upgraded
+};
+
+function getUpgradedOreValue(oreName) {
+  const upgradedName = ORE_UPGRADE_MAP[oreName];
+  if (!upgradedName) return null;
+  const upgraded = ORES.find(o => o.name === upgradedName);
+  return upgraded ? upgraded.value : null;
+}
+
+// Nano Sifter ore pool and average value
+const NANO_SIFTER_ORES = ["Tin", "Iron", "Lead", "Cobalt", "Silver", "Uranium", "Tungsten", "Gold", "Plutonium", "Palladium", "Iridium"];
+const NANO_SIFTER_AVG_VALUE = NANO_SIFTER_ORES.reduce((sum, name) => {
+  const ore = ORES.find(o => o.name === name);
+  return sum + (ore ? ore.value : 0);
+}, 0) / NANO_SIFTER_ORES.length;
+
 const PICKAXES = [
   { name: "Rusty Pickaxe", cost: 0, hardness: 7 },
   { name: "Copper Pickaxe", cost: 50, hardness: 12 },
