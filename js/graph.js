@@ -113,27 +113,91 @@ class PathFinder {
     return perCopy * 2;
   }
 
-  // Nano Sifter: ores go through Ore Upgrader (if owned) → full processing chain
-  // Recursive: each bonus ore also produces stone → more bonus ores (geometric series)
-  nanoBonus() {
-    if (!this.prestigeItems.nanoSifter) return 0;
-    const chance = 0.5 * 0.166; // 0.5 stone per smelt, 16.6% chance ore
+  // FULL STONE BYPRODUCT VALUE per ore smelted
+  // Smelting produces ~0.5 stone per ore. Stone flows through:
+  // 1. Prospectors (5% gem each, stone passes through on fail) → gems
+  // 2. Remaining stone → Crusher → Dust ($1)
+  // 3. Dust → Nano Sifter (16.6% ore, dust continues) → ore loops back
+  // 4. Remaining dust → Kiln → Glass ($30)
+  // Everything accounted for - nothing is wasted.
+  stoneByproductValue() {
+    const stonePerSmelt = 0.5;
+    let totalValue = 0;
 
-    // Calculate average value of nano sifter ores AFTER upgrading
-    let avgVal = 0;
-    for (const oreName of NANO_SIFTER_ORES) {
-      let val = ORES.find(o => o.name === oreName)?.value || 0;
-      // Apply Ore Upgrader if owned
-      if (this.prestigeItems.oreUpgrader) {
-        const upgraded = getUpgradedOreValue(oreName);
-        if (upgraded !== null) val = upgraded;
-      }
-      avgVal += val;
+    // 1. Prospectors: 5 types, each 5% chance, stone passes through
+    // Probability stone survives all 5: 0.95^5 = 0.774
+    // Probability at least one gem: 1 - 0.774 = 0.226
+    const prospectorGems = [
+      { name: "Topaz", value: 75 },
+      { name: "Emerald", value: 200 },
+      { name: "Sapphire", value: 250 },
+      { name: "Ruby", value: 300 },
+      { name: "Diamond", value: 1500 },
+    ];
+    let stoneRemaining = stonePerSmelt;
+    for (const gem of prospectorGems) {
+      if (this.budget < 2000) break; // need prospectors bought
+      const gemChance = 0.05;
+      const gemsProduced = stoneRemaining * gemChance;
+      // Process gem through gem cutter if available
+      let gemVal = gem.value;
+      if (this.budget >= 20000) gemVal *= 1.40; // gem cutter
+      totalValue += this.applySeller(gemsProduced * gemVal);
+      stoneRemaining *= (1 - gemChance); // stone passes through
     }
-    avgVal /= NANO_SIFTER_ORES.length;
 
-    const bonusVal = this.applySeller(this.processBar(avgVal));
-    return (chance * bonusVal) / (1 - chance);
+    // 2. Remaining stone → Crusher → Dust
+    const dustAmount = stoneRemaining; // all remaining stone becomes dust
+
+    // 3. Nano Sifter: 16.6% of dust becomes ore (if owned)
+    let dustRemaining = dustAmount;
+    if (this.prestigeItems.nanoSifter) {
+      const siftChance = 0.166;
+      const oresProduced = dustAmount * siftChance;
+
+      // Calculate avg ore value after upgrading
+      let avgOreVal = 0;
+      for (const oreName of NANO_SIFTER_ORES) {
+        let val = ORES.find(o => o.name === oreName)?.value || 0;
+        if (this.prestigeItems.oreUpgrader) {
+          const upgraded = getUpgradedOreValue(oreName);
+          if (upgraded !== null) val = upgraded;
+        }
+        avgOreVal += val;
+      }
+      avgOreVal /= NANO_SIFTER_ORES.length;
+
+      // Process ore through full chain
+      const processedVal = this.applySeller(this.processBar(avgOreVal));
+      // Recursive: each bonus ore also produces stone (geometric series)
+      const recursiveChance = stonePerSmelt * siftChance; // ~0.083
+      const bonusOreValue = (oresProduced * processedVal) / (1 - recursiveChance);
+      totalValue += bonusOreValue;
+
+      dustRemaining = dustAmount * (1 - siftChance); // dust continues
+    } else if (this.budget >= 4000) {
+      // Regular Sifter: 10% chance, fewer ore types
+      const siftChance = 0.10;
+      const avgSiftVal = (10 + 20 + 50 + 180 + 350) / 5; // Tin, Iron, Cobalt, Uranium, Gold
+      const processedVal = this.applySeller(this.processBar(avgSiftVal));
+      totalValue += dustAmount * siftChance * processedVal;
+      dustRemaining = dustAmount * (1 - siftChance);
+    }
+
+    // 4. Remaining dust → Kiln → Glass ($30) → sell or use in circuits
+    if (this.budget >= 4750) {
+      const glassVal = 30;
+      // Glass can go to Circuit Maker (2x with coil) or sell directly
+      // For simplicity, sell as glass
+      totalValue += this.applySeller(dustRemaining * glassVal);
+    }
+
+    return totalValue;
+  }
+
+  // Backwards-compatible alias
+  nanoBonus() {
+    return this.stoneByproductValue();
   }
 
   // Electronic Tuner: +$50 on electronics items
