@@ -1,10 +1,77 @@
 // UMT Factory Optimizer - Application Logic
 
 const optimizer = new FactoryOptimizer();
+const STORAGE_KEY = "umt-optimizer-config";
 
 // DOM helpers
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
+
+// --- localStorage persistence ---
+function saveConfig() {
+  const config = {
+    budget: $("#budget").value,
+    prestigeLevel: $("#prestige-level").value,
+    zoneSelect: $("#zone-select").value,
+    depthMin: $("#depth-min").value,
+    depthMax: $("#depth-max").value,
+    outputBelts: $("#output-belts").value,
+    doubleSeller: $("#double-seller").checked,
+    xxlBackpack: $("#xxl-backpack").checked,
+    prestigeItems: {},
+    prestigeUpgrades: {},
+  };
+  $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
+    config.prestigeItems[cb.id] = cb.checked;
+  });
+  $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
+    config.prestigeUpgrades[inp.dataset.upgrade] = inp.value;
+  });
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(config)); } catch(e) {}
+}
+
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const config = JSON.parse(raw);
+
+    if (config.budget) $("#budget").value = config.budget;
+    if (config.prestigeLevel) $("#prestige-level").value = config.prestigeLevel;
+    if (config.depthMin) $("#depth-min").value = config.depthMin;
+    if (config.depthMax) $("#depth-max").value = config.depthMax;
+    if (config.outputBelts) $("#output-belts").value = config.outputBelts;
+    if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
+    if (config.xxlBackpack) $("#xxl-backpack").checked = config.xxlBackpack;
+
+    // Zone select
+    if (config.zoneSelect) $("#zone-select").value = config.zoneSelect;
+
+    // Budget display
+    $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
+
+    // Medal count
+    const level = parseInt($("#prestige-level").value) || 0;
+    $("#medal-count").textContent = level;
+    updatePrestigeCheckboxes(level);
+
+    // Prestige item checkboxes
+    if (config.prestigeItems) {
+      Object.entries(config.prestigeItems).forEach(([id, checked]) => {
+        const cb = document.getElementById(id);
+        if (cb && !cb.disabled) cb.checked = checked;
+      });
+    }
+
+    // Prestige upgrade levels
+    if (config.prestigeUpgrades) {
+      $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
+        const val = config.prestigeUpgrades[inp.dataset.upgrade];
+        if (val !== undefined) inp.value = val;
+      });
+    }
+  } catch(e) {}
+}
 
 // Tab navigation
 document.addEventListener("DOMContentLoaded", () => {
@@ -17,11 +84,12 @@ document.addEventListener("DOMContentLoaded", () => {
   initPrestigeCosts();
   attachEvents();
 
-  // Update layer labels on load
+  // Load saved config, then update labels
+  loadConfig();
   updateDepthLabels();
 
-  // Run initial optimization
-  runOptimizer();
+  // Run initial optimization (no scroll on page load)
+  runOptimizer(false);
 });
 
 function initTabs() {
@@ -74,26 +142,43 @@ function updateDepthLabels() {
 }
 
 function attachEvents() {
-  $("#btn-optimize").addEventListener("click", runOptimizer);
+  $("#btn-optimize").addEventListener("click", () => runOptimizer(true));
   $("#budget").addEventListener("input", () => {
     $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
+    saveConfig();
   });
   $("#prestige-level").addEventListener("input", () => {
     const level = parseInt($("#prestige-level").value) || 0;
     $("#medal-count").textContent = level;
     updatePrestigeCheckboxes(level);
+    saveConfig();
   });
   $("#zone-select").addEventListener("change", (e) => {
     applyZone(e.target.value);
+    saveConfig();
   });
+  $("#output-belts").addEventListener("change", saveConfig);
+  $("#double-seller").addEventListener("change", saveConfig);
+  $("#xxl-backpack").addEventListener("change", saveConfig);
   // Switch to "Custom" when manually editing depths
   $("#depth-min").addEventListener("input", () => {
     $("#zone-select").value = "custom";
     updateDepthLabels();
+    saveConfig();
   });
   $("#depth-max").addEventListener("input", () => {
     $("#zone-select").value = "custom";
     updateDepthLabels();
+    saveConfig();
+  });
+
+  // Prestige item checkboxes and upgrade inputs save on change
+  $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
+    cb.addEventListener("change", saveConfig);
+  });
+  // Prestige upgrade inputs save on change (delegated after they're created)
+  $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
+    inp.addEventListener("input", saveConfig);
   });
 
   // Machine filter
@@ -127,7 +212,7 @@ function initPrestigeUpgrades() {
   });
 }
 
-function runOptimizer() {
+function runOptimizer(scrollToResults = false) {
   const budget = parseInt($("#budget").value) || 0;
   const prestigeLevel = parseInt($("#prestige-level").value) || 0;
   const minDepth = parseInt($("#depth-min").value) || 0;
@@ -199,6 +284,12 @@ function runOptimizer() {
   renderIncomeEstimate(aggregated, outputBelts, oresAtDepth.length);
 
   $("#optimizer-results").classList.remove("hidden");
+
+  saveConfig();
+
+  if (scrollToResults) {
+    $("#optimizer-results").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function renderDepthSummary(minDepth, maxDepth, ores, gems, hasXXLBackpack) {

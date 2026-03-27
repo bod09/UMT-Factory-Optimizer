@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:umt.miraheze.org)"
+      "WebFetch(domain:umt.miraheze.org)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }
