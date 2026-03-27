@@ -359,7 +359,7 @@ function renderChainResults(results, oresAtDepth) {
       </div>
       ${chainBreakdown ? `
         <button class="chain-breakdown-toggle" onclick="document.getElementById('${breakdownId}').classList.toggle('open')">Show breakdown (${repOre.name} $${repOre.value})</button>
-        <div class="chain-breakdown" id="${breakdownId}">${chainBreakdown}</div>
+        <div class="chain-breakdown" id="${breakdownId}">${flowLegend()}${chainBreakdown}</div>
       ` : ""}
       <div class="ore-breakdown">${oreBreakdownHtml}</div>
     `;
@@ -538,7 +538,20 @@ function stepPlain(name, effect, val) { return step(name, effect, val, ""); }
 
 // Wrap loop-back steps in a group with right-side arrow
 function loopGroup(steps) {
+  // Mark the last step in the group for the bottom dot
+  steps = steps.replace(/flow-step s-loop"(?!.*flow-step s-loop")/, 'flow-step s-loop flow-loop-end"');
   return `<div class="flow-loop-group">${steps}</div>`;
+}
+
+// Color legend shown at top of each breakdown
+function flowLegend() {
+  return `<div class="flow-legend">
+    <span class="flow-legend-item"><span class="flow-legend-color c-flat"></span>Flat bonus</span>
+    <span class="flow-legend-item"><span class="flow-legend-color c-mult"></span>Multiplier</span>
+    <span class="flow-legend-item"><span class="flow-legend-color c-combine"></span>Combine</span>
+    <span class="flow-legend-item"><span class="flow-legend-color c-loop"></span>Loop back</span>
+    <span class="flow-legend-item"><span class="flow-legend-color c-dup"></span>Duplicator</span>
+  </div>`;
 }
 
 function renderIncomeEstimate(results, outputBelts, oreCount) {
