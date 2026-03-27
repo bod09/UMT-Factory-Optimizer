@@ -1,0 +1,383 @@
+// UMT Factory Optimizer - Application Logic
+
+const optimizer = new FactoryOptimizer();
+
+// DOM helpers
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+// Tab navigation
+document.addEventListener("DOMContentLoaded", () => {
+  initTabs();
+  initOreSelect();
+  initDatabase();
+  initPrestigeUpgrades();
+  initSpeedrun();
+  initProgression();
+  initPrestigeCosts();
+  attachEvents();
+
+  // Run initial optimization
+  runOptimizer();
+});
+
+function initTabs() {
+  $$(".nav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".nav-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      $$(".tab-content").forEach(t => t.classList.remove("active"));
+      $(`#tab-${btn.dataset.tab}`).classList.add("active");
+    });
+  });
+
+  // DB sub-tabs
+  $$(".db-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".db-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      $$(".db-content").forEach(t => t.classList.remove("active"));
+      $(`#db-${btn.dataset.db}`).classList.add("active");
+    });
+  });
+}
+
+function initOreSelect() {
+  const select = $("#ore-select");
+  ORES.forEach(ore => {
+    const opt = document.createElement("option");
+    opt.value = ore.name;
+    opt.textContent = `${ore.name} ($${ore.value})`;
+    select.appendChild(opt);
+  });
+  // Default to Gold as a good mid-game ore
+  select.value = "Gold";
+}
+
+function attachEvents() {
+  $("#btn-optimize").addEventListener("click", runOptimizer);
+  $("#budget").addEventListener("input", () => {
+    $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
+  });
+  $("#prestige-level").addEventListener("input", () => {
+    const level = parseInt($("#prestige-level").value) || 0;
+    $("#medal-count").textContent = level;
+    updatePrestigeCheckboxes(level);
+  });
+
+  // Machine filter
+  $$(".filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      filterMachines(btn.dataset.cat);
+    });
+  });
+}
+
+function updatePrestigeCheckboxes(medals) {
+  $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
+    const required = parseInt(cb.dataset.medals);
+    cb.disabled = medals < required;
+    if (medals < required) cb.checked = false;
+  });
+}
+
+function initPrestigeUpgrades() {
+  const container = $("#prestige-upgrades-config");
+  PRESTIGE_UPGRADES.forEach(upgrade => {
+    const row = document.createElement("div");
+    row.className = "prestige-upgrade-row";
+    row.innerHTML = `
+      <span>${upgrade.name} (${upgrade.bonusPerLevel}/lvl)</span>
+      <input type="number" value="0" min="0" max="20" data-upgrade="${upgrade.name}">
+    `;
+    container.appendChild(row);
+  });
+}
+
+function runOptimizer() {
+  const budget = parseInt($("#budget").value) || 0;
+  const prestigeLevel = parseInt($("#prestige-level").value) || 0;
+  const oreName = $("#ore-select").value;
+  const throughput = parseInt($("#throughput").value) || 10;
+  const hasDoubleSeller = $("#double-seller").checked;
+
+  const ore = ORES.find(o => o.name === oreName);
+  if (!ore) return;
+
+  optimizer.configure({ prestigeLevel, budget, hasDoubleSeller });
+
+  const results = optimizer.getBestChain(ore, budget);
+  renderChainResults(results, ore);
+  renderIncomeEstimate(results, throughput);
+
+  $("#optimizer-results").classList.remove("hidden");
+}
+
+function renderChainResults(results, ore) {
+  const container = $("#chain-results");
+  container.innerHTML = "";
+
+  results.forEach((result, idx) => {
+    const card = document.createElement("div");
+    card.className = `chain-card${idx === 0 ? " best" : ""}`;
+
+    const multiplier = (result.value / ore.value).toFixed(2);
+
+    card.innerHTML = `
+      <div class="chain-header">
+        <span class="chain-name">${result.chain}</span>
+        <span class="chain-value">${formatMoney(result.value)}</span>
+      </div>
+      <div class="chain-details">
+        <div class="chain-detail">Value/Ore: <strong>${formatMoney(result.perOre)}</strong></div>
+        <div class="chain-detail">Multiplier: <span class="chain-multiplier">${multiplier}x</span></div>
+        <div class="chain-detail">Setup Cost: <strong>${formatMoney(result.cost)}</strong></div>
+        <div class="chain-detail">Ores Needed: <strong>${result.oresNeeded}</strong></div>
+        ${result.medals ? `<div class="chain-detail">Medals: <strong class="medal-cell">${result.medals}</strong></div>` : ""}
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function renderIncomeEstimate(results, throughput) {
+  const grid = $("#income-grid");
+  grid.innerHTML = "";
+
+  if (results.length === 0) return;
+
+  const best = results[0];
+  const perMin = best.perOre * throughput;
+  const perHour = perMin * 60;
+
+  const cards = [
+    { label: "Per Item", value: formatMoney(best.perOre), note: best.chain },
+    { label: "Per Minute", value: formatMoney(perMin), note: `${throughput} items/min` },
+    { label: "Per Hour", value: formatMoney(perHour), note: "Sustained" },
+    { label: "Time to $20M", value: perHour > 0 ? `${(20000000 / perHour * 60).toFixed(0)} min` : "N/A", note: "First prestige" },
+  ];
+
+  cards.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "income-card";
+    div.innerHTML = `
+      <div class="income-label">${c.label}</div>
+      <div class="income-value">${c.value}</div>
+      <div class="income-note">${c.note}</div>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+// Database rendering
+function initDatabase() {
+  renderOreTable();
+  renderGemTable();
+  renderMachineGrid();
+  renderEquipment();
+}
+
+function renderOreTable() {
+  const tbody = $("#ore-table tbody");
+  ORES.forEach(ore => {
+    // Calculate best processed value (clean + polish + infuse + smelt + temper + QA)
+    let bestVal = (ore.value + 10 + 10) * 1.25 * 1.20 * 2.00 * 1.20;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${ore.name}</td>
+      <td class="value-cell">$${ore.value.toLocaleString()}</td>
+      <td class="mono">${ore.depth}</td>
+      <td class="mono">${ore.hardness}</td>
+      <td class="value-cell">${formatMoney(bestVal)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderGemTable() {
+  const tbody = $("#gem-table tbody");
+  GEMS.forEach(gem => {
+    const rarityClass = `rarity-${gem.rarity.toLowerCase().replace(/ /g, "-")}`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${gem.name}</td>
+      <td class="value-cell">$${gem.value.toLocaleString()}</td>
+      <td class="mono">${gem.depth}</td>
+      <td class="mono">${gem.hardness}</td>
+      <td class="${rarityClass}">${gem.rarity}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderMachineGrid() {
+  const grid = $("#machine-grid");
+  grid.innerHTML = "";
+
+  Object.entries(MACHINES).forEach(([id, machine]) => {
+    const card = document.createElement("div");
+    card.className = "machine-card";
+    card.dataset.category = machine.category;
+
+    let costStr;
+    if (machine.cost !== null && machine.cost !== undefined) {
+      costStr = formatMoney(machine.cost);
+    } else if (machine.medals) {
+      costStr = `${machine.medals} Medal${machine.medals > 1 ? "s" : ""}`;
+    } else {
+      costStr = "Free";
+    }
+
+    let multiplierStr = "";
+    if (machine.effect === "multiply" || machine.effect === "multiply_combined") {
+      multiplierStr = `<span class="machine-multiplier">${machine.value}x multiplier</span>`;
+    } else if (machine.effect === "percent") {
+      multiplierStr = `<span class="machine-multiplier">+${(machine.value * 100).toFixed(0)}%</span>`;
+    } else if (machine.effect === "flat" && machine.value) {
+      multiplierStr = `<span class="machine-multiplier">+$${machine.value}</span>`;
+    } else if (machine.effect === "multiplicative") {
+      multiplierStr = `<span class="machine-multiplier">A x B (multiplicative)</span>`;
+    }
+
+    card.innerHTML = `
+      <div class="machine-card-header">
+        <span class="machine-name">${machine.name}</span>
+        <span class="machine-cost ${machine.medals ? "medal-cell" : "cost-cell"}">${costStr}</span>
+      </div>
+      <span class="machine-category cat-${machine.category}">${machine.category}</span>
+      <div class="machine-desc">${machine.desc}</div>
+      ${multiplierStr}
+      ${machine.size ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.25rem">Size: ${machine.size}</div>` : ""}
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function filterMachines(category) {
+  $$(".machine-card").forEach(card => {
+    if (category === "all" || card.dataset.category === category) {
+      card.style.display = "";
+    } else {
+      card.style.display = "none";
+    }
+  });
+}
+
+function renderEquipment() {
+  // Pickaxes
+  const pickTbody = $("#pickaxe-table tbody");
+  PICKAXES.forEach(p => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${p.name}</td>
+      <td class="cost-cell">${p.cost === 0 ? "Free" : formatMoney(p.cost)}</td>
+      <td class="mono">${p.hardness}</td>
+    `;
+    pickTbody.appendChild(tr);
+  });
+
+  // Backpacks
+  const bpTbody = $("#backpack-table tbody");
+  BACKPACKS.forEach(b => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${b.name}</td>
+      <td class="cost-cell">${b.robux ? `${b.robux} Robux` : b.cost === 0 ? "Free" : formatMoney(b.cost)}</td>
+      <td class="mono">${b.capacity}</td>
+    `;
+    bpTbody.appendChild(tr);
+  });
+
+  // Vehicles
+  const vTbody = $("#vehicle-table tbody");
+  VEHICLES.forEach(v => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${v.name}</td>
+      <td class="cost-cell">${v.medals ? `${v.medals} Medals` : v.cost === 0 ? "Free" : formatMoney(v.cost)}</td>
+      <td class="mono">${v.capacity}</td>
+      <td>${v.type}</td>
+    `;
+    vTbody.appendChild(tr);
+  });
+
+  // Unloader
+  const uTbody = $("#unloader-table tbody");
+  UNLOADER_LEVELS.forEach(u => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${u.level}</td>
+      <td class="cost-cell">${u.cost === 0 ? "Free" : formatMoney(u.cost)}</td>
+      <td class="mono">${u.capacity}</td>
+    `;
+    uTbody.appendChild(tr);
+  });
+}
+
+// Speedrun
+function initSpeedrun() {
+  const container = $("#speedrun-steps");
+  const steps = optimizer.getFreshPrestigePath();
+
+  steps.forEach((step, idx) => {
+    const card = document.createElement("div");
+    card.className = "phase-card";
+    card.dataset.phase = `PHASE ${idx + 1}`;
+
+    card.innerHTML = `
+      <div class="phase-header">
+        <span class="phase-title">${step.phase.split(": ")[1] || step.phase}</span>
+        <div class="phase-meta">
+          <span>${step.budget}</span>
+          <span>${step.time}</span>
+        </div>
+      </div>
+      <ul class="phase-actions">
+        ${step.actions.map(a => `<li>${a}</li>`).join("")}
+      </ul>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// Progression
+function initProgression() {
+  const container = $("#progression-stages");
+
+  PROGRESSION_STAGES.forEach(stage => {
+    const card = document.createElement("div");
+    card.className = "stage-card";
+
+    card.innerHTML = `
+      <div class="stage-header">
+        <span class="stage-name">${stage.name}</span>
+        <span class="stage-budget">${stage.budget}</span>
+      </div>
+      <div class="stage-tips">${stage.tips}</div>
+      <div class="stage-priority">
+        <h4>Priority Purchases</h4>
+        <div class="priority-list">
+          ${stage.priority.map(p => `<span class="priority-item">${p}</span>`).join("")}
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// Prestige cost table
+function initPrestigeCosts() {
+  const tbody = $("#prestige-cost-table");
+  for (let i = 1; i <= 15; i++) {
+    const cost = getPrestigeCost(i);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${i}</td>
+      <td class="cost-cell">${formatMoney(cost)}</td>
+      <td class="medal-cell">${i}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
