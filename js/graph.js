@@ -149,16 +149,16 @@ class PathFinder {
     // 2. Remaining stone → Crusher → Dust
     const dustAmount = stoneRemaining; // all remaining stone becomes dust
 
-    // 3. Nano Sifter has 1 input (dust) and 2 outputs:
-    //    - Output 1: Ore (16.6% of dust CONVERTED to ore - dust consumed)
-    //    - Output 2: Dust (remaining 83.4% passes through as dust)
-    let dustRemaining = dustAmount;
+    // 3. ALL dust → Sifter/Nano Sifter FIRST (if owned)
+    //    Output: ore (chance%), Byproduct: dust tagged "Sifted" (remainder%)
+    //    Tags: ore output has NO sifted tag. Dust byproduct has "Sifted" tag.
+    let siftedDust = dustAmount; // all dust that didn't become ore
     if (this.prestigeItems.nanoSifter) {
       const siftChance = 0.166;
       const oresProduced = dustAmount * siftChance;
-      dustRemaining = dustAmount * (1 - siftChance); // 83.4% continues as dust
+      siftedDust = dustAmount * (1 - siftChance); // 83.4% tagged Sifted
 
-      // Calculate avg ore value after upgrading
+      // Avg ore value after Ore Upgrader (if owned)
       let avgOreVal = 0;
       for (const oreName of NANO_SIFTER_ORES) {
         let val = ORES.find(o => o.name === oreName)?.value || 0;
@@ -170,22 +170,30 @@ class PathFinder {
       }
       avgOreVal /= NANO_SIFTER_ORES.length;
 
+      // Process ore through full chain (Ore Upgrader → Clean → ... → Sell)
       const processedVal = this.applySeller(this.processBar(avgOreVal));
-      // Recursive: each bonus ore also produces stone (geometric series)
+      // Recursive: each bonus ore also produces stone → more processing
       const recursiveChance = stonePerSmelt * siftChance;
-      const bonusOreValue = (oresProduced * processedVal) / (1 - recursiveChance);
-      totalValue += bonusOreValue;
+      totalValue += (oresProduced * processedVal) / (1 - recursiveChance);
     } else if (this.budget >= 4000) {
       const siftChance = 0.10;
-      dustRemaining = dustAmount * (1 - siftChance);
+      siftedDust = dustAmount * (1 - siftChance);
       const avgSiftVal = (10 + 20 + 50 + 180 + 350) / 5;
-      const processedVal = this.applySeller(this.processBar(avgSiftVal));
-      totalValue += dustAmount * siftChance * processedVal;
+      totalValue += dustAmount * siftChance * this.applySeller(this.processBar(avgSiftVal));
     }
 
-    // 4. Remaining dust (83.4%) → Kiln → Glass ($30)
-    if (this.budget >= 4750) {
-      totalValue += this.applySeller(dustRemaining * 30);
+    // 4. Sifted dust → best available path (tagged Sifted, can't re-sift)
+    //    Clay Mixer ($150/dust via ceramic) > Kiln ($60/dust via glass)
+    if (siftedDust > 0) {
+      if (this.budget >= 30000) {
+        // Clay Mixer (2 dust → clay $50) → Ceramic Furnace (clay → ceramic $150)
+        // $150 per 2 dust = $75/dust before seller
+        const ceramicCount = siftedDust / 2;
+        totalValue += this.applySeller(ceramicCount * 150);
+      } else if (this.budget >= 4750) {
+        // Kiln: dust → glass $30
+        totalValue += this.applySeller(siftedDust * 30);
+      }
     }
 
     return totalValue;
