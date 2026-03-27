@@ -483,20 +483,13 @@ class PathFinder {
         } else {
           addEdge(nanoNode, cleanNode, "ore", true);
         }
-        // Dust continues through (NOT consumed) → Kiln
-        if (this.budget >= 4750) {
-          const kilnNode = addNode("Kiln", "glass", 30, "multipurpose", 8);
-          addEdge(nanoNode, kilnNode, "dust", true);
-        }
+        // Sifted dust continues → chain-specific routing (Clay/Kiln/Powder)
       } else {
         // Regular Sifter
         const sifterNode = addNode("Sifter (10% bonus ore)", "dust", 0, "stonework", 7);
         addEdge(crushNode, sifterNode, "dust", true);
         addEdge(sifterNode, cleanNode, "ore", true);
-        if (this.budget >= 4750) {
-          const kilnNode = addNode("Kiln", "glass", 30, "multipurpose", 8);
-          addEdge(sifterNode, kilnNode, "dust", true);
-        }
+        // Sifted dust continues → chain-specific routing
       }
     }
 
@@ -550,8 +543,11 @@ class PathFinder {
         addEdge(casingNode, engineNode, "casing");
         if (hasQA) { const qaNode = addNode("Quality Assurance", "engine", engineVal * 1.2, "multipurpose", barLayer + 4); addEdge(engineNode, qaNode, "engine"); }
       } else if (endType === "tablet") {
-        const glassNode = addNode("Kiln (from dust)", "glass", 30, "multipurpose", barLayer);
-        addEdge(smeltNode, glassNode, "stone", true);
+        // Glass chain: Stone → Crusher → Dust → Kiln → Glass
+        const crushNode2 = addNode("Crusher", "dust", 1, "stonework", barLayer);
+        addEdge(stoneNode, crushNode2, "stone", true);
+        const glassNode = addNode("Kiln", "glass", 30, "multipurpose", barLayer + 1);
+        addEdge(crushNode2, glassNode, "dust", true);
         const coilNode = addNode("Coiler", "coil", barVal + 20, "metalwork", barLayer);
         addEdge(prevNode, coilNode, "bar");
         const circuitVal = (30 + barVal + 20) * 2.0;
@@ -565,15 +561,23 @@ class PathFinder {
         addEdge(circuitNode, tabletNode, "circuit");
         if (hasQA) { const qaNode = addNode("Quality Assurance", "tablet", tabletVal * 1.2, "multipurpose", barLayer + 4); addEdge(tabletNode, qaNode, "tablet"); }
       } else if (endType === "power_core") {
-        // Superconductor branch
+        // Ceramic chain: Stone → Crusher → Dust → Sifter → Clay Mixer → Ceramic Furnace
+        // This feeds ceramic casing INTO the Superconductor
+        const crushNode2 = addNode("Crusher", "dust", 1, "stonework", barLayer);
+        addEdge(stoneNode, crushNode2, "stone", true);
+        const clayNode = addNode("Clay Mixer", "clay", 50, "stonework", barLayer + 1);
+        addEdge(crushNode2, clayNode, "dust", true);
+        const ceramicNode = addNode("Ceramic Furnace", "ceramic_casing", 150, "stonework", barLayer + 2);
+        addEdge(clayNode, ceramicNode, "clay", true);
+
+        // Superconductor branch: Alloy Bar + Ceramic Casing
         const alloyNode = addNode("Alloy Furnace", "alloy_bar", (barVal * 2) * 1.2, "metalwork", barLayer);
         addEdge(prevNode, alloyNode, "bar");
-        const ceramicNode = addNode("Ceramic (from dust)", "ceramic_casing", 150, "stonework", barLayer);
-        addEdge(smeltNode, ceramicNode, "stone", true);
         const superVal = ((barVal * 2) * 1.2 + 150) * 3.0;
-        const superNode = addNode("Superconductor", "superconductor", superVal, "electronics", barLayer + 1);
+        const superNode = addNode("Superconductor", "superconductor", superVal, "electronics", barLayer + 3);
         addEdge(alloyNode, superNode, "alloy_bar");
         addEdge(ceramicNode, superNode, "ceramic_casing");
+
         // Electromagnet branch
         const coilNode = addNode("Coiler", "coil", barVal + 20, "metalwork", barLayer);
         addEdge(prevNode, coilNode, "bar");
@@ -589,8 +593,11 @@ class PathFinder {
         addEdge(electroNode, pcNode, "electromagnet");
         if (hasQA) { const qaNode = addNode("Quality Assurance", "power_core", pcVal * 1.2, "multipurpose", barLayer + 4); addEdge(pcNode, qaNode, "power_core"); }
       } else if (endType === "explosives") {
-        const powderNode = addNode("Blasting Powder", "blasting_powder", 3, "explosives", barLayer);
-        addEdge(smeltNode, powderNode, "stone", true);
+        // Powder chain: Stone → Crusher → Dust → Blasting Powder Chamber
+        const crushNode2 = addNode("Crusher", "dust", 1, "stonework", barLayer);
+        addEdge(stoneNode, crushNode2, "stone", true);
+        const powderNode = addNode("Blasting Powder Chamber", "blasting_powder", 2, "explosives", barLayer + 1);
+        addEdge(crushNode2, powderNode, "dust", true);
         const expVal = casingVal * 3;
         const expNode = addNode("Explosives Maker", "explosives", expVal, "explosives", barLayer + 3);
         addEdge(casingNode, expNode, "casing");
@@ -600,10 +607,15 @@ class PathFinder {
     } else if (endType === "superconductor") {
       const alloyNode = addNode("Alloy Furnace", "alloy_bar", (barVal * 2) * 1.2, "metalwork", barLayer);
       addEdge(prevNode, alloyNode, "bar");
-      const ceramicNode = addNode("Ceramic (from dust)", "ceramic_casing", 150, "stonework", barLayer);
-      addEdge(smeltNode, ceramicNode, "stone", true);
+      // Ceramic chain from stone byproduct
+      const crushNode2 = addNode("Crusher", "dust", 1, "stonework", barLayer);
+      addEdge(stoneNode, crushNode2, "stone", true);
+      const clayNode = addNode("Clay Mixer", "clay", 50, "stonework", barLayer + 1);
+      addEdge(crushNode2, clayNode, "dust", true);
+      const ceramicNode = addNode("Ceramic Furnace", "ceramic_casing", 150, "stonework", barLayer + 2);
+      addEdge(clayNode, ceramicNode, "clay", true);
       const superVal = ((barVal * 2) * 1.2 + 150) * 3.0;
-      const superNode = addNode("Superconductor", "superconductor", superVal, "electronics", barLayer + 1);
+      const superNode = addNode("Superconductor", "superconductor", superVal, "electronics", barLayer + 3);
       addEdge(alloyNode, superNode, "alloy_bar");
       addEdge(ceramicNode, superNode, "ceramic_casing");
       if (hasQA) { const qaNode = addNode("Quality Assurance", "superconductor", superVal * 1.2, "multipurpose", barLayer + 2); addEdge(superNode, qaNode, "superconductor"); }
