@@ -237,7 +237,15 @@ function runOptimizer(scrollToResults = false) {
     updateDepthLabels();
   }
 
-  optimizer.configure({ prestigeLevel, budget, hasDoubleSeller });
+  // Read prestige item checkboxes
+  const prestigeItems = {
+    philosophersStone: $("#has-philosophers-stone")?.checked || false,
+    nanoSifter: $("#has-nano-sifter")?.checked || false,
+    oreUpgrader: $("#has-ore-upgrader")?.checked || false,
+    duplicator: $("#has-duplicator")?.checked || false,
+  };
+
+  optimizer.configure({ prestigeLevel, budget, hasDoubleSeller, prestigeItems });
 
   // Get all ores and gems at this depth
   const oresAtDepth = getOresAtDepth(minDepth, maxDepth);

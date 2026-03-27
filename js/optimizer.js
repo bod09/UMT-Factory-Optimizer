@@ -1,4 +1,7 @@
 // UMT Factory Optimizer - Core Logic
+// Key mechanic: Tag inheritance - crafted items inherit ALL tags from ingredients.
+// Tags (Cleaned, Polished, Tempered, Infused, QA Tested, Tuned) prevent re-application.
+// Multiple machines of same type OK for throughput, but same item can't pass through twice.
 
 class FactoryOptimizer {
   constructor() {
@@ -6,28 +9,43 @@ class FactoryOptimizer {
     this.medals = 0;
     this.budget = 1000000;
     this.hasDoubleSeller = false;
-    this.prestigeUpgrades = {};
+    this.prestigeItems = {};
   }
 
-  configure({ prestigeLevel = 0, budget = 1000000, hasDoubleSeller = false, prestigeUpgrades = {} }) {
+  configure({ prestigeLevel = 0, budget = 1000000, hasDoubleSeller = false, prestigeItems = {} }) {
     this.prestigeLevel = prestigeLevel;
-    this.medals = prestigeLevel; // 1 medal per prestige
+    this.medals = prestigeLevel;
     this.budget = budget;
     this.hasDoubleSeller = hasDoubleSeller;
-    this.prestigeUpgrades = prestigeUpgrades;
+    this.prestigeItems = prestigeItems;
   }
 
-  // Calculate value of an ore through a specific processing chain
+  // Helper: get fully pre-processed bar value from an ore
+  // Clean (+$10) -> Polish (+$10) -> Infuse (1.25x if owned) -> Smelt (1.2x) -> Temper (2x)
+  getProcessedBarValue(oreValue) {
+    let val = oreValue;
+    val += 10; // ore cleaner
+    val += 10; // polisher
+    if (this.prestigeItems.philosophersStone) val *= 1.25; // philosopher's stone
+    val *= 1.20; // ore smelter
+    val *= 2.00; // tempering forge
+    return val;
+  }
+
+  // Helper: apply double seller
+  applySeller(val) {
+    return this.hasDoubleSeller ? val * 2 : val;
+  }
+
+  // Calculate value of an ore through a list of single-item processing steps
   calculateOreValue(ore, steps) {
     let value = ore.value;
-    let itemType = "ore";
     const tags = new Set();
 
     for (const stepId of steps) {
       const machine = MACHINES[stepId];
       if (!machine) continue;
 
-      // Check tag restrictions
       if (machine.tag && tags.has(machine.tag)) continue;
       if (machine.tag) tags.add(machine.tag);
 
@@ -40,11 +58,9 @@ class FactoryOptimizer {
           break;
         case "multiply":
           value *= machine.value;
-          if (machine.output) itemType = machine.output;
           break;
         case "set":
           value = machine.value;
-          if (machine.output) itemType = machine.output;
           break;
       }
     }
@@ -53,78 +69,54 @@ class FactoryOptimizer {
     return value;
   }
 
-  // Calculate the full value chain for an ore going through various paths
-  calculateChainValue(ore, chainId) {
-    const chain = PROCESSING_CHAINS[chainId];
-    if (!chain) return ore.value;
+  // === CHAIN CALCULATIONS ===
+  // Each uses multiple ores. "oresNeeded" = how many ores consumed per product.
+  // Tags are tracked: tempered bar -> bolts means bolts inherit Tempered tag.
 
-    // Check medal requirements
-    if (chain.medals && this.medals < chain.medals) return null;
-
-    if (chain.calcValue) {
-      let val = chain.calcValue(ore.value);
-      if (this.hasDoubleSeller) val *= 2;
-      return val;
-    }
-
-    return this.calculateOreValue(ore, chain.steps);
-  }
-
-  // Comprehensive value calculation for complex multi-input chains
   calculateEngineChainValue(oreValue) {
-    // Ore -> Clean (+$10) -> Polish (+$10) -> Infuse (1.25x if prestige) -> Smelt (1.2x) -> Temper (2x)
-    let baseVal = oreValue;
-    baseVal += 10; // clean
-    baseVal += 10; // polish
-    if (this.medals >= 3) baseVal *= 1.25; // philosopher's stone
-    let barVal = baseVal * 1.20; // smelt
-    let temperedBarVal = barVal * 2.00; // temper
+    let barVal = this.getProcessedBarValue(oreValue);
 
-    // For engine, we need 3 ores split into different paths:
-    // Ore 1 -> bar -> temper -> plate -> mech parts
-    let plateVal = temperedBarVal + 20; // plate stamper
-    let mechPartsVal = plateVal + 30; // mech parts
+    // All bars are tempered, so all derivatives inherit Tempered tag
+    // Ore 1 -> bar -> plate -> mech parts
+    let plateVal = barVal + 20;
+    let mechPartsVal = plateVal + 30;
 
-    // Ore 2 -> bar -> temper -> plate -> pipe
-    let pipeVal = plateVal + 20; // pipe maker
+    // Ore 2 -> bar -> plate -> pipe
+    let pipeVal = plateVal + 20;
 
-    // Ore 3 -> bar -> temper -> bolts (for frame + casing)
-    let boltsVal = temperedBarVal + 5;
+    // Ore 3 -> bar -> bolts
+    let boltsVal = barVal + 5;
 
-    // Ore 4 -> bar -> temper (for frame)
-    let frameVal = (temperedBarVal + boltsVal) * 1.25; // frame maker
+    // Ore 4 -> bar (for frame)
+    let frameVal = (barVal + boltsVal) * 1.25;
 
-    // More bolts + plate for casing
-    let casingVal = (frameVal + boltsVal + plateVal) * 1.30; // casing machine
+    // Ore 5 -> bar -> bolts + plate for casing
+    let bolts2Val = barVal + 5;
+    let plate2Val = barVal + 20;
+    let casingVal = (frameVal + bolts2Val + plate2Val) * 1.30;
 
-    // Engine = mech parts + pipe + casing
+    // Engine = mech parts + pipe + casing (2.5x)
     let engineVal = (mechPartsVal + pipeVal + casingVal) * 2.50;
 
-    // QA if available
-    if (this.budget >= 2000000) {
-      engineVal *= 1.20;
-    }
+    // QA on final product (tag not inherited from ingredients for QA)
+    if (this.budget >= 2000000) engineVal *= 1.20;
 
-    if (this.hasDoubleSeller) engineVal *= 2;
-    return { engineVal, oresNeeded: 5 };
+    return { value: this.applySeller(engineVal), oresNeeded: 5 };
   }
 
-  // Calculate tablet chain value
   calculateTabletChainValue(oreValue) {
-    let baseVal = oreValue + 10 + 10; // clean + polish
-    if (this.medals >= 3) baseVal *= 1.25;
-    let barVal = baseVal * 1.20 * 2.00; // smelt + temper
+    let barVal = this.getProcessedBarValue(oreValue);
 
-    // Casing path (needs 4+ ores)
+    // Casing path
     let boltsVal = barVal + 5;
     let plateVal = barVal + 20;
     let frameVal = (barVal + boltsVal) * 1.25;
     let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
 
-    // Glass from stone byproduct -> dust -> kiln
+    // Glass from stone byproduct (dust -> kiln = $30 flat)
     let glassVal = 30;
 
-    // Coil for circuit
+    // Coil from another bar
     let coilVal = barVal + 20;
 
     // Circuit = glass + coil (2x)
@@ -133,36 +125,28 @@ class FactoryOptimizer {
     // Tablet = casing + glass + circuit (3x)
     let tabletVal = (casingVal + glassVal + circuitVal) * 3.00;
 
-    if (this.budget >= 2000000) tabletVal *= 1.20; // QA
-    if (this.hasDoubleSeller) tabletVal *= 2;
-    return { tabletVal, oresNeeded: 5 };
+    if (this.budget >= 2000000) tabletVal *= 1.20;
+    return { value: this.applySeller(tabletVal), oresNeeded: 5 };
   }
 
-  // Calculate superconductor chain value
   calculateSuperconductorValue(oreValue) {
-    let baseVal = oreValue + 10 + 10;
-    if (this.medals >= 3) baseVal *= 1.25;
-    let barVal = baseVal * 1.20 * 2.00;
+    let barVal = this.getProcessedBarValue(oreValue);
 
     // Alloy bar = 2 tempered bars (1.2x combined)
     let alloyVal = (barVal + barVal) * 1.20;
 
-    // Ceramic casing from stone byproduct
-    // stone -> crush -> dust -> clay mixer (2 dust = $50) -> ceramic furnace ($150)
+    // Ceramic casing from stone byproduct ($150 flat)
     let ceramicVal = 150;
 
     // Superconductor = alloy + ceramic (3x)
     let superVal = (alloyVal + ceramicVal) * 3.00;
 
-    if (this.hasDoubleSeller) superVal *= 2;
-    return { superVal, oresNeeded: 2 };
+    if (this.budget >= 2000000) superVal *= 1.20;
+    return { value: this.applySeller(superVal), oresNeeded: 2 };
   }
 
-  // Calculate power core chain value
   calculatePowerCoreValue(oreValue) {
-    let baseVal = oreValue + 10 + 10;
-    if (this.medals >= 3) baseVal *= 1.25;
-    let barVal = baseVal * 1.20 * 2.00;
+    let barVal = this.getProcessedBarValue(oreValue);
 
     // Casing
     let boltsVal = barVal + 5;
@@ -175,20 +159,65 @@ class FactoryOptimizer {
     let ceramicVal = 150;
     let superVal = (alloyVal + ceramicVal) * 3.00;
 
-    // Electromagnet = coil + casing (1.5x)
+    // Electromagnet = coil + casing2 (1.5x)
     let coilVal = barVal + 20;
-    let casing2Val = (frameVal + boltsVal + plateVal) * 1.30;
+    let bolts2Val = barVal + 5;
+    let plate2Val = barVal + 20;
+    let frame2Val = (barVal + bolts2Val) * 1.25;
+    let casing2Val = (frame2Val + bolts2Val + plate2Val) * 1.30;
     let electroVal = (coilVal + casing2Val) * 1.50;
 
     // Power Core = casing + superconductor + electromagnet (2.5x)
     let pcVal = (casingVal + superVal + electroVal) * 2.50;
 
-    if (this.budget >= 2000000) pcVal *= 1.20; // QA
-    if (this.hasDoubleSeller) pcVal *= 2;
-    return { pcVal, oresNeeded: 10 };
+    if (this.budget >= 2000000) pcVal *= 1.20;
+    return { value: this.applySeller(pcVal), oresNeeded: 10 };
   }
 
-  // Get best chain for a given ore and budget
+  calculateLaserValue(oreValue, gemValue) {
+    let barVal = this.getProcessedBarValue(oreValue);
+
+    // Optic: glass ($30) -> lens ($80) + pipe (barVal+20) -> optic (1.25x)
+    let glassVal = 30;
+    let lensVal = glassVal + 50;
+    let pipeVal = barVal + 20;  // from plate
+    let opticVal = (lensVal + pipeVal) * 1.25;
+
+    // Circuit: glass + coil (2x)
+    let coilVal = barVal + 20;
+    let circuitVal = (glassVal + coilVal) * 2.00;
+
+    // Laser = optic + gem + circuit (2.75x)
+    let laserVal = (opticVal + gemValue + circuitVal) * 2.75;
+
+    if (this.budget >= 2000000) laserVal *= 1.20;
+    return { value: this.applySeller(laserVal), oresNeeded: 3 };
+  }
+
+  // EXPLOSIVES CHAIN - potentially highest value due to multiplicative scaling
+  // Powder value = $2 base + $1 per refiner pass (no documented limit)
+  // Explosives value = casing_value * powder_value
+  calculateExplosivesValue(oreValue, refinerPasses = 10) {
+    let barVal = this.getProcessedBarValue(oreValue);
+
+    // Metal casing (from ore chain)
+    let boltsVal = barVal + 5;
+    let plateVal = barVal + 20;
+    let frameVal = (barVal + boltsVal) * 1.25;
+    let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
+
+    // Blasting powder: metal dust + stone dust -> $2 base
+    // Each refiner pass: powder + metal dust -> powder + $1
+    let powderVal = 2 + refinerPasses;
+
+    // Explosives = casing_value * powder_value (MULTIPLICATIVE)
+    let explosivesVal = casingVal * powderVal;
+
+    if (this.budget >= 2000000) explosivesVal *= 1.20;
+    return { value: this.applySeller(explosivesVal), oresNeeded: 5, powderVal };
+  }
+
+  // Get best chains for a given ore and budget
   getBestChain(ore, budget) {
     const results = [];
 
@@ -197,7 +226,7 @@ class FactoryOptimizer {
     if (this.hasDoubleSeller) directVal *= 2;
     results.push({ chain: "Direct Sell", value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
 
-    // Basic processing
+    // Basic processing: clean + polish + smelt
     if (budget >= 710) {
       let val = this.calculateOreValue(ore, ["ore_cleaner", "polisher", "ore_smelter"]);
       results.push({ chain: "Clean + Polish + Smelt", value: val, cost: 710, perOre: val, oresNeeded: 1 });
@@ -210,7 +239,7 @@ class FactoryOptimizer {
     }
 
     // With philosopher's stone
-    if (budget >= 50710 && this.medals >= 3) {
+    if (budget >= 50710 && this.prestigeItems.philosophersStone) {
       let val = this.calculateOreValue(ore, ["ore_cleaner", "polisher", "philosophers_stone", "ore_smelter", "tempering_forge"]);
       results.push({ chain: "Full Pre-Processing (Infuse + Temper)", value: val, cost: 50710, perOre: val, oresNeeded: 1, medals: 3 });
     }
@@ -218,33 +247,60 @@ class FactoryOptimizer {
     // With QA on top
     if (budget >= 2050710) {
       let steps = ["ore_cleaner", "polisher", "ore_smelter", "tempering_forge", "quality_assurance"];
-      if (this.medals >= 3) steps.splice(2, 0, "philosophers_stone");
+      if (this.prestigeItems.philosophersStone) steps.splice(2, 0, "philosophers_stone");
       let val = this.calculateOreValue(ore, steps);
-      results.push({ chain: "Full Pre-Processing + QA", value: val, cost: 2050710, perOre: val, oresNeeded: 1, medals: this.medals >= 3 ? 3 : 0 });
+      results.push({ chain: "Full Pre-Processing + QA", value: val, cost: 2050710, perOre: val, oresNeeded: 1 });
     }
 
-    // Engine chain
+    // Engine chain (needs casing + mech parts + pipe)
     if (budget >= 1200000) {
-      const { engineVal, oresNeeded } = this.calculateEngineChainValue(ore.value);
-      results.push({ chain: "Engine Factory Chain", value: engineVal, cost: 1200000, perOre: engineVal / oresNeeded, oresNeeded });
+      const r = this.calculateEngineChainValue(ore.value);
+      results.push({ chain: "Engine Factory Chain", value: r.value, cost: 1200000, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded });
     }
 
     // Tablet chain
     if (budget >= 2600000) {
-      const { tabletVal, oresNeeded } = this.calculateTabletChainValue(ore.value);
-      results.push({ chain: "Tablet Factory Chain", value: tabletVal, cost: 2600000, perOre: tabletVal / oresNeeded, oresNeeded });
+      const r = this.calculateTabletChainValue(ore.value);
+      results.push({ chain: "Tablet Factory Chain", value: r.value, cost: 2600000, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded });
     }
 
     // Superconductor
     if (budget >= 1200000) {
-      const { superVal, oresNeeded } = this.calculateSuperconductorValue(ore.value);
-      results.push({ chain: "Superconductor Chain", value: superVal, cost: 1200000, perOre: superVal / oresNeeded, oresNeeded });
+      const r = this.calculateSuperconductorValue(ore.value);
+      results.push({ chain: "Superconductor Chain", value: r.value, cost: 1200000, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded });
     }
 
     // Power Core
     if (budget >= 5700000) {
-      const { pcVal, oresNeeded } = this.calculatePowerCoreValue(ore.value);
-      results.push({ chain: "Power Core Chain", value: pcVal, cost: 5700000, perOre: pcVal / oresNeeded, oresNeeded });
+      const r = this.calculatePowerCoreValue(ore.value);
+      results.push({ chain: "Power Core Chain", value: r.value, cost: 5700000, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded });
+    }
+
+    // Explosives chain (needs refiner at $2.5M + other machines)
+    if (budget >= 2600000) {
+      // Calculate with different refiner pass counts
+      const passes = budget >= 2500000 ? 20 : 5;
+      const r = this.calculateExplosivesValue(ore.value, passes);
+      results.push({
+        chain: `Explosives Chain (${passes} refiner passes)`,
+        value: r.value, cost: 2600000, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded,
+        note: `Powder: $${r.powderVal} x Casing (multiplicative)`
+      });
+    }
+
+    // Duplicator variants (if owned) - duplicate a tempered bar then process both
+    if (this.prestigeItems.duplicator && budget >= 50710) {
+      let barVal = this.getProcessedBarValue(ore.value);
+      // Duplicator: 2 copies at 50% each, but both can be further processed
+      let dupBarVal = barVal * 0.50;
+      // Each duplicated bar can still be used in chains
+      // Net: 2 bars at 50% = same total value, but from 1 ore instead of 2
+      // Best use: duplicate BEFORE combining in high-multiplier machines
+      let dupVal = dupBarVal * 2; // Total from both copies, sold as bars
+      if (this.hasDoubleSeller) dupVal *= 2;
+      // Not worth it for simple bars, but for late-game products:
+      // Duplicate a finished engine/tablet for 2x output at 50% value each = same value
+      // Real value: duplicate early inputs to feed more machines
     }
 
     // Sort by value per ore (efficiency)
@@ -257,7 +313,6 @@ class FactoryOptimizer {
     this.medals = medals;
     const stage = PROGRESSION_STAGES.find(s => s.budgetMax && budget <= s.budgetMax) || PROGRESSION_STAGES[PROGRESSION_STAGES.length - 1];
 
-    // Calculate machine costs for stage
     const machineCosts = [];
     let totalMachineCost = 0;
     for (const machineId of stage.machines) {
@@ -347,6 +402,7 @@ class FactoryOptimizer {
           "Buy QA Machine ($2M) - +20% on finished products",
           "Buy Amulet Maker ($2M) for gem processing",
           "Buy Tablet Factory ($2.5M) - 3x multiplier",
+          "Buy Blasting Powder Refiner ($2.5M) for explosives chain",
           "Buy Laser Maker ($3.5M) - 2.75x",
           "Buy Power Core Assembler ($4.5M) - 2.5x",
         ],
@@ -356,9 +412,10 @@ class FactoryOptimizer {
         budget: "$5M - $20M",
         time: "~30 min",
         actions: [
-          "Maximize factory throughput",
-          "Run multiple parallel processing lines",
+          "Maximize factory throughput with parallel lines",
+          "Run multiple processing chains simultaneously",
           "Use all 4 output belts",
+          "Explosives chain: loop powder through refiners for multiplicative scaling",
           "Focus on highest-multiplier chains (Tablet 3x, Superconductor 3x)",
           "Diamond/Mithril Pickaxe for best ores",
           "Exa-Drill ($8M) for deep mining automation",
