@@ -9,6 +9,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // Tab navigation
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
+  initZoneSelect();
   initDatabase();
   initPrestigeUpgrades();
   initSpeedrun();
@@ -44,6 +45,27 @@ function initTabs() {
   });
 }
 
+function initZoneSelect() {
+  const select = $("#zone-select");
+  MINE_LAYERS.forEach(layer => {
+    const opt = document.createElement("option");
+    opt.value = `${layer.depthMin}-${layer.depthMax}`;
+    opt.textContent = `${layer.name} (${layer.depthMin}-${layer.depthMax}m)`;
+    select.appendChild(opt);
+  });
+  // Default to Bedrock
+  select.value = "550-849";
+  applyZone("550-849");
+}
+
+function applyZone(value) {
+  if (value === "custom") return;
+  const [min, max] = value.split("-").map(Number);
+  $("#depth-min").value = min;
+  $("#depth-max").value = max;
+  updateDepthLabels();
+}
+
 function updateDepthLabels() {
   const minDepth = parseInt($("#depth-min").value) || 0;
   const maxDepth = parseInt($("#depth-max").value) || 0;
@@ -61,8 +83,18 @@ function attachEvents() {
     $("#medal-count").textContent = level;
     updatePrestigeCheckboxes(level);
   });
-  $("#depth-min").addEventListener("input", updateDepthLabels);
-  $("#depth-max").addEventListener("input", updateDepthLabels);
+  $("#zone-select").addEventListener("change", (e) => {
+    applyZone(e.target.value);
+  });
+  // Switch to "Custom" when manually editing depths
+  $("#depth-min").addEventListener("input", () => {
+    $("#zone-select").value = "custom";
+    updateDepthLabels();
+  });
+  $("#depth-max").addEventListener("input", () => {
+    $("#zone-select").value = "custom";
+    updateDepthLabels();
+  });
 
   // Machine filter
   $$(".filter-btn").forEach(btn => {

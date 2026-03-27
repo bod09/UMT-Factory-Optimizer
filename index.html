@@ -42,12 +42,18 @@
             <span class="hint"><span id="medal-count">0</span> Medals available</span>
           </div>
           <div class="config-group">
-            <label for="depth-min">Mining Depth (min)</label>
+            <label for="zone-select">Mining Zone</label>
+            <select id="zone-select">
+              <option value="custom">Custom Depth</option>
+            </select>
+          </div>
+          <div class="config-group">
+            <label for="depth-min">Depth Min (m)</label>
             <input type="number" id="depth-min" value="550" min="0" max="3000" step="50">
             <span class="hint" id="depth-min-layer">Bedrock</span>
           </div>
           <div class="config-group">
-            <label for="depth-max">Mining Depth (max)</label>
+            <label for="depth-max">Depth Max (m)</label>
             <input type="number" id="depth-max" value="1200" min="0" max="3000" step="50">
             <span class="hint" id="depth-max-layer">Tectonic Zone</span>
           </div>
