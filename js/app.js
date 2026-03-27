@@ -59,7 +59,7 @@ function loadConfig() {
     if (config.prestigeItems) {
       Object.entries(config.prestigeItems).forEach(([id, checked]) => {
         const cb = document.getElementById(id);
-        if (cb && !cb.disabled) cb.checked = checked;
+        if (cb) cb.checked = checked;
       });
     }
 
@@ -198,10 +198,14 @@ function attachEvents() {
 }
 
 function updatePrestigeCheckboxes(medals) {
+  // Don't disable checkboxes - let users check what they own
+  // Just visually indicate if they don't have enough medals yet
   $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
     const required = parseInt(cb.dataset.medals);
-    cb.disabled = medals < required;
-    if (medals < required) cb.checked = false;
+    const label = cb.closest(".prestige-item-toggle");
+    if (label) {
+      label.classList.toggle("insufficient-medals", medals < required && !cb.checked);
+    }
   });
 }
 

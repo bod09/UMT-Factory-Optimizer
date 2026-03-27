@@ -424,7 +424,8 @@ main {
 }
 
 .prestige-item-toggle:hover { background: var(--bg-hover); }
-.prestige-item-toggle input { accent-color: var(--purple); width: 16px; height: 16px; }
+.prestige-item-toggle input { accent-color: var(--purple); width: 16px; height: 16px; cursor: pointer; }
+.prestige-item-toggle.insufficient-medals { opacity: 0.5; }
 
 .prestige-upgrades-grid {
   display: grid;
