@@ -636,15 +636,22 @@ function renderConnections() {
   if (!grid) return;
   grid.innerHTML = "";
 
-  Object.entries(MACHINES).forEach(([id, m]) => {
+  // Try to load from machines.json for the most up-to-date data
+  fetch("data/machines.json").then(r => r.json()).then(data => {
+    renderConnectionsFromData(grid, data.machines);
+  }).catch(() => {
+    // Fallback to in-memory MACHINES
+    renderConnectionsFromMemory(grid);
+  });
+}
+
+function renderConnectionsFromData(grid, machines) {
+  grid.innerHTML = "";
+  Object.entries(machines).forEach(([id, m]) => {
     const color = CATEGORY_COLORS[m.category] || "#6b7280";
-    const inputs = (m.inputTypes || []).map(t => {
-      const parts = t.split("|");
-      return parts.map(p => ITEM_TYPES[p] || p).join(" / ");
+    const inputs = (m.inputs || []).map(t => {
+      return t.split("|").map(p => ITEM_TYPES[p] || p).join(" / ");
     }).join(" + ");
-    const output = ITEM_TYPES[m.outputType] || m.outputType || "Same";
-    const output2 = m.outputType2 ? (ITEM_TYPES[m.outputType2] || m.outputType2) : null;
-    const byproducts = (m.byproducts || []).map(b => ITEM_TYPES[b] || b).join(", ");
 
     let effectStr = "";
     if (m.effect === "flat") effectStr = `+$${m.value}`;
@@ -652,8 +659,21 @@ function renderConnections() {
     else if (m.effect === "percent") effectStr = `+${(m.value * 100).toFixed(0)}%`;
     else if (m.effect === "set") effectStr = `=$${m.value}`;
     else if (m.effect === "multiplicative") effectStr = "A × B";
-    else if (m.effect === "chance") effectStr = `${(m.value * 100).toFixed(1)}% chance`;
+    else if (m.effect === "chance") effectStr = `${(m.value * 100).toFixed(1)}%`;
     else effectStr = m.effect || "";
+
+    const costStr = m.cost ? formatMoney(m.cost) : m.medals ? `${m.medals} Medals` : "Free";
+
+    // Build outputs list
+    let outputsHtml = "";
+    if (m.outputs && m.outputs.length > 0) {
+      m.outputs.forEach((out, i) => {
+        const label = m.outputs.length > 1 ? `Output ${i + 1}:` : "Output:";
+        const typeLabel = ITEM_TYPES[out.type] || out.type;
+        const chanceStr = out.chance < 1.0 ? ` (${(out.chance * 100).toFixed(1)}%)` : "";
+        outputsHtml += `<div class="conn-row"><span class="conn-label">${label}</span> <span class="conn-types conn-output">${typeLabel}${chanceStr}</span> <span style="color:var(--text-muted);font-size:0.65rem">${out.desc || ""}</span></div>`;
+      });
+    }
 
     const card = document.createElement("div");
     card.className = "connection-card";
@@ -662,10 +682,38 @@ function renderConnections() {
         <strong>${m.name}</strong>
         <span class="conn-effect">${effectStr}</span>
       </div>
+      <div class="conn-row"><span class="conn-label">Cost:</span> <span class="conn-types" style="color:var(--accent)">${costStr}</span></div>
       <div class="conn-row"><span class="conn-label">Inputs:</span> <span class="conn-types">${inputs || "Any"}</span></div>
-      <div class="conn-row"><span class="conn-label">Output 1:</span> <span class="conn-types conn-output">${output}</span></div>
-      ${output2 ? `<div class="conn-row"><span class="conn-label">Output 2:</span> <span class="conn-types conn-output">${output2}</span></div>` : ""}
-      ${byproducts ? `<div class="conn-row"><span class="conn-label">Byproduct:</span> <span class="conn-types conn-byproduct">${byproducts}</span></div>` : ""}
+      ${outputsHtml}
+      ${m.tag ? `<div class="conn-row"><span class="conn-label">Tag:</span> <span class="conn-tag">${m.tag}</span></div>` : ""}
+      ${m.size ? `<div class="conn-row"><span class="conn-label">Size:</span> <span style="color:var(--text-muted)">${m.size}</span></div>` : ""}
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function renderConnectionsFromMemory(grid) {
+  grid.innerHTML = "";
+  Object.entries(MACHINES).forEach(([id, m]) => {
+    const color = CATEGORY_COLORS[m.category] || "#6b7280";
+    const inputs = (m.inputTypes || []).map(t => t.split("|").map(p => ITEM_TYPES[p] || p).join(" / ")).join(" + ");
+    const output = ITEM_TYPES[m.outputType] || m.outputType || "Same";
+
+    let effectStr = "";
+    if (m.effect === "flat") effectStr = `+$${m.value}`;
+    else if (m.effect === "multiply" || m.effect === "combine") effectStr = `x${m.value}`;
+    else if (m.effect === "percent") effectStr = `+${(m.value * 100).toFixed(0)}%`;
+    else if (m.effect === "set") effectStr = `=$${m.value}`;
+    else if (m.effect === "multiplicative") effectStr = "A × B";
+    else if (m.effect === "chance") effectStr = `${(m.value * 100).toFixed(1)}%`;
+    else effectStr = m.effect || "";
+
+    const card = document.createElement("div");
+    card.className = "connection-card";
+    card.innerHTML = `
+      <div class="conn-header" style="border-left:3px solid ${color}"><strong>${m.name}</strong><span class="conn-effect">${effectStr}</span></div>
+      <div class="conn-row"><span class="conn-label">Inputs:</span> <span class="conn-types">${inputs || "Any"}</span></div>
+      <div class="conn-row"><span class="conn-label">Output:</span> <span class="conn-types conn-output">${output}</span></div>
       ${m.tag ? `<div class="conn-row"><span class="conn-label">Tag:</span> <span class="conn-tag">${m.tag}</span></div>` : ""}
     `;
     grid.appendChild(card);

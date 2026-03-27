@@ -1,0 +1,691 @@
+{
+  "_info": "UMT Factory Optimizer - Machine Database. Edit this file to update machine data. The site loads this automatically.",
+  "_version": "0.5.4",
+  "_inputTypes": "Array of input types. Each entry is one input slot. Use 'type1|type2' for slots accepting multiple types.",
+  "_outputs": "Array of output objects. Each has type, chance (1.0 = always), and description.",
+
+  "machines": {
+    "ore_cleaner": {
+      "name": "Ore Cleaner",
+      "cost": 80,
+      "category": "metalwork",
+      "inputs": ["ore"],
+      "outputs": [
+        { "type": "ore", "chance": 1.0, "desc": "Cleaned ore (+$10)" }
+      ],
+      "effect": "flat",
+      "value": 10,
+      "tag": "Cleaned",
+      "size": "1x1",
+      "desc": "Adds $10 to ores. Can only be applied once per ore."
+    },
+    "polisher": {
+      "name": "Polisher",
+      "cost": 250,
+      "category": "multipurpose",
+      "inputs": ["any"],
+      "outputs": [
+        { "type": "same", "chance": 1.0, "desc": "Polished item (+$10)" }
+      ],
+      "effect": "flat",
+      "value": 10,
+      "tag": "Polished",
+      "size": "1x3",
+      "desc": "Adds $10 to any item. Once per item."
+    },
+    "philosophers_stone": {
+      "name": "Philosopher's Stone",
+      "cost": null,
+      "medals": 3,
+      "category": "prestige",
+      "inputs": ["ore"],
+      "outputs": [
+        { "type": "ore", "chance": 1.0, "desc": "Infused ore (+25%)" }
+      ],
+      "effect": "percent",
+      "value": 0.25,
+      "tag": "Infused",
+      "size": "5x3",
+      "desc": "+25% ore value. Once per ore."
+    },
+    "quality_assurance": {
+      "name": "Quality Assurance",
+      "cost": 2000000,
+      "category": "multipurpose",
+      "inputs": ["any"],
+      "outputs": [
+        { "type": "same", "chance": 1.0, "desc": "QA tested item (+20%)" }
+      ],
+      "effect": "percent",
+      "value": 0.20,
+      "tag": "QA Tested",
+      "size": "1x1",
+      "desc": "+20% value to any item. Once per item."
+    },
+    "electronic_tuner": {
+      "name": "Electronic Tuner",
+      "cost": 8500,
+      "category": "electronics",
+      "inputs": ["circuit", "electromagnet", "tablet", "laser", "power_core"],
+      "outputs": [
+        { "type": "same", "chance": 1.0, "desc": "Tuned electronic (+$50)" }
+      ],
+      "effect": "flat",
+      "value": 50,
+      "tag": "Tuned",
+      "size": "1x1",
+      "desc": "+$50 to electronics items. Once per item."
+    },
+
+    "ore_smelter": {
+      "name": "Ore Smelter",
+      "cost": 380,
+      "category": "metalwork",
+      "inputs": ["ore"],
+      "outputs": [
+        { "type": "bar", "chance": 1.0, "desc": "Metal bar (1.2x ore value)" },
+        { "type": "stone", "chance": 1.0, "desc": "Stone byproduct (1 per 2 ores)" }
+      ],
+      "effect": "multiply",
+      "value": 1.20,
+      "size": "1x3",
+      "desc": "Smelts ore into bar at 1.2x value. Produces stone byproduct. STOPS if stone not removed."
+    },
+    "blast_furnace": {
+      "name": "Blast Furnace",
+      "cost": 25000,
+      "category": "metalwork",
+      "inputs": ["ore"],
+      "outputs": [
+        { "type": "bar", "chance": 1.0, "desc": "Metal bar (0.9x ore value)" },
+        { "type": "stone", "chance": 1.0, "desc": "Stone byproduct (1 per ore, more than smelter)" }
+      ],
+      "effect": "multiply",
+      "value": 0.90,
+      "size": "2x3",
+      "desc": "Smelts ore into bar at 0.9x value. More stone output than Ore Smelter."
+    },
+    "tempering_forge": {
+      "name": "Tempering Forge",
+      "cost": 50000,
+      "category": "metalwork",
+      "inputs": ["bar", "alloy_bar"],
+      "outputs": [
+        { "type": "same", "chance": 1.0, "desc": "Tempered bar (2x value)" }
+      ],
+      "effect": "multiply",
+      "value": 2.00,
+      "tag": "Tempered",
+      "size": "1x1",
+      "desc": "Doubles bar/alloy bar value. Once per bar."
+    },
+
+    "coiler": {
+      "name": "Coiler",
+      "cost": 1750,
+      "category": "metalwork",
+      "inputs": ["bar", "alloy_bar"],
+      "outputs": [
+        { "type": "coil", "chance": 1.0, "desc": "Coil (+$20)" }
+      ],
+      "effect": "flat",
+      "value": 20,
+      "size": "1x1",
+      "desc": "Bar to Coil, adds $20."
+    },
+    "bolt_machine": {
+      "name": "Bolt Machine",
+      "cost": 2800,
+      "category": "metalwork",
+      "inputs": ["bar", "alloy_bar"],
+      "outputs": [
+        { "type": "bolts", "chance": 1.0, "desc": "Bolts (+$5)" }
+      ],
+      "effect": "flat",
+      "value": 5,
+      "size": "1x1",
+      "desc": "Bar to Bolts, adds $5."
+    },
+    "plate_stamper": {
+      "name": "Plate Stamper",
+      "cost": 3000,
+      "category": "metalwork",
+      "inputs": ["bar", "alloy_bar"],
+      "outputs": [
+        { "type": "plate", "chance": 1.0, "desc": "Plate (+$20)" }
+      ],
+      "effect": "flat",
+      "value": 20,
+      "size": "1x1",
+      "desc": "Bar to Plate, adds $20."
+    },
+
+    "pipe_maker": {
+      "name": "Pipe Maker",
+      "cost": 4000,
+      "category": "metalwork",
+      "inputs": ["plate"],
+      "outputs": [
+        { "type": "pipe", "chance": 1.0, "desc": "Pipe (+$20)" }
+      ],
+      "effect": "flat",
+      "value": 20,
+      "size": "1x1",
+      "desc": "Plate to Pipe, adds $20."
+    },
+    "mech_parts_maker": {
+      "name": "Mechanical Parts Maker",
+      "cost": 8000,
+      "category": "metalwork",
+      "inputs": ["plate"],
+      "outputs": [
+        { "type": "mech_parts", "chance": 1.0, "desc": "Mechanical Parts (+$30)" }
+      ],
+      "effect": "flat",
+      "value": 30,
+      "size": "1x1",
+      "desc": "Plate to Mech Parts, adds $30."
+    },
+    "filigree_cutter": {
+      "name": "Filigree Cutter",
+      "cost": 50000,
+      "category": "metalwork",
+      "inputs": ["plate"],
+      "outputs": [
+        { "type": "filigree", "chance": 1.0, "desc": "Filigree (+20%)" }
+      ],
+      "effect": "percent",
+      "value": 0.20,
+      "size": "1x1",
+      "desc": "Plate to Filigree, adds 20%."
+    },
+
+    "frame_maker": {
+      "name": "Frame Maker",
+      "cost": 10000,
+      "category": "metalwork",
+      "inputs": ["bar", "bolts"],
+      "outputs": [
+        { "type": "frame", "chance": 1.0, "desc": "Frame (1.25x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.25,
+      "size": "2x3",
+      "desc": "Combines bar + bolts into frame at 1.25x their combined value."
+    },
+    "casing_machine": {
+      "name": "Casing Machine",
+      "cost": 50000,
+      "category": "metalwork",
+      "inputs": ["frame", "bolts", "plate"],
+      "outputs": [
+        { "type": "casing", "chance": 1.0, "desc": "Metal Casing (1.3x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.30,
+      "size": "3x3",
+      "desc": "Combines frame + bolts + plate into casing at 1.3x combined value."
+    },
+    "alloy_furnace": {
+      "name": "Alloy Furnace",
+      "cost": 100000,
+      "category": "metalwork",
+      "inputs": ["bar", "bar"],
+      "outputs": [
+        { "type": "alloy_bar", "chance": 1.0, "desc": "Alloy Bar (1.2x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.20,
+      "size": "2x3",
+      "desc": "Merges 2 bars into alloy bar at 1.2x combined. Can use different ore types. Cannot re-alloy."
+    },
+    "engine_factory": {
+      "name": "Engine Factory",
+      "cost": 1000000,
+      "category": "metalwork",
+      "inputs": ["mech_parts", "pipe", "casing"],
+      "outputs": [
+        { "type": "engine", "chance": 1.0, "desc": "Engine (2.5x combined)" }
+      ],
+      "effect": "combine",
+      "value": 2.50,
+      "size": "3x3",
+      "desc": "Combines mech parts + pipe + casing into engine at 2.5x combined value."
+    },
+
+    "crusher": {
+      "name": "Crusher",
+      "cost": 1750,
+      "category": "stonework",
+      "inputs": ["any"],
+      "outputs": [
+        { "type": "dust", "chance": 1.0, "desc": "Dust ($1 flat value, destroys original)" }
+      ],
+      "effect": "set",
+      "value": 1,
+      "size": "1x1",
+      "desc": "Crushes anything into dust worth $1. Resets all tags."
+    },
+    "sifter": {
+      "name": "Sifter",
+      "cost": 4000,
+      "category": "stonework",
+      "inputs": ["dust"],
+      "outputs": [
+        { "type": "ore", "chance": 0.10, "desc": "Random ore (10% chance): Tin, Iron, Cobalt, Uranium, Gold" },
+        { "type": "dust", "chance": 0.90, "desc": "Remaining dust passes through (tagged, can't sift again)" }
+      ],
+      "effect": "chance",
+      "value": 0.10,
+      "size": "3x3",
+      "desc": "10% chance to convert dust to ore. 90% dust passes through. Dust tagged after sifting."
+    },
+    "nano_sifter": {
+      "name": "Nano Sifter",
+      "cost": null,
+      "medals": 1,
+      "category": "prestige",
+      "inputs": ["dust"],
+      "outputs": [
+        { "type": "ore", "chance": 0.166, "desc": "Random ore (16.6%): Tin, Iron, Lead, Cobalt, Silver, Uranium, Tungsten, Gold, Plutonium, Palladium, Iridium" },
+        { "type": "dust", "chance": 0.834, "desc": "Remaining dust passes through (tagged, can't sift again)" }
+      ],
+      "effect": "chance",
+      "value": 0.166,
+      "size": "3x3",
+      "desc": "16.6% chance to convert dust to ore (11 ore types). 83.4% dust passes through."
+    },
+    "brick_mold": {
+      "name": "Brick Mold",
+      "cost": 2500,
+      "category": "stonework",
+      "inputs": ["dust"],
+      "outputs": [
+        { "type": "bricks", "chance": 1.0, "desc": "Bricks ($25 flat)" }
+      ],
+      "effect": "set",
+      "value": 25,
+      "desc": "Dust to Bricks at $25 flat value. Also: Cement to Concrete Bricks at $100."
+    },
+    "cement_mixer": {
+      "name": "Cement Mixer",
+      "cost": 10000,
+      "category": "stonework",
+      "inputs": ["dust", "stone"],
+      "outputs": [
+        { "type": "cement", "chance": 1.0, "desc": "Cement ($30 flat)" }
+      ],
+      "effect": "set",
+      "value": 30,
+      "desc": "Combines dust + stone into cement at $30 flat."
+    },
+    "clay_mixer": {
+      "name": "Clay Mixer",
+      "cost": 20000,
+      "category": "stonework",
+      "inputs": ["dust", "dust"],
+      "outputs": [
+        { "type": "clay", "chance": 1.0, "desc": "Clay Block ($50 flat)" }
+      ],
+      "effect": "set",
+      "value": 50,
+      "desc": "Combines 2 dust into clay at $50 flat."
+    },
+    "ceramic_furnace": {
+      "name": "Ceramic Furnace",
+      "cost": 30000,
+      "category": "stonework",
+      "inputs": ["clay"],
+      "outputs": [
+        { "type": "ceramic_casing", "chance": 1.0, "desc": "Ceramic Casing ($150 flat)" }
+      ],
+      "effect": "set",
+      "value": 150,
+      "desc": "Clay to Ceramic Casing at $150 flat."
+    },
+
+    "kiln": {
+      "name": "Kiln",
+      "cost": 4750,
+      "category": "multipurpose",
+      "inputs": ["dust"],
+      "outputs": [
+        { "type": "glass", "chance": 1.0, "desc": "Glass Sheet ($30 flat)" }
+      ],
+      "effect": "set",
+      "value": 30,
+      "size": "1x1",
+      "desc": "Dust to Glass Sheet at $30. Also: Bricks/Concrete +20%."
+    },
+    "lens_cutter": {
+      "name": "Lens Cutter",
+      "cost": 70000,
+      "category": "glasswork",
+      "inputs": ["glass"],
+      "outputs": [
+        { "type": "lens", "chance": 1.0, "desc": "Lens (+$50)" }
+      ],
+      "effect": "flat",
+      "value": 50,
+      "desc": "Glass to Lens, adds $50."
+    },
+    "optics_machine": {
+      "name": "Optics Machine",
+      "cost": 300000,
+      "category": "glasswork",
+      "inputs": ["lens", "pipe"],
+      "outputs": [
+        { "type": "optic", "chance": 1.0, "desc": "Optic (1.25x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.25,
+      "size": "3x2",
+      "desc": "Combines lens + pipe into optic at 1.25x combined."
+    },
+
+    "circuit_maker": {
+      "name": "Circuit Maker",
+      "cost": 20000,
+      "category": "electronics",
+      "inputs": ["glass", "coil"],
+      "outputs": [
+        { "type": "circuit", "chance": 1.0, "desc": "Circuit (2x combined)" }
+      ],
+      "effect": "combine",
+      "value": 2.00,
+      "size": "3x3",
+      "desc": "Combines glass sheet + coil into circuit at 2x combined."
+    },
+    "magnetic_machine": {
+      "name": "Magnetic Machine",
+      "cost": 120000,
+      "category": "electronics",
+      "inputs": ["coil", "casing"],
+      "outputs": [
+        { "type": "electromagnet", "chance": 1.0, "desc": "Electromagnet (1.5x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.50,
+      "size": "3x3",
+      "desc": "Combines coil + casing into electromagnet at 1.5x combined."
+    },
+    "superconductor": {
+      "name": "Superconductor Constructor",
+      "cost": 1000000,
+      "category": "electronics",
+      "inputs": ["alloy_bar", "ceramic_casing"],
+      "outputs": [
+        { "type": "superconductor", "chance": 1.0, "desc": "Superconductor (3x combined)" }
+      ],
+      "effect": "combine",
+      "value": 3.00,
+      "size": "1x3",
+      "desc": "Combines alloy bar + ceramic casing into superconductor at 3x combined."
+    },
+    "tablet_factory": {
+      "name": "Tablet Factory",
+      "cost": 2500000,
+      "category": "electronics",
+      "inputs": ["casing", "glass", "circuit"],
+      "outputs": [
+        { "type": "tablet", "chance": 1.0, "desc": "Tablet (3x combined)" }
+      ],
+      "effect": "combine",
+      "value": 3.00,
+      "size": "3x4",
+      "desc": "Combines casing + glass + circuit into tablet at 3x combined."
+    },
+    "laser_maker": {
+      "name": "Laser Maker",
+      "cost": 3500000,
+      "category": "electronics",
+      "inputs": ["optic", "gem", "circuit"],
+      "outputs": [
+        { "type": "laser", "chance": 1.0, "desc": "Laser (2.75x combined)" }
+      ],
+      "effect": "combine",
+      "value": 2.75,
+      "size": "3x5",
+      "desc": "Combines optic + gem + circuit into laser at 2.75x combined."
+    },
+    "power_core": {
+      "name": "Power Core Assembler",
+      "cost": 4500000,
+      "category": "electronics",
+      "inputs": ["casing", "superconductor", "electromagnet"],
+      "outputs": [
+        { "type": "power_core", "chance": 1.0, "desc": "Power Core (2.5x combined)" }
+      ],
+      "effect": "combine",
+      "value": 2.50,
+      "size": "5x5",
+      "desc": "Combines casing + superconductor + electromagnet into power core at 2.5x combined."
+    },
+
+    "gem_cutter": {
+      "name": "Gem Cutter",
+      "cost": 20000,
+      "category": "jewelcrafting",
+      "inputs": ["gem"],
+      "outputs": [
+        { "type": "cut_gem", "chance": 1.0, "desc": "Cut Gem (1.4x)" }
+      ],
+      "effect": "multiply",
+      "value": 1.40,
+      "desc": "Gem to Cut Gem at 1.4x value. Cut gems still count as gems for other machines."
+    },
+    "ring_maker": {
+      "name": "Ring Maker",
+      "cost": 15000,
+      "category": "jewelcrafting",
+      "inputs": ["gem", "coil"],
+      "outputs": [
+        { "type": "ring", "chance": 1.0, "desc": "Ring (1.7x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.70,
+      "size": "3x2",
+      "desc": "Combines gem + coil into ring at 1.7x combined."
+    },
+    "prismatic_crucible": {
+      "name": "Prismatic Gem Crucible",
+      "cost": 100000,
+      "category": "jewelcrafting",
+      "inputs": ["gem", "gem"],
+      "outputs": [
+        { "type": "prismatic_gem", "chance": 1.0, "desc": "Prismatic Gem (1.15x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.15,
+      "desc": "Combines 2 gems into prismatic gem at 1.15x combined. Cannot be re-combined."
+    },
+    "gilder": {
+      "name": "Gilder",
+      "cost": 500000,
+      "category": "jewelcrafting",
+      "inputs": ["filigree", "ring|amulet"],
+      "outputs": [
+        { "type": "gilded", "chance": 1.0, "desc": "Gilded Item (1.5x combined)" }
+      ],
+      "effect": "combine",
+      "value": 1.50,
+      "size": "3x2",
+      "desc": "Combines filigree + ring or amulet into gilded item at 1.5x combined."
+    },
+    "amulet_maker": {
+      "name": "Amulet Maker",
+      "cost": 2000000,
+      "category": "jewelcrafting",
+      "inputs": ["ring", "frame", "prismatic_gem"],
+      "outputs": [
+        { "type": "amulet", "chance": 1.0, "desc": "Amulet (2x combined)" }
+      ],
+      "effect": "combine",
+      "value": 2.00,
+      "size": "5x3",
+      "desc": "Combines ring + frame + prismatic gem into amulet at 2x combined."
+    },
+
+    "topaz_prospector": {
+      "name": "Topaz Prospector",
+      "cost": 2000,
+      "category": "jewelcrafting",
+      "inputs": ["stone"],
+      "outputs": [
+        { "type": "gem", "chance": 0.05, "desc": "Topaz gem ($75)" },
+        { "type": "stone", "chance": 0.95, "desc": "Stone passes through" }
+      ],
+      "effect": "chance",
+      "value": 0.05,
+      "gemType": "Topaz",
+      "desc": "5% chance to convert stone to Topaz. Stone passes through on fail."
+    },
+    "emerald_prospector": {
+      "name": "Emerald Prospector",
+      "cost": 5000,
+      "category": "jewelcrafting",
+      "inputs": ["stone"],
+      "outputs": [
+        { "type": "gem", "chance": 0.05, "desc": "Emerald gem ($200)" },
+        { "type": "stone", "chance": 0.95, "desc": "Stone passes through" }
+      ],
+      "effect": "chance",
+      "value": 0.05,
+      "gemType": "Emerald",
+      "desc": "5% chance to convert stone to Emerald. Stone passes through on fail."
+    },
+    "sapphire_prospector": {
+      "name": "Sapphire Prospector",
+      "cost": 8000,
+      "category": "jewelcrafting",
+      "inputs": ["stone"],
+      "outputs": [
+        { "type": "gem", "chance": 0.05, "desc": "Sapphire gem ($250)" },
+        { "type": "stone", "chance": 0.95, "desc": "Stone passes through" }
+      ],
+      "effect": "chance",
+      "value": 0.05,
+      "gemType": "Sapphire",
+      "desc": "5% chance to convert stone to Sapphire. Stone passes through on fail."
+    },
+    "ruby_prospector": {
+      "name": "Ruby Prospector",
+      "cost": 15000,
+      "category": "jewelcrafting",
+      "inputs": ["stone"],
+      "outputs": [
+        { "type": "gem", "chance": 0.05, "desc": "Ruby gem ($300)" },
+        { "type": "stone", "chance": 0.95, "desc": "Stone passes through" }
+      ],
+      "effect": "chance",
+      "value": 0.05,
+      "gemType": "Ruby",
+      "desc": "5% chance to convert stone to Ruby. Stone passes through on fail."
+    },
+    "diamond_prospector": {
+      "name": "Diamond Prospector",
+      "cost": 30000,
+      "category": "jewelcrafting",
+      "inputs": ["stone"],
+      "outputs": [
+        { "type": "gem", "chance": 0.05, "desc": "Diamond gem ($1500)" },
+        { "type": "stone", "chance": 0.95, "desc": "Stone passes through" }
+      ],
+      "effect": "chance",
+      "value": 0.05,
+      "gemType": "Diamond",
+      "desc": "5% chance to convert stone to Diamond. Stone passes through on fail."
+    },
+
+    "blasting_powder_chamber": {
+      "name": "Blasting Powder Chamber",
+      "cost": 19000,
+      "category": "explosives",
+      "inputs": ["dust", "dust"],
+      "outputs": [
+        { "type": "blasting_powder", "chance": 1.0, "desc": "Blasting Powder ($2 flat)" }
+      ],
+      "effect": "set",
+      "value": 2,
+      "desc": "Combines metal dust + stone dust into blasting powder at $2."
+    },
+    "explosives_maker": {
+      "name": "Explosives Maker",
+      "cost": 19000,
+      "category": "explosives",
+      "inputs": ["blasting_powder", "casing"],
+      "outputs": [
+        { "type": "explosives", "chance": 1.0, "desc": "Explosives (casing value x powder value)" }
+      ],
+      "effect": "multiplicative",
+      "size": "3x5",
+      "desc": "MULTIPLICATIVE: explosives value = casing value × powder value."
+    },
+    "blasting_powder_refiner": {
+      "name": "Blasting Powder Refiner",
+      "cost": 2500000,
+      "category": "explosives",
+      "inputs": ["blasting_powder", "dust"],
+      "outputs": [
+        { "type": "blasting_powder", "chance": 1.0, "desc": "Refined Powder (+$1)" }
+      ],
+      "effect": "flat",
+      "value": 1,
+      "size": "3x3",
+      "desc": "Adds $1 to blasting powder. Only works ONCE per powder."
+    },
+
+    "ore_upgrader": {
+      "name": "Ore Upgrader",
+      "cost": null,
+      "medals": 3,
+      "category": "prestige",
+      "inputs": ["ore"],
+      "outputs": [
+        { "type": "ore", "chance": 1.0, "desc": "Upgraded ore (next tier, max Mithril)" }
+      ],
+      "effect": "upgrade_tier",
+      "size": "3x3",
+      "desc": "Upgrades ore to next tier. Max Mithril. Cannot upgrade duplicated ores."
+    },
+    "gem_to_bar": {
+      "name": "Gem to Bar Transmuter",
+      "cost": null,
+      "medals": 4,
+      "category": "prestige",
+      "inputs": ["gem"],
+      "outputs": [
+        { "type": "bar", "chance": 1.0, "desc": "Bar (same value as gem)" }
+      ],
+      "effect": "preserve",
+      "desc": "Converts gem to bar preserving value. Non-gem items pass through."
+    },
+    "bar_to_gem": {
+      "name": "Bar to Gem Transmuter",
+      "cost": null,
+      "medals": 4,
+      "category": "prestige",
+      "inputs": ["bar"],
+      "outputs": [
+        { "type": "gem", "chance": 1.0, "desc": "Gem (same value as bar)" }
+      ],
+      "effect": "preserve",
+      "desc": "Converts bar to gem preserving value. Non-bar items pass through."
+    },
+    "duplicator": {
+      "name": "Duplicator",
+      "cost": null,
+      "medals": 8,
+      "category": "prestige",
+      "inputs": ["any"],
+      "outputs": [
+        { "type": "same", "chance": 1.0, "desc": "Copy 1 (50% value)" },
+        { "type": "same", "chance": 1.0, "desc": "Copy 2 (50% value)" }
+      ],
+      "effect": "duplicate",
+      "value": 0.50,
+      "size": "3x5",
+      "desc": "Creates 2 copies at 50% value each. Once per item. Products of duplicated items cannot be duplicated."
+    }
+  }
+}
