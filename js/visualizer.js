@@ -125,11 +125,12 @@ class GraphVisualizer {
     rect.setAttribute("stroke-width", node.selected ? "2" : "1");
     g.appendChild(rect);
 
-    // Color accent top bar
+    // Color accent top bar (flat, no rounding - sits inside the rounded rect)
     const accent = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    accent.setAttribute("width", this.nodeWidth);
+    accent.setAttribute("x", "1");
+    accent.setAttribute("y", "1");
+    accent.setAttribute("width", this.nodeWidth - 2);
     accent.setAttribute("height", "3");
-    accent.setAttribute("rx", "6");
     accent.setAttribute("fill", color);
     g.appendChild(accent);
 

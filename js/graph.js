@@ -434,11 +434,130 @@ class PathFinder {
       prevNode = sideEnd;
     }
 
-    // Now add chain-specific nodes based on endType
-    // (This gives the visualizer the complete graph)
-    // The specific chain assembly nodes would be added here per chain type
-    // For now, return the bar processing graph - chain-specific nodes TBD
+    // Chain-specific assembly nodes
+    const barVal = currentVal;
+    const barLayer = prevNode.layer + 1;
+    const hasQA = this.budget >= 2000000;
 
-    return { nodes, edges, barNode: prevNode, barValue: currentVal };
+    if (endType === "engine" || endType === "tablet" || endType === "power_core" || endType === "explosives" || endType === "amulet" || endType === "gilded") {
+      // All these need casing: bar → plate, bolts, frame → casing
+      const plateNode = addNode("Plate Stamper", "plate", barVal + 20, "metalwork", barLayer);
+      addEdge(prevNode, plateNode, "bar");
+      const boltsNode = addNode("Bolt Machine", "bolts", barVal + 5, "metalwork", barLayer);
+      addEdge(prevNode, boltsNode, "bar");
+      const frameNode = addNode("Frame Maker", "frame", (barVal + barVal + 5) * 1.25, "metalwork", barLayer + 1);
+      addEdge(prevNode, frameNode, "bar");
+      addEdge(boltsNode, frameNode, "bolts");
+      const casingVal = ((barVal + barVal + 5) * 1.25 + barVal + 5 + barVal + 20) * 1.30;
+      const casingNode = addNode("Casing Machine", "casing", casingVal, "metalwork", barLayer + 2);
+      addEdge(frameNode, casingNode, "frame");
+      addEdge(boltsNode, casingNode, "bolts");
+      addEdge(plateNode, casingNode, "plate");
+
+      if (endType === "engine") {
+        const mechNode = addNode("Mech Parts Maker", "mech_parts", barVal + 50, "metalwork", barLayer);
+        addEdge(plateNode, mechNode, "plate");
+        const pipeNode = addNode("Pipe Maker", "pipe", barVal + 40, "metalwork", barLayer);
+        addEdge(plateNode, pipeNode, "plate");
+        const engineVal = (barVal + 50 + barVal + 40 + casingVal) * 2.50;
+        const engineNode = addNode("Engine Factory", "engine", engineVal, "metalwork", barLayer + 3);
+        addEdge(mechNode, engineNode, "mech_parts");
+        addEdge(pipeNode, engineNode, "pipe");
+        addEdge(casingNode, engineNode, "casing");
+        if (hasQA) { const qaNode = addNode("Quality Assurance", "engine", engineVal * 1.2, "multipurpose", barLayer + 4); addEdge(engineNode, qaNode, "engine"); }
+      } else if (endType === "tablet") {
+        const glassNode = addNode("Kiln (from dust)", "glass", 30, "multipurpose", barLayer);
+        addEdge(smeltNode, glassNode, "stone", true);
+        const coilNode = addNode("Coiler", "coil", barVal + 20, "metalwork", barLayer);
+        addEdge(prevNode, coilNode, "bar");
+        const circuitVal = (30 + barVal + 20) * 2.0;
+        const circuitNode = addNode("Circuit Maker", "circuit", circuitVal, "electronics", barLayer + 1);
+        addEdge(glassNode, circuitNode, "glass");
+        addEdge(coilNode, circuitNode, "coil");
+        const tabletVal = (casingVal + 30 + circuitVal) * 3.0;
+        const tabletNode = addNode("Tablet Factory", "tablet", tabletVal, "electronics", barLayer + 3);
+        addEdge(casingNode, tabletNode, "casing");
+        addEdge(glassNode, tabletNode, "glass");
+        addEdge(circuitNode, tabletNode, "circuit");
+        if (hasQA) { const qaNode = addNode("Quality Assurance", "tablet", tabletVal * 1.2, "multipurpose", barLayer + 4); addEdge(tabletNode, qaNode, "tablet"); }
+      } else if (endType === "power_core") {
+        // Superconductor branch
+        const alloyNode = addNode("Alloy Furnace", "alloy_bar", (barVal * 2) * 1.2, "metalwork", barLayer);
+        addEdge(prevNode, alloyNode, "bar");
+        const ceramicNode = addNode("Ceramic (from dust)", "ceramic_casing", 150, "stonework", barLayer);
+        addEdge(smeltNode, ceramicNode, "stone", true);
+        const superVal = ((barVal * 2) * 1.2 + 150) * 3.0;
+        const superNode = addNode("Superconductor", "superconductor", superVal, "electronics", barLayer + 1);
+        addEdge(alloyNode, superNode, "alloy_bar");
+        addEdge(ceramicNode, superNode, "ceramic_casing");
+        // Electromagnet branch
+        const coilNode = addNode("Coiler", "coil", barVal + 20, "metalwork", barLayer);
+        addEdge(prevNode, coilNode, "bar");
+        const electroVal = (barVal + 20 + casingVal) * 1.5;
+        const electroNode = addNode("Magnetic Machine", "electromagnet", electroVal, "electronics", barLayer + 2);
+        addEdge(coilNode, electroNode, "coil");
+        addEdge(casingNode, electroNode, "casing");
+        // Power Core
+        const pcVal = (casingVal + superVal + electroVal) * 2.5;
+        const pcNode = addNode("Power Core Assembler", "power_core", pcVal, "electronics", barLayer + 3);
+        addEdge(casingNode, pcNode, "casing");
+        addEdge(superNode, pcNode, "superconductor");
+        addEdge(electroNode, pcNode, "electromagnet");
+        if (hasQA) { const qaNode = addNode("Quality Assurance", "power_core", pcVal * 1.2, "multipurpose", barLayer + 4); addEdge(pcNode, qaNode, "power_core"); }
+      } else if (endType === "explosives") {
+        const powderNode = addNode("Blasting Powder", "blasting_powder", 3, "explosives", barLayer);
+        addEdge(smeltNode, powderNode, "stone", true);
+        const expVal = casingVal * 3;
+        const expNode = addNode("Explosives Maker", "explosives", expVal, "explosives", barLayer + 3);
+        addEdge(casingNode, expNode, "casing");
+        addEdge(powderNode, expNode, "blasting_powder");
+        if (hasQA) { const qaNode = addNode("Quality Assurance", "explosives", expVal * 1.2, "multipurpose", barLayer + 4); addEdge(expNode, qaNode, "explosives"); }
+      }
+    } else if (endType === "superconductor") {
+      const alloyNode = addNode("Alloy Furnace", "alloy_bar", (barVal * 2) * 1.2, "metalwork", barLayer);
+      addEdge(prevNode, alloyNode, "bar");
+      const ceramicNode = addNode("Ceramic (from dust)", "ceramic_casing", 150, "stonework", barLayer);
+      addEdge(smeltNode, ceramicNode, "stone", true);
+      const superVal = ((barVal * 2) * 1.2 + 150) * 3.0;
+      const superNode = addNode("Superconductor", "superconductor", superVal, "electronics", barLayer + 1);
+      addEdge(alloyNode, superNode, "alloy_bar");
+      addEdge(ceramicNode, superNode, "ceramic_casing");
+      if (hasQA) { const qaNode = addNode("Quality Assurance", "superconductor", superVal * 1.2, "multipurpose", barLayer + 2); addEdge(superNode, qaNode, "superconductor"); }
+    } else if (endType === "laser") {
+      const glassNode = addNode("Kiln (from dust)", "glass", 30, "multipurpose", barLayer);
+      addEdge(smeltNode, glassNode, "stone", true);
+      const lensNode = addNode("Lens Cutter", "lens", 80, "glasswork", barLayer + 1);
+      addEdge(glassNode, lensNode, "glass");
+      const plateNode = addNode("Plate Stamper", "plate", barVal + 20, "metalwork", barLayer);
+      addEdge(prevNode, plateNode, "bar");
+      const pipeNode = addNode("Pipe Maker", "pipe", barVal + 40, "metalwork", barLayer + 1);
+      addEdge(plateNode, pipeNode, "plate");
+      const opticNode = addNode("Optics Machine", "optic", (80 + barVal + 40) * 1.25, "glasswork", barLayer + 2);
+      addEdge(lensNode, opticNode, "lens");
+      addEdge(pipeNode, opticNode, "pipe");
+      const coilNode = addNode("Coiler", "coil", barVal + 20, "metalwork", barLayer);
+      addEdge(prevNode, coilNode, "bar");
+      const circuitNode = addNode("Circuit Maker", "circuit", (30 + barVal + 20) * 2.0, "electronics", barLayer + 1);
+      addEdge(glassNode, circuitNode, "glass");
+      addEdge(coilNode, circuitNode, "coil");
+      const gemNode = addNode("Gem (transmuted)", "gem", barVal, "jewelcrafting", barLayer);
+      addEdge(prevNode, gemNode, "bar");
+      const laserVal = (opticNode.value + barVal + circuitNode.value) * 2.75;
+      const laserNode = addNode("Laser Maker", "laser", laserVal, "electronics", barLayer + 3);
+      addEdge(opticNode, laserNode, "optic");
+      addEdge(gemNode, laserNode, "gem");
+      addEdge(circuitNode, laserNode, "circuit");
+      if (hasQA) { const qaNode = addNode("Quality Assurance", "laser", laserVal * 1.2, "multipurpose", barLayer + 4); addEdge(laserNode, qaNode, "laser"); }
+    } else if (endType === "bar") {
+      // Simple processed bar - just add QA and seller
+      if (hasQA) { const qaNode = addNode("Quality Assurance", "bar", barVal * 1.2, "multipurpose", barLayer); addEdge(prevNode, qaNode, "bar"); }
+    }
+
+    // Seller at the end
+    const lastNode = nodes[nodes.length - 1];
+    const sellerNode = addNode("Seller", lastNode.type, this.applySeller(lastNode.value), "source", lastNode.layer + 1);
+    addEdge(lastNode, sellerNode, lastNode.type);
+
+    return { nodes, edges };
   }
 }
