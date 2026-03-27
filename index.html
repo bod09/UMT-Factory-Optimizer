@@ -244,31 +244,28 @@
     </section>
 
     <!-- FACTORY BUILDER TAB -->
-    <section id="tab-builder" class="tab-content">
-      <div class="builder-layout">
+    <section id="tab-builder" class="tab-content builder-fullpage">
+      <div class="builder-topbar">
+        <div class="builder-start-node">
+          <span>Ore:</span>
+          <select id="builder-ore-select"></select>
+        </div>
+        <div class="builder-summary-inline" id="builder-summary-inline"></div>
+        <button class="btn-small" id="builder-clear">Clear</button>
+        <div class="builder-value" id="builder-value">$0</div>
+      </div>
+      <div class="builder-body">
         <div class="builder-sidebar">
-          <h3>Machines</h3>
-          <input type="text" id="builder-search" placeholder="Search machines..." class="builder-search">
+          <input type="text" id="builder-search" placeholder="Search..." class="builder-search">
           <div class="builder-categories" id="builder-categories"></div>
           <div class="builder-machine-list" id="builder-machine-list"></div>
         </div>
-        <div class="builder-main">
-          <div class="builder-toolbar">
-            <span class="builder-info">Click machines to add to your chain. Click chain nodes to remove.</span>
-            <button class="btn-small" id="builder-clear">Clear Chain</button>
-            <div class="builder-value" id="builder-value">Value: $0</div>
-          </div>
-          <div class="builder-chain" id="builder-chain">
-            <div class="builder-start-node">
-              <span>Ore Input</span>
-              <select id="builder-ore-select"></select>
-            </div>
-          </div>
-          <div class="builder-graph-container" id="builder-graph"></div>
-          <div class="builder-summary hidden" id="builder-summary">
-            <div class="builder-summary-grid" id="builder-summary-grid"></div>
-          </div>
+        <div class="builder-canvas" id="builder-graph">
+          <div class="builder-empty-hint">Click machines from the sidebar to build your factory chain</div>
         </div>
+      </div>
+      <div class="builder-bottombar hidden" id="builder-summary">
+        <div class="builder-summary-grid" id="builder-summary-grid"></div>
       </div>
     </section>
   </main>

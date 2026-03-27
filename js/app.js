@@ -930,7 +930,6 @@ function renderBuilderMachines() {
 
     item.addEventListener("click", () => {
       builderChain.push(id);
-      renderBuilderChain();
       updateBuilderValue();
     });
 
@@ -979,7 +978,6 @@ function renderBuilderChain() {
     // Click to remove
     node.addEventListener("click", () => {
       builderChain.splice(idx, 1);
-      renderBuilderChain();
       updateBuilderValue();
     });
 
@@ -1003,43 +1001,30 @@ function updateBuilderValue() {
     }
   }
 
-  $("#builder-value").textContent = `Value: ${formatMoney(val)}`;
+  $("#builder-value").textContent = formatMoney(val);
 
-  // Update summary
-  const summary = $("#builder-summary");
-  const grid = $("#builder-summary-grid");
+  // Update inline summary in topbar
+  const inline = $("#builder-summary-inline");
   if (builderChain.length > 0) {
-    summary.classList.remove("hidden");
     const totalCost = builderChain.reduce((sum, id) => sum + (MACHINES[id]?.cost || 0), 0);
     const multiplier = val / oreVal;
-    grid.innerHTML = `
-      <div class="income-card">
-        <div class="income-label">Output Value</div>
-        <div class="income-value">${formatMoney(val)}</div>
-      </div>
-      <div class="income-card">
-        <div class="income-label">Total Multiplier</div>
-        <div class="income-value">${multiplier.toFixed(2)}x</div>
-      </div>
-      <div class="income-card">
-        <div class="income-label">Setup Cost</div>
-        <div class="income-value" style="color:var(--accent)">${formatMoney(totalCost)}</div>
-      </div>
-      <div class="income-card">
-        <div class="income-label">Machines Used</div>
-        <div class="income-value">${builderChain.length}</div>
-      </div>
+    inline.innerHTML = `
+      <span><span class="bsi-label">Mult: </span><span class="bsi-mult">${multiplier.toFixed(2)}x</span></span>
+      <span><span class="bsi-label">Cost: </span><span class="bsi-cost">${formatMoney(totalCost)}</span></span>
+      <span><span class="bsi-label">Machines: </span><span class="bsi-value">${builderChain.length}</span></span>
     `;
   } else {
-    summary.classList.add("hidden");
+    inline.innerHTML = "";
   }
 
-  // Render graph
+  // Render graph in canvas
+  const canvas = $("#builder-graph");
   if (builderChain.length > 0) {
+    canvas.querySelector(".builder-empty-hint")?.remove();
     const graph = buildBuilderGraph(oreVal);
-    graphVisualizer.render(graph, $("#builder-graph"));
+    graphVisualizer.render(graph, canvas);
   } else {
-    $("#builder-graph").innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">Click machines from the sidebar to build your factory chain</div>';
+    canvas.innerHTML = '<div class="builder-empty-hint">Click machines from the sidebar to build your factory chain</div>';
   }
 }
 
