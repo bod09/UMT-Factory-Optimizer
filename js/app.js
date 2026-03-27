@@ -415,7 +415,7 @@ function _unused_getChainBreakdown(chainName, ore) {
     v *= 1.20; s.push(stepMult("Ore Smelter → Bar", "x1.2", v));
     // Stone byproduct routing
     if (p.nanoSifter) {
-      s.push(stepPlain("  ↳ Stone → Crush → Nano Sifter → ore → back to start", "16.6%", ""));
+      s.push(stepPlain("  ↳ Stone → Crush → Nano Sifter (16.6%) → ore → Upgrader → full chain", "", ""));
     } else {
       s.push(stepPlain("  ↳ Stone → Crush → Kiln → Glass / Sifter", "byproduct", ""));
     }
@@ -468,7 +468,7 @@ function _unused_getChainBreakdown(chainName, ore) {
       if (hasQA) { v *= 1.20; s.push(stepMult("Quality Assurance", "x1.2", v)); }
       if (hasDS) { v *= 2; s.push(stepSell("Double Seller", "x2", v)); }
     }
-    if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore→back to Ore Cleaner)", "+bonus", optimizer.nanoBonus()));
+    if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore→Upgrader→full chain)", "+bonus", optimizer.nanoBonus()));
     return s.join("");
   }
 
@@ -546,7 +546,7 @@ function _unused_getChainBreakdown(chainName, ore) {
     if (hasDS) { exp *= 2; s.push(stepSell("Double Seller", "x2", exp)); }
   }
 
-  if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore→back to Ore Cleaner)", "+bonus/ore", optimizer.nanoBonus()));
+  if (p.nanoSifter) s.push(stepFlat("Nano Sifter (stone→dust→ore→Upgrader→full chain)", "+bonus/ore", optimizer.nanoBonus()));
   return s.join("");
 }
 

@@ -113,11 +113,26 @@ class PathFinder {
     return perCopy * 2;
   }
 
-  // Nano Sifter: recursive bonus (ores loop back through full chain)
+  // Nano Sifter: ores go through Ore Upgrader (if owned) → full processing chain
+  // Recursive: each bonus ore also produces stone → more bonus ores (geometric series)
   nanoBonus() {
     if (!this.prestigeItems.nanoSifter) return 0;
-    const chance = 0.5 * 0.166;
-    const bonusVal = this.applySeller(this.processBar(NANO_SIFTER_AVG_VALUE));
+    const chance = 0.5 * 0.166; // 0.5 stone per smelt, 16.6% chance ore
+
+    // Calculate average value of nano sifter ores AFTER upgrading
+    let avgVal = 0;
+    for (const oreName of NANO_SIFTER_ORES) {
+      let val = ORES.find(o => o.name === oreName)?.value || 0;
+      // Apply Ore Upgrader if owned
+      if (this.prestigeItems.oreUpgrader) {
+        const upgraded = getUpgradedOreValue(oreName);
+        if (upgraded !== null) val = upgraded;
+      }
+      avgVal += val;
+    }
+    avgVal /= NANO_SIFTER_ORES.length;
+
+    const bonusVal = this.applySeller(this.processBar(avgVal));
     return (chance * bonusVal) / (1 - chance);
   }
 
@@ -388,10 +403,17 @@ class PathFinder {
     if (this.prestigeItems.nanoSifter) {
       const crushNode = addNode("Crusher", "dust", 1, "stonework", 6);
       addEdge(stoneNode, crushNode, "stone", true);
-      const nanoNode = addNode("Nano Sifter", "ore", Math.round(this.nanoBonus()), "prestige", 7);
+      const nanoNode = addNode("Nano Sifter (16.6%)", "ore", Math.round(this.nanoBonus()), "prestige", 7);
       addEdge(crushNode, nanoNode, "dust", true);
-      // Arrow back to start
-      addEdge(nanoNode, cleanNode, "ore", true);
+      // Route back: nano ore → Ore Upgrader (if owned) → Ore Cleaner → full chain
+      if (this.prestigeItems.oreUpgrader) {
+        // Find the upgrader node (layer 1)
+        const upgraderNode = nodes.find(n => n.name === "Ore Upgrader");
+        if (upgraderNode) addEdge(nanoNode, upgraderNode, "ore", true);
+        else addEdge(nanoNode, cleanNode, "ore", true);
+      } else {
+        addEdge(nanoNode, cleanNode, "ore", true);
+      }
     }
 
     currentVal *= 2.00;
