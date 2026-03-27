@@ -132,8 +132,9 @@ function runOptimizer() {
   const prestigeLevel = parseInt($("#prestige-level").value) || 0;
   const minDepth = parseInt($("#depth-min").value) || 0;
   let maxDepth = parseInt($("#depth-max").value) || 0;
-  const throughput = parseInt($("#throughput").value) || 10;
+  const outputBelts = parseInt($("#output-belts").value) || 1;
   const hasDoubleSeller = $("#double-seller").checked;
+  const hasXXLBackpack = $("#xxl-backpack").checked;
 
   // Clamp max >= min
   if (maxDepth < minDepth) {
@@ -149,7 +150,7 @@ function runOptimizer() {
   const gemsAtDepth = getGemsAtDepth(minDepth, maxDepth);
 
   // Render depth summary
-  renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth);
+  renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth, hasXXLBackpack);
 
   if (oresAtDepth.length === 0) {
     $("#chain-results").innerHTML = '<div class="chain-card">No ores found at this depth range.</div>';
@@ -195,15 +196,16 @@ function runOptimizer() {
   aggregated.sort((a, b) => b.avgPerOre - a.avgPerOre);
 
   renderChainResults(aggregated, oresAtDepth);
-  renderIncomeEstimate(aggregated, throughput, oresAtDepth.length);
+  renderIncomeEstimate(aggregated, outputBelts, oresAtDepth.length);
 
   $("#optimizer-results").classList.remove("hidden");
 }
 
-function renderDepthSummary(minDepth, maxDepth, ores, gems) {
+function renderDepthSummary(minDepth, maxDepth, ores, gems, hasXXLBackpack) {
   const container = $("#depth-ore-summary");
 
   const requiredPick = getRequiredPickaxe(maxDepth);
+  const backpackNote = hasXXLBackpack ? "XXL Backpack (64 slots)" : "";
 
   container.innerHTML = `
     <div class="depth-summary-content">
@@ -211,6 +213,7 @@ function renderDepthSummary(minDepth, maxDepth, ores, gems) {
         <h3>Mining ${minDepth}m - ${maxDepth}m</h3>
         <span class="depth-layers">${getLayerName(minDepth)}${getLayerName(minDepth) !== getLayerName(maxDepth) ? " to " + getLayerName(maxDepth) : ""}</span>
         <span class="depth-pickaxe">Requires: ${requiredPick.name} (${requiredPick.hardness} hardness)</span>
+        ${backpackNote ? `<span class="depth-pickaxe">${backpackNote}</span>` : ""}
       </div>
       <div class="depth-resources">
         <div class="depth-ores">
@@ -262,14 +265,16 @@ function renderChainResults(results, oresAtDepth) {
   });
 }
 
-function renderIncomeEstimate(results, throughput, oreCount) {
+function renderIncomeEstimate(results, outputBelts, oreCount) {
   const grid = $("#income-grid");
   grid.innerHTML = "";
 
   if (results.length === 0) return;
 
   const best = results[0];
-  const perMin = best.avgPerOre * throughput;
+  // Estimate ~8 items/min per belt as a reasonable conveyor speed
+  const itemsPerMin = outputBelts * 8;
+  const perMin = best.avgPerOre * itemsPerMin;
   const perHour = perMin * 60;
 
   const prestigeLevel = parseInt($("#prestige-level").value) || 0;
@@ -277,7 +282,7 @@ function renderIncomeEstimate(results, throughput, oreCount) {
 
   const cards = [
     { label: "Avg Per Ore", value: formatMoney(best.avgPerOre), note: `${best.chain}` },
-    { label: "Per Minute", value: formatMoney(perMin), note: `${throughput} items/min` },
+    { label: "Per Minute", value: formatMoney(perMin), note: `${outputBelts} belt${outputBelts > 1 ? "s" : ""} (~${itemsPerMin} items/min)` },
     { label: "Per Hour", value: formatMoney(perHour), note: `${oreCount} ore types in range` },
     { label: `Time to ${formatMoney(nextPrestigeCost)}`, value: perHour > 0 ? formatTime(nextPrestigeCost / perHour * 60) : "N/A", note: `Prestige ${prestigeLevel + 1}` },
   ];
