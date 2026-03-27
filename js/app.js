@@ -1255,43 +1255,126 @@ function updateBuilderValue() {
     const graph = buildBuilderGraph(oreVal);
     graphVisualizer.render(graph, canvas);
 
-    // Add click handlers to graph nodes for select/remove/reorder
+    // Add drag + click handlers to SVG graph nodes
     const svgNodes = canvas.querySelectorAll(".graph-node");
+    const svg = canvas.querySelector("svg");
+    const trash = $("#chain-strip-trash");
+
     svgNodes.forEach(nodeEl => {
       const nodeIdx = parseInt(nodeEl.dataset?.chainIdx);
       if (isNaN(nodeIdx) || nodeIdx < 0) return;
 
-      nodeEl.style.cursor = "pointer";
-      nodeEl.addEventListener("click", (e) => {
+      nodeEl.style.cursor = "grab";
+
+      nodeEl.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
         e.stopPropagation();
-        if (e.shiftKey) {
-          // Shift+click = remove
-          builderChain.splice(nodeIdx, 1);
-          if (builderSelectedNode >= builderChain.length) builderSelectedNode = -1;
-          updateBuilderValue();
-          renderBuilderMachines();
-        } else if (e.ctrlKey || e.metaKey) {
-          // Ctrl+click = move left
-          if (nodeIdx > 0) {
-            [builderChain[nodeIdx], builderChain[nodeIdx - 1]] = [builderChain[nodeIdx - 1], builderChain[nodeIdx]];
-            builderSelectedNode = nodeIdx - 1;
-            updateBuilderValue();
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        let isDragging = false;
+        let ghost = null;
+
+        const onMove = (me) => {
+          const dx = me.clientX - startX;
+          const dy = me.clientY - startY;
+
+          if (!isDragging && Math.abs(dx) + Math.abs(dy) > 5) {
+            isDragging = true;
+            nodeEl.style.opacity = "0.4";
+            nodeEl.style.cursor = "grabbing";
+
+            // Create ghost element following cursor
+            ghost = document.createElement("div");
+            ghost.style.cssText = "position:fixed;pointer-events:none;z-index:1000;padding:4px 10px;background:var(--bg-card);border:2px solid var(--accent);border-radius:6px;font-size:12px;color:var(--text-primary);font-family:var(--font-mono);white-space:nowrap;";
+            ghost.textContent = MACHINES[builderChain[nodeIdx]]?.name || "Node";
+            document.body.appendChild(ghost);
+          }
+
+          if (isDragging && ghost) {
+            ghost.style.left = (me.clientX + 12) + "px";
+            ghost.style.top = (me.clientY - 12) + "px";
+
+            // Highlight trash
+            const trashRect = trash.getBoundingClientRect();
+            if (me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
+                me.clientY >= trashRect.top && me.clientY <= trashRect.bottom) {
+              trash.classList.add("drag-over");
+            } else {
+              trash.classList.remove("drag-over");
+            }
+
+            // Highlight drop target node
+            svgNodes.forEach(n => {
+              const r = n.querySelector("rect");
+              if (r) r.setAttribute("stroke", n === nodeEl ? "#333848" : "#333848");
+            });
+            for (const n of svgNodes) {
+              if (n === nodeEl) continue;
+              const targetIdx = parseInt(n.dataset?.chainIdx);
+              if (isNaN(targetIdx) || targetIdx < 0) continue;
+              const r = n.getBoundingClientRect();
+              if (me.clientX >= r.left && me.clientX <= r.right &&
+                  me.clientY >= r.top && me.clientY <= r.bottom) {
+                const rect = n.querySelector("rect");
+                if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
+                break;
+              }
+            }
+          }
+        };
+
+        const onUp = (me) => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          nodeEl.style.opacity = "";
+          nodeEl.style.cursor = "grab";
+          trash.classList.remove("drag-over");
+          if (ghost) { ghost.remove(); ghost = null; }
+
+          if (isDragging) {
+            // Check trash drop
+            const trashRect = trash.getBoundingClientRect();
+            if (me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
+                me.clientY >= trashRect.top && me.clientY <= trashRect.bottom) {
+              builderChain.splice(nodeIdx, 1);
+              builderSelectedNode = -1;
+              updateBuilderValue();
+              return;
+            }
+
+            // Check drop on another node (reorder)
+            for (const n of svgNodes) {
+              if (n === nodeEl) continue;
+              const targetIdx = parseInt(n.dataset?.chainIdx);
+              if (isNaN(targetIdx) || targetIdx < 0) continue;
+              const r = n.getBoundingClientRect();
+              if (me.clientX >= r.left && me.clientX <= r.right &&
+                  me.clientY >= r.top && me.clientY <= r.bottom) {
+                const [item] = builderChain.splice(nodeIdx, 1);
+                builderChain.splice(targetIdx, 0, item);
+                updateBuilderValue();
+                return;
+              }
+            }
+          } else {
+            // Was a click, not a drag - toggle selection
+            builderSelectedNode = (builderSelectedNode === nodeIdx) ? -1 : nodeIdx;
             renderBuilderMachines();
+            svgNodes.forEach(n => {
+              const rect = n.querySelector("rect");
+              if (rect) { rect.setAttribute("stroke", "#333848"); rect.setAttribute("stroke-width", "1"); }
+            });
+            if (builderSelectedNode === nodeIdx) {
+              const rect = nodeEl.querySelector("rect");
+              if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
+            }
           }
-        } else {
-          // Click = select (filters sidebar)
-          builderSelectedNode = (builderSelectedNode === nodeIdx) ? -1 : nodeIdx;
-          renderBuilderMachines();
-          // Highlight selected node
-          svgNodes.forEach(n => {
-            const rect = n.querySelector("rect");
-            if (rect) rect.setAttribute("stroke", "#333848");
-          });
-          if (builderSelectedNode === nodeIdx) {
-            const rect = nodeEl.querySelector("rect");
-            if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
-          }
-        }
+        };
+
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
       });
     });
   } else {
