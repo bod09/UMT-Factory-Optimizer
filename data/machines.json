@@ -4,6 +4,7 @@
   "_inputTypes": "Array of input types. Each entry is one input slot. Use 'type1|type2' for slots accepting multiple types.",
   "_outputs": "Primary product(s). Array of objects with type, chance (1.0 = always), and description.",
   "_byproducts": "Secondary outputs (e.g. stone from smelting, dust passing through sifter). Same format as outputs.",
+  "_tags": "Tags prevent re-application. Crafted items inherit ALL tags from ALL inputs. Crusher removes most tags EXCEPT Unduplicatable.",
 
   "machines": {
     "ore_cleaner": {
@@ -45,7 +46,7 @@
       ],
       "effect": "percent",
       "value": 0.25,
-      "tag": "Infused",
+      "tag": "Gold Infused",
       "size": "5x3",
       "desc": "+25% ore value. Once per ore."
     },
@@ -269,7 +270,7 @@
       "effect": "set",
       "value": 1,
       "size": "1x1",
-      "desc": "Crushes anything into dust worth $1. Resets all tags."
+      "desc": "Crushes anything into dust worth $1. Removes MOST tags (Cleaned, Polished, Tempered, etc.) but does NOT remove Unduplicatable."
     },
     "sifter": {
       "name": "Sifter",
@@ -280,12 +281,12 @@
         { "type": "ore", "chance": 0.10, "desc": "Random ore (10%): Tin, Iron, Cobalt, Uranium, Gold" }
       ],
       "byproducts": [
-        { "type": "dust", "chance": 0.90, "desc": "Remaining dust passes through (tagged, can't sift again)" }
+        { "type": "dust", "chance": 0.90, "desc": "Remaining dust passes through (tagged Sifted, can't sift again)", "tag": "Sifted" }
       ],
       "effect": "chance",
       "value": 0.10,
       "size": "3x3",
-      "desc": "10% chance to convert dust to ore. 90% dust passes through. Dust tagged after sifting."
+      "desc": "10% dust→ore. 90% dust passes through tagged Sifted (prevents re-sifting)."
     },
     "nano_sifter": {
       "name": "Nano Sifter",
@@ -297,12 +298,12 @@
         { "type": "ore", "chance": 0.166, "desc": "Random ore (16.6%): Tin, Iron, Lead, Cobalt, Silver, Uranium, Tungsten, Gold, Plutonium, Palladium, Iridium" }
       ],
       "byproducts": [
-        { "type": "dust", "chance": 0.834, "desc": "Remaining dust passes through (tagged, can't sift again)" }
+        { "type": "dust", "chance": 0.834, "desc": "Remaining dust passes through (tagged Sifted, can't sift again)", "tag": "Sifted" }
       ],
       "effect": "chance",
       "value": 0.166,
       "size": "3x3",
-      "desc": "16.6% chance to convert dust to ore (11 ore types). 83.4% dust passes through."
+      "desc": "16.6% dust→ore. 83.4% dust passes through tagged Sifted (prevents re-sifting)."
     },
     "brick_mold": {
       "name": "Brick Mold",
@@ -664,8 +665,9 @@
         { "type": "ore", "chance": 1.0, "desc": "Upgraded ore (next tier, max Mithril)" }
       ],
       "effect": "upgrade_tier",
+      "tag": "Upgraded",
       "size": "3x3",
-      "desc": "Upgrades ore to next tier. Max Mithril. Cannot upgrade duplicated ores."
+      "desc": "Upgrades ore to next tier. Max Mithril. Cannot upgrade duplicated ores. Tags ore as Upgraded."
     },
     "gem_to_bar": {
       "name": "Gem to Bar Transmuter",
@@ -698,13 +700,15 @@
       "category": "prestige",
       "inputs": ["any"],
       "outputs": [
-        { "type": "same", "chance": 1.0, "desc": "Copy 1 (50% value)" },
-        { "type": "same", "chance": 1.0, "desc": "Copy 2 (50% value)" }
+        { "type": "same", "chance": 1.0, "desc": "Copy 1 (50% value, tagged Duplicated + Unduplicatable)" },
+        { "type": "same", "chance": 1.0, "desc": "Copy 2 (50% value, tagged Duplicated + Unduplicatable)" }
       ],
       "effect": "duplicate",
       "value": 0.50,
+      "tag": "Duplicated",
+      "tag2": "Unduplicatable",
       "size": "3x5",
-      "desc": "Creates 2 copies at 50% value each. Once per item. Products of duplicated items cannot be duplicated."
+      "desc": "Creates 2 copies at 50% value. Both tagged Duplicated + Unduplicatable. All products made FROM duplicated items also get Unduplicatable. Unduplicatable survives Crusher."
     }
   }
 }

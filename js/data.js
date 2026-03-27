@@ -196,7 +196,7 @@ const MACHINES = {
   // --- ONE-TIME MODIFIERS ---
   ore_cleaner: { name: "Ore Cleaner", cost: 80, category: "metalwork", inputTypes: ["ore"], outputType: "ore", effect: "flat", value: 10, tag: "Cleaned", desc: "+$10 to ores (once)" },
   polisher: { name: "Polisher", cost: 250, category: "multipurpose", inputTypes: ["any"], outputType: "same", effect: "flat", value: 10, tag: "Polished", desc: "+$10 to any item (once)" },
-  philosophers_stone: { name: "Philosopher's Stone", cost: null, medals: 3, category: "prestige", inputTypes: ["ore"], outputType: "ore", effect: "percent", value: 0.25, tag: "Infused", desc: "+25% ore value (once)" },
+  philosophers_stone: { name: "Philosopher's Stone", cost: null, medals: 3, category: "prestige", inputTypes: ["ore"], outputType: "ore", effect: "percent", value: 0.25, tag: "Gold Infused", desc: "+25% ore value (once)" },
   quality_assurance: { name: "Quality Assurance", cost: 2000000, category: "multipurpose", inputTypes: ["any"], outputType: "same", effect: "percent", value: 0.20, tag: "QA Tested", desc: "+20% value (once)" },
   electronic_tuner: { name: "Electronic Tuner", cost: 8500, category: "electronics", inputTypes: ["circuit", "electromagnet", "tablet", "laser", "power_core"], outputType: "same", effect: "flat", value: 50, tag: "Tuned", desc: "+$50 to electronics (once)" },
 
