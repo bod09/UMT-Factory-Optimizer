@@ -77,16 +77,18 @@ function loadConfig() {
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initZoneSelect();
-  initDatabase();
   initPrestigeUpgrades();
+  attachEvents();
+
+  // Load saved config BEFORE rendering content that depends on it
+  loadConfig();
+  updateDepthLabels();
+
+  // Now render content that reads checkbox/input state
+  initDatabase();
   initSpeedrun();
   initProgression();
   initPrestigeCosts();
-  attachEvents();
-
-  // Load saved config, then update labels
-  loadConfig();
-  updateDepthLabels();
 
   // Run initial optimization (no scroll on page load)
   runOptimizer(false);
