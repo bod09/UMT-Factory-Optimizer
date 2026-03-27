@@ -156,6 +156,51 @@ main:has(.builder-fullpage.active) {
   margin: 0;
 }
 
+/* Compact header when builder is active */
+body:has(.builder-fullpage.active) header {
+  padding: 0;
+}
+
+body:has(.builder-fullpage.active) .header-content {
+  max-width: none;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem 1rem;
+}
+
+body:has(.builder-fullpage.active) .logo {
+  margin-bottom: 0;
+}
+
+body:has(.builder-fullpage.active) .logo h1 {
+  font-size: 1rem;
+}
+
+body:has(.builder-fullpage.active) .subtitle {
+  display: none;
+}
+
+body:has(.builder-fullpage.active) nav {
+  gap: 0.3rem;
+}
+
+body:has(.builder-fullpage.active) .nav-btn {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+}
+
+body:has(.builder-fullpage.active) .robux-items-bar {
+  margin-top: 0;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  background: none;
+}
+
+body:has(.builder-fullpage.active) .logo-icon {
+  font-size: 1.2rem;
+}
+
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 .tab-content.builder-fullpage.active { display: flex; }
@@ -1111,7 +1156,7 @@ main:has(.builder-fullpage.active) {
 /* Factory Builder - Full Page */
 .builder-fullpage {
   flex-direction: column;
-  height: calc(100vh - 120px);
+  height: calc(100vh - 50px);
   width: 100%;
   padding: 0 !important;
   margin: 0;
