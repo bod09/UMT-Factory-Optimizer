@@ -45,7 +45,10 @@ class MachineRegistry {
           }
           if (!isSameType && outType !== "same") {
             // Producer: creates a different type
-            this.addTo(this.producerOf, outType, id);
+            // Skip transmuters from producer index - they're handled as side paths
+            if (id !== "bar_to_gem" && id !== "gem_to_bar") {
+              this.addTo(this.producerOf, outType, id);
+            }
           }
         }
       }
@@ -122,6 +125,22 @@ class ValueCalculator {
   }
 
   resolveType(targetType, oreValue, visiting) {
+    // Byproduct types: available for "free" from smelting stone byproduct
+    // Stone → Crusher → Dust → various paths. Cost is 0 ores (byproduct of main chain)
+    const byproductTypes = {
+      "stone": { value: 0, oreCount: 0 },
+      "dust": { value: 1, oreCount: 0 },
+      "glass": { value: 30, oreCount: 0 },     // Kiln
+      "clay": { value: 50, oreCount: 0 },       // Clay Mixer (2 dust)
+      "ceramic_casing": { value: 150, oreCount: 0 }, // Ceramic Furnace
+      "blasting_powder": { value: 3, oreCount: 0 },  // Powder Chamber + Refiner
+    };
+
+    if (byproductTypes[targetType]) {
+      const bp = byproductTypes[targetType];
+      return { type: targetType, value: bp.value, tags: new Set(), oreCount: bp.oreCount, path: [{ machine: "byproduct", type: targetType, value: bp.value }] };
+    }
+
     // Base case: ore
     if (targetType === "ore") {
       let val = oreValue;
@@ -431,8 +450,8 @@ class ChainDiscoverer {
         }
       }
     }
-    // Remove very low-value intermediates that are never worth selling directly
-    const skipTypes = new Set(["dust", "stone", "clay", "cement", "bricks"]);
+    // Remove intermediates and byproduct types that aren't worth selling directly
+    const skipTypes = new Set(["dust", "stone", "clay", "cement", "bricks", "ceramic_casing", "glass", "lens", "blasting_powder"]);
     return [...allOutputTypes].filter(t => !skipTypes.has(t));
   }
 

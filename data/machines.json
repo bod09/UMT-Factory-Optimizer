@@ -4,7 +4,7 @@
   "_inputTypes": "Array of input types. Each entry is one input slot. Use 'type1|type2' for slots accepting multiple types.",
   "_outputs": "Primary product(s). Array of objects with type, chance (1.0 = always), and description.",
   "_byproducts": "Secondary outputs (e.g. stone from smelting, dust passing through sifter). Same format as outputs.",
-  "_tags": "Tags prevent re-application. Crafted items inherit ALL tags from ALL inputs. Crusher removes most tags EXCEPT Unduplicatable.",
+  "_tags": "Tags prevent re-application. Rules: (1) Machine with 'tag' field adds tag to output, skips if item already has it. (2) Combine machines: output inherits ALL tags from ALL inputs. (3) Crusher removes ALL tags EXCEPT Unduplicatable. (4) Duplicator adds Duplicated + Unduplicatable. (5) Ore Upgrader can't upgrade items with Duplicated tag. (6) Sifted tag on dust byproduct prevents re-sifting. (7) Transmuters are one-time side paths, not loops.",
 
   "machines": {
     "ore_cleaner": {
