@@ -84,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSpeedrun();
   initProgression();
   initPrestigeCosts();
+  initBuilder();
 
   // Run initial optimization (no scroll on page load)
   runOptimizer(false);
@@ -845,6 +846,254 @@ function renderProgression() {
 }
 
 // Prestige cost table
+// === FACTORY BUILDER ===
+let builderChain = []; // array of machine IDs in order
+let builderFilter = "all";
+
+function initBuilder() {
+  const list = $("#builder-machine-list");
+  const catContainer = $("#builder-categories");
+  const searchInput = $("#builder-search");
+  const oreSelect = $("#builder-ore-select");
+
+  // Populate ore selector
+  ORES.forEach(ore => {
+    const opt = document.createElement("option");
+    opt.value = ore.value;
+    opt.textContent = `${ore.name} ($${ore.value})`;
+    oreSelect.appendChild(opt);
+  });
+  oreSelect.value = "350"; // default Gold
+  oreSelect.addEventListener("change", updateBuilderValue);
+
+  // Category filter buttons
+  const categories = ["all", ...new Set(Object.values(MACHINES).map(m => m.category))];
+  categories.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.className = "builder-cat-btn" + (cat === "all" ? " active" : "");
+    btn.textContent = cat;
+    btn.style.borderLeftColor = CATEGORY_COLORS[cat] || "transparent";
+    btn.addEventListener("click", () => {
+      $$(".builder-cat-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      builderFilter = cat;
+      renderBuilderMachines();
+    });
+    catContainer.appendChild(btn);
+  });
+
+  // Search
+  searchInput.addEventListener("input", renderBuilderMachines);
+
+  // Clear button
+  $("#builder-clear").addEventListener("click", () => {
+    builderChain = [];
+    renderBuilderChain();
+    updateBuilderValue();
+  });
+
+  renderBuilderMachines();
+}
+
+function renderBuilderMachines() {
+  const list = $("#builder-machine-list");
+  const search = ($("#builder-search")?.value || "").toLowerCase();
+  list.innerHTML = "";
+
+  Object.entries(MACHINES).forEach(([id, m]) => {
+    if (builderFilter !== "all" && m.category !== builderFilter) return;
+    if (search && !m.name.toLowerCase().includes(search)) return;
+
+    const item = document.createElement("div");
+    item.className = "builder-machine-item";
+
+    let effectStr = "";
+    if (m.effect === "flat") effectStr = `+$${m.value}`;
+    else if (m.effect === "multiply" || m.effect === "combine") effectStr = `x${m.value}`;
+    else if (m.effect === "percent") effectStr = `+${(m.value * 100).toFixed(0)}%`;
+    else if (m.effect === "set") effectStr = `=$${m.value}`;
+    else if (m.effect === "multiplicative") effectStr = "A×B";
+    else if (m.effect === "chance") effectStr = `${(m.value * 100).toFixed(1)}%`;
+    else effectStr = m.effect || "";
+
+    const color = CATEGORY_COLORS[m.category] || "#6b7280";
+    const costStr = m.cost ? formatMoney(m.cost) : m.medals ? `${m.medals}M` : "Free";
+
+    item.innerHTML = `
+      <div class="bm-cat" style="background:${color}"></div>
+      <div style="flex:1">
+        <div class="bm-name">${m.name}</div>
+        <div style="font-size:0.65rem;color:var(--text-muted)">${costStr} | ${m.desc || ""}</div>
+      </div>
+      <div class="bm-effect">${effectStr}</div>
+    `;
+
+    item.addEventListener("click", () => {
+      builderChain.push(id);
+      renderBuilderChain();
+      updateBuilderValue();
+    });
+
+    list.appendChild(item);
+  });
+}
+
+function renderBuilderChain() {
+  const container = $("#builder-chain");
+  // Keep the start node, remove everything else
+  const startNode = container.querySelector(".builder-start-node");
+  container.innerHTML = "";
+  container.appendChild(startNode);
+
+  const oreVal = parseInt($("#builder-ore-select").value) || 350;
+  let currentVal = oreVal;
+  let currentType = "ore";
+
+  builderChain.forEach((machineId, idx) => {
+    const m = MACHINES[machineId];
+    if (!m) return;
+
+    // Calculate value effect
+    switch (m.effect) {
+      case "flat": currentVal += m.value; break;
+      case "percent": currentVal *= (1 + m.value); break;
+      case "multiply": currentVal *= m.value; break;
+      case "combine": currentVal *= m.value; break; // simplified - combines assume same value inputs
+      case "set": currentVal = m.value; break;
+    }
+
+    if (m.outputType && m.outputType !== "same") currentType = m.outputType;
+    const typeLabel = ITEM_TYPES[currentType] || currentType;
+    const color = CATEGORY_COLORS[m.category] || "#6b7280";
+
+    const node = document.createElement("div");
+    node.className = "builder-node";
+    node.style.borderLeftColor = color;
+    node.style.background = color + "15";
+    node.innerHTML = `
+      <span class="bn-name">${m.name}</span>
+      <span class="bn-val">${formatMoney(currentVal)}</span>
+      <span class="bn-type">${typeLabel}</span>
+    `;
+
+    // Click to remove
+    node.addEventListener("click", () => {
+      builderChain.splice(idx, 1);
+      renderBuilderChain();
+      updateBuilderValue();
+    });
+
+    container.appendChild(node);
+  });
+}
+
+function updateBuilderValue() {
+  const oreVal = parseInt($("#builder-ore-select").value) || 350;
+  let val = oreVal;
+
+  for (const machineId of builderChain) {
+    const m = MACHINES[machineId];
+    if (!m) continue;
+    switch (m.effect) {
+      case "flat": val += m.value; break;
+      case "percent": val *= (1 + m.value); break;
+      case "multiply": val *= m.value; break;
+      case "combine": val *= m.value; break;
+      case "set": val = m.value; break;
+    }
+  }
+
+  $("#builder-value").textContent = `Value: ${formatMoney(val)}`;
+
+  // Update summary
+  const summary = $("#builder-summary");
+  const grid = $("#builder-summary-grid");
+  if (builderChain.length > 0) {
+    summary.classList.remove("hidden");
+    const totalCost = builderChain.reduce((sum, id) => sum + (MACHINES[id]?.cost || 0), 0);
+    const multiplier = val / oreVal;
+    grid.innerHTML = `
+      <div class="income-card">
+        <div class="income-label">Output Value</div>
+        <div class="income-value">${formatMoney(val)}</div>
+      </div>
+      <div class="income-card">
+        <div class="income-label">Total Multiplier</div>
+        <div class="income-value">${multiplier.toFixed(2)}x</div>
+      </div>
+      <div class="income-card">
+        <div class="income-label">Setup Cost</div>
+        <div class="income-value" style="color:var(--accent)">${formatMoney(totalCost)}</div>
+      </div>
+      <div class="income-card">
+        <div class="income-label">Machines Used</div>
+        <div class="income-value">${builderChain.length}</div>
+      </div>
+    `;
+  } else {
+    summary.classList.add("hidden");
+  }
+
+  // Render graph
+  if (builderChain.length > 0) {
+    const graph = buildBuilderGraph(oreVal);
+    graphVisualizer.render(graph, $("#builder-graph"));
+  } else {
+    $("#builder-graph").innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">Click machines from the sidebar to build your factory chain</div>';
+  }
+}
+
+function buildBuilderGraph(oreVal) {
+  const nodes = [];
+  const edges = [];
+  let id = 0;
+  let val = oreVal;
+  let currentType = "ore";
+
+  const oreNode = { id: id++, name: "Ore Input", type: "ore", value: oreVal, category: "source", layer: 0 };
+  nodes.push(oreNode);
+  let prevNode = oreNode;
+
+  builderChain.forEach((machineId, idx) => {
+    const m = MACHINES[machineId];
+    if (!m) return;
+
+    switch (m.effect) {
+      case "flat": val += m.value; break;
+      case "percent": val *= (1 + m.value); break;
+      case "multiply": val *= m.value; break;
+      case "combine": val *= m.value; break;
+      case "set": val = m.value; break;
+    }
+
+    const outType = (m.outputType && m.outputType !== "same") ? m.outputType : currentType;
+    const node = { id: id++, name: m.name, type: outType, value: val, category: m.category, layer: idx + 1 };
+    nodes.push(node);
+    edges.push({ from: prevNode.id, to: node.id, itemType: currentType });
+
+    // Byproducts
+    if (m.byproducts) {
+      m.byproducts.forEach(bp => {
+        const bpNode = { id: id++, name: ITEM_TYPES[bp] || bp, type: bp, value: 0, category: "stonework", layer: idx + 1 };
+        nodes.push(bpNode);
+        edges.push({ from: node.id, to: bpNode.id, itemType: bp, dashed: true });
+      });
+    }
+
+    currentType = outType;
+    prevNode = node;
+  });
+
+  // Final sell node
+  if (builderChain.length > 0) {
+    const sellNode = { id: id++, name: "Seller", type: currentType, value: val, category: "source", layer: builderChain.length + 1 };
+    nodes.push(sellNode);
+    edges.push({ from: prevNode.id, to: sellNode.id, itemType: currentType });
+  }
+
+  return { nodes, edges };
+}
+
 function initPrestigeCosts() {
   const tbody = $("#prestige-cost-table");
   for (let i = 1; i <= 15; i++) {

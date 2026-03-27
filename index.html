@@ -21,6 +21,7 @@
         <button class="nav-btn" data-tab="prestige-path">Prestige Speedrun</button>
         <button class="nav-btn" data-tab="progression">Upgrade Paths</button>
         <button class="nav-btn" data-tab="database">Item Database</button>
+        <button class="nav-btn" data-tab="builder">Factory Builder</button>
       </nav>
       <div class="robux-items-bar">
         <span class="robux-label">Robux Items:</span>
@@ -237,6 +238,35 @@
               <thead><tr><th>Level</th><th>Cost</th><th>Capacity</th></tr></thead>
               <tbody></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FACTORY BUILDER TAB -->
+    <section id="tab-builder" class="tab-content">
+      <div class="builder-layout">
+        <div class="builder-sidebar">
+          <h3>Machines</h3>
+          <input type="text" id="builder-search" placeholder="Search machines..." class="builder-search">
+          <div class="builder-categories" id="builder-categories"></div>
+          <div class="builder-machine-list" id="builder-machine-list"></div>
+        </div>
+        <div class="builder-main">
+          <div class="builder-toolbar">
+            <span class="builder-info">Click machines to add to your chain. Click chain nodes to remove.</span>
+            <button class="btn-small" id="builder-clear">Clear Chain</button>
+            <div class="builder-value" id="builder-value">Value: $0</div>
+          </div>
+          <div class="builder-chain" id="builder-chain">
+            <div class="builder-start-node">
+              <span>Ore Input</span>
+              <select id="builder-ore-select"></select>
+            </div>
+          </div>
+          <div class="builder-graph-container" id="builder-graph"></div>
+          <div class="builder-summary hidden" id="builder-summary">
+            <div class="builder-summary-grid" id="builder-summary-grid"></div>
           </div>
         </div>
       </div>
