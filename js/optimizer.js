@@ -1,58 +1,43 @@
-// UMT Factory Optimizer - Thin wrapper around PathFinder
-// Maintains the same public API for app.js compatibility
+// UMT Factory Optimizer - Uses data-driven MachineRegistry from graph.js
+// All calculations derived from machines.json via MachineRegistry → ValueCalculator → ChainDiscoverer
 
 class FactoryOptimizer {
   constructor() {
-    this.pathFinder = new PathFinder();
+    this.config = {};
+    this.chainDiscoverer = null;
   }
 
   configure(config) {
-    this.pathFinder.configure(config);
-    this.budget = config.budget;
-    this.hasDoubleSeller = config.hasDoubleSeller;
-    this.prestigeItems = config.prestigeItems;
+    this.config = {
+      budget: config.budget || 1000000,
+      hasDoubleSeller: config.hasDoubleSeller || false,
+      prestigeItems: config.prestigeItems || {},
+    };
+    if (machineRegistry) {
+      this.chainDiscoverer = new ChainDiscoverer(machineRegistry, this.config);
+    }
   }
 
   getEffectiveOreValue(ore) {
-    return this.pathFinder.getEffectiveOreValue(ore);
-  }
-
-  processBar(oreVal) {
-    return this.pathFinder.processBar(oreVal);
-  }
-
-  nanoBonus() {
-    return this.pathFinder.nanoBonus();
-  }
-
-  buildCasing(barVal) {
-    return this.pathFinder.buildCasing(barVal);
+    if (this.config.prestigeItems?.oreUpgrader) {
+      const upgraded = getUpgradedOreValue(ore.name);
+      if (upgraded !== null) return upgraded;
+    }
+    return ore.value;
   }
 
   getBestChain(ore, budget) {
-    const oreValue = this.getEffectiveOreValue(ore);
-    const chains = this.pathFinder.getAllChains(oreValue);
-
-    // Filter by budget and add direct sell
-    const results = [];
-
-    // Direct sell
-    const tags = [];
-    if (this.prestigeItems.oreUpgrader && oreValue !== ore.value) tags.push("Upgraded");
-    const directSuffix = tags.length ? " [" + tags.join(", ") + "]" : "";
-    let directVal = this.pathFinder.applySeller(oreValue);
-    results.push({ chain: "Direct Sell" + directSuffix, value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
-
-    // Add discovered chains
-    for (const c of chains) {
-      if (c.cost <= budget) {
-        results.push(c);
-      }
+    if (!this.chainDiscoverer) {
+      // Fallback if registry not loaded yet
+      return [{ chain: "Loading...", value: 0, cost: 0, perOre: 0, oresNeeded: 1 }];
     }
 
-    results.sort((a, b) => b.perOre - a.perOre);
-    return results;
+    const oreValue = this.getEffectiveOreValue(ore);
+    return this.chainDiscoverer.discoverChains(oreValue);
   }
+
+  // Backwards compatibility
+  nanoBonus() { return 0; }
 
   getRecommendedBuild(budget) {
     const stage = PROGRESSION_STAGES.find(s => s.budgetMax && budget <= s.budgetMax) || PROGRESSION_STAGES[PROGRESSION_STAGES.length - 1];
@@ -76,7 +61,7 @@ class FactoryOptimizer {
         "Buy Kiln ($4,750) for glass from dust",
         "Buy Steel Pickaxe ($5,000)",
         "Buy Minidumper ($5,000)",
-        "Route stone: Crusher → Kiln → sell glass ($30)",
+        "Route stone: Crusher → Sifter → Kiln/Clay",
       ]},
       { phase: "Phase 3: Value Chains", budget: "$10K - $100K", time: "~15 min", actions: [
         "Buy Frame Maker ($10K) - 1.25x",
@@ -107,9 +92,9 @@ class FactoryOptimizer {
       ]},
       { phase: "Phase 6: Push to Prestige", budget: "$5M - $20M", time: "~30 min", actions: [
         "Maximize throughput with parallel lines + all 4 output belts",
-        "Use transmuter side path for 1.61x bonus on bars",
+        "Use transmuter side path for bonus on bars",
         "Place duplicators on best intermediates per chain",
-        "Electronic Tuner on circuits before Tablet (+$150 effective)",
+        "Electronic Tuner on circuits before Tablet",
         "Focus on highest per-ore chains from optimizer",
         "Exa-Drill ($8M) for deep mining automation",
         "Reach $20M total earned to prestige!",

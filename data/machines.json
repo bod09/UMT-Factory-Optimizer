@@ -90,6 +90,7 @@
       "byproducts": [
         { "type": "stone", "chance": 1.0, "desc": "Stone (1 per 2 ores). Must be removed or smelter stops." }
       ],
+      "byproductRatio": 0.5,
       "effect": "multiply",
       "value": 1.20,
       "size": "1x3",
@@ -106,6 +107,7 @@
       "byproducts": [
         { "type": "stone", "chance": 1.0, "desc": "Stone (1 per ore, more than smelter)" }
       ],
+      "byproductRatio": 1.0,
       "effect": "multiply",
       "value": 0.90,
       "size": "2x3",

@@ -86,8 +86,12 @@ document.addEventListener("DOMContentLoaded", () => {
   initPrestigeCosts();
   initBuilder();
 
-  // Run initial optimization (no scroll on page load)
-  runOptimizer(false);
+  // Load machine registry from machines.json, then run optimizer
+  loadMachineRegistry().then(() => {
+    runOptimizer(false);
+  }).catch(() => {
+    runOptimizer(false); // fallback
+  });
 });
 
 function initTabs() {
