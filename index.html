@@ -42,8 +42,14 @@
             <span class="hint"><span id="medal-count">0</span> Medals available</span>
           </div>
           <div class="config-group">
-            <label for="ore-select">Primary Ore</label>
-            <select id="ore-select"></select>
+            <label for="depth-min">Mining Depth (min)</label>
+            <input type="number" id="depth-min" value="550" min="0" max="3000" step="50">
+            <span class="hint" id="depth-min-layer">Bedrock</span>
+          </div>
+          <div class="config-group">
+            <label for="depth-max">Mining Depth (max)</label>
+            <input type="number" id="depth-max" value="1200" min="0" max="3000" step="50">
+            <span class="hint" id="depth-max-layer">Tectonic Zone</span>
           </div>
           <div class="config-group">
             <label for="throughput">Throughput (items/min)</label>
@@ -62,8 +68,10 @@
       </div>
 
       <div id="optimizer-results" class="results-panel hidden">
+        <div id="depth-ore-summary" class="depth-summary"></div>
+
         <h2>Optimal Processing Chains</h2>
-        <p class="results-subtitle">Ranked by value per ore (highest efficiency first)</p>
+        <p class="results-subtitle">Weighted average across all ores at your mining depth, ranked by efficiency</p>
         <div id="chain-results"></div>
 
         <div class="income-summary" id="income-summary">

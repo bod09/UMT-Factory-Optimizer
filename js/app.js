@@ -9,13 +9,15 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // Tab navigation
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
-  initOreSelect();
   initDatabase();
   initPrestigeUpgrades();
   initSpeedrun();
   initProgression();
   initPrestigeCosts();
   attachEvents();
+
+  // Update layer labels on load
+  updateDepthLabels();
 
   // Run initial optimization
   runOptimizer();
@@ -42,16 +44,11 @@ function initTabs() {
   });
 }
 
-function initOreSelect() {
-  const select = $("#ore-select");
-  ORES.forEach(ore => {
-    const opt = document.createElement("option");
-    opt.value = ore.name;
-    opt.textContent = `${ore.name} ($${ore.value})`;
-    select.appendChild(opt);
-  });
-  // Default to Gold as a good mid-game ore
-  select.value = "Gold";
+function updateDepthLabels() {
+  const minDepth = parseInt($("#depth-min").value) || 0;
+  const maxDepth = parseInt($("#depth-max").value) || 0;
+  $("#depth-min-layer").textContent = getLayerName(minDepth);
+  $("#depth-max-layer").textContent = getLayerName(maxDepth);
 }
 
 function attachEvents() {
@@ -64,6 +61,8 @@ function attachEvents() {
     $("#medal-count").textContent = level;
     updatePrestigeCheckboxes(level);
   });
+  $("#depth-min").addEventListener("input", updateDepthLabels);
+  $("#depth-max").addEventListener("input", updateDepthLabels);
 
   // Machine filter
   $$(".filter-btn").forEach(btn => {
@@ -99,23 +98,108 @@ function initPrestigeUpgrades() {
 function runOptimizer() {
   const budget = parseInt($("#budget").value) || 0;
   const prestigeLevel = parseInt($("#prestige-level").value) || 0;
-  const oreName = $("#ore-select").value;
+  const minDepth = parseInt($("#depth-min").value) || 0;
+  let maxDepth = parseInt($("#depth-max").value) || 0;
   const throughput = parseInt($("#throughput").value) || 10;
   const hasDoubleSeller = $("#double-seller").checked;
 
-  const ore = ORES.find(o => o.name === oreName);
-  if (!ore) return;
+  // Clamp max >= min
+  if (maxDepth < minDepth) {
+    maxDepth = minDepth;
+    $("#depth-max").value = maxDepth;
+    updateDepthLabels();
+  }
 
   optimizer.configure({ prestigeLevel, budget, hasDoubleSeller });
 
-  const results = optimizer.getBestChain(ore, budget);
-  renderChainResults(results, ore);
-  renderIncomeEstimate(results, throughput);
+  // Get all ores and gems at this depth
+  const oresAtDepth = getOresAtDepth(minDepth, maxDepth);
+  const gemsAtDepth = getGemsAtDepth(minDepth, maxDepth);
+
+  // Render depth summary
+  renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth);
+
+  if (oresAtDepth.length === 0) {
+    $("#chain-results").innerHTML = '<div class="chain-card">No ores found at this depth range.</div>';
+    $("#income-grid").innerHTML = "";
+    $("#optimizer-results").classList.remove("hidden");
+    return;
+  }
+
+  // Calculate weighted average across all ores at depth
+  // Each chain gets an average value based on all ores that appear
+  const chainMap = new Map();
+
+  for (const ore of oresAtDepth) {
+    const results = optimizer.getBestChain(ore, budget);
+    for (const result of results) {
+      if (!chainMap.has(result.chain)) {
+        chainMap.set(result.chain, {
+          chain: result.chain,
+          cost: result.cost,
+          medals: result.medals || 0,
+          oresNeeded: result.oresNeeded,
+          oreBreakdown: [],
+          totalValue: 0,
+          totalPerOre: 0,
+        });
+      }
+      const entry = chainMap.get(result.chain);
+      entry.oreBreakdown.push({ ore: ore.name, value: result.value, perOre: result.perOre, baseValue: ore.value });
+      entry.totalValue += result.value;
+      entry.totalPerOre += result.perOre;
+    }
+  }
+
+  // Calculate averages and sort
+  const aggregated = [...chainMap.values()].map(entry => ({
+    ...entry,
+    avgValue: entry.totalValue / entry.oreBreakdown.length,
+    avgPerOre: entry.totalPerOre / entry.oreBreakdown.length,
+    minValue: Math.min(...entry.oreBreakdown.map(o => o.perOre)),
+    maxValue: Math.max(...entry.oreBreakdown.map(o => o.perOre)),
+  }));
+
+  aggregated.sort((a, b) => b.avgPerOre - a.avgPerOre);
+
+  renderChainResults(aggregated, oresAtDepth);
+  renderIncomeEstimate(aggregated, throughput, oresAtDepth.length);
 
   $("#optimizer-results").classList.remove("hidden");
 }
 
-function renderChainResults(results, ore) {
+function renderDepthSummary(minDepth, maxDepth, ores, gems) {
+  const container = $("#depth-ore-summary");
+
+  const requiredPick = getRequiredPickaxe(maxDepth);
+
+  container.innerHTML = `
+    <div class="depth-summary-content">
+      <div class="depth-info">
+        <h3>Mining ${minDepth}m - ${maxDepth}m</h3>
+        <span class="depth-layers">${getLayerName(minDepth)}${getLayerName(minDepth) !== getLayerName(maxDepth) ? " to " + getLayerName(maxDepth) : ""}</span>
+        <span class="depth-pickaxe">Requires: ${requiredPick.name} (${requiredPick.hardness} hardness)</span>
+      </div>
+      <div class="depth-resources">
+        <div class="depth-ores">
+          <span class="depth-label">Ores (${ores.length})</span>
+          <div class="depth-tags">
+            ${ores.map(o => `<span class="ore-tag" title="$${o.value}">${o.name} <em>$${o.value.toLocaleString()}</em></span>`).join("")}
+          </div>
+        </div>
+        ${gems.length > 0 ? `
+        <div class="depth-gems">
+          <span class="depth-label">Gems (${gems.length})</span>
+          <div class="depth-tags">
+            ${gems.map(g => `<span class="gem-tag" title="$${g.value}">${g.name} <em>$${g.value.toLocaleString()}</em></span>`).join("")}
+          </div>
+        </div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderChainResults(results, oresAtDepth) {
   const container = $("#chain-results");
   container.innerHTML = "";
 
@@ -123,40 +207,47 @@ function renderChainResults(results, ore) {
     const card = document.createElement("div");
     card.className = `chain-card${idx === 0 ? " best" : ""}`;
 
-    const multiplier = (result.value / ore.value).toFixed(2);
+    // Show per-ore breakdown
+    const breakdownHtml = result.oreBreakdown
+      .sort((a, b) => b.perOre - a.perOre)
+      .map(ob => `<span class="ore-breakdown-item"><strong>${ob.ore}</strong> ${formatMoney(ob.perOre)}</span>`)
+      .join("");
 
     card.innerHTML = `
       <div class="chain-header">
         <span class="chain-name">${result.chain}</span>
-        <span class="chain-value">${formatMoney(result.value)}</span>
+        <span class="chain-value">${formatMoney(result.avgPerOre)} <small>avg/ore</small></span>
       </div>
       <div class="chain-details">
-        <div class="chain-detail">Value/Ore: <strong>${formatMoney(result.perOre)}</strong></div>
-        <div class="chain-detail">Multiplier: <span class="chain-multiplier">${multiplier}x</span></div>
+        <div class="chain-detail">Range: <strong>${formatMoney(result.minValue)} - ${formatMoney(result.maxValue)}</strong></div>
         <div class="chain-detail">Setup Cost: <strong>${formatMoney(result.cost)}</strong></div>
-        <div class="chain-detail">Ores Needed: <strong>${result.oresNeeded}</strong></div>
+        <div class="chain-detail">Ores/Product: <strong>${result.oresNeeded}</strong></div>
         ${result.medals ? `<div class="chain-detail">Medals: <strong class="medal-cell">${result.medals}</strong></div>` : ""}
       </div>
+      <div class="ore-breakdown">${breakdownHtml}</div>
     `;
     container.appendChild(card);
   });
 }
 
-function renderIncomeEstimate(results, throughput) {
+function renderIncomeEstimate(results, throughput, oreCount) {
   const grid = $("#income-grid");
   grid.innerHTML = "";
 
   if (results.length === 0) return;
 
   const best = results[0];
-  const perMin = best.perOre * throughput;
+  const perMin = best.avgPerOre * throughput;
   const perHour = perMin * 60;
 
+  const prestigeLevel = parseInt($("#prestige-level").value) || 0;
+  const nextPrestigeCost = getPrestigeCost(prestigeLevel + 1);
+
   const cards = [
-    { label: "Per Item", value: formatMoney(best.perOre), note: best.chain },
+    { label: "Avg Per Ore", value: formatMoney(best.avgPerOre), note: `${best.chain}` },
     { label: "Per Minute", value: formatMoney(perMin), note: `${throughput} items/min` },
-    { label: "Per Hour", value: formatMoney(perHour), note: "Sustained" },
-    { label: "Time to $20M", value: perHour > 0 ? `${(20000000 / perHour * 60).toFixed(0)} min` : "N/A", note: "First prestige" },
+    { label: "Per Hour", value: formatMoney(perHour), note: `${oreCount} ore types in range` },
+    { label: `Time to ${formatMoney(nextPrestigeCost)}`, value: perHour > 0 ? formatTime(nextPrestigeCost / perHour * 60) : "N/A", note: `Prestige ${prestigeLevel + 1}` },
   ];
 
   cards.forEach(c => {
@@ -169,6 +260,12 @@ function renderIncomeEstimate(results, throughput) {
     `;
     grid.appendChild(div);
   });
+}
+
+function formatTime(minutes) {
+  if (minutes < 60) return `${minutes.toFixed(0)} min`;
+  if (minutes < 1440) return `${(minutes / 60).toFixed(1)} hrs`;
+  return `${(minutes / 1440).toFixed(1)} days`;
 }
 
 // Database rendering

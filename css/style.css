@@ -421,6 +421,120 @@ main {
   font-size: 0.9rem;
 }
 
+/* Depth Summary */
+.depth-summary {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.depth-summary-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.depth-info {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.depth-info h3 {
+  font-size: 1.1rem;
+  color: var(--accent);
+  margin: 0;
+}
+
+.depth-layers {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.depth-pickaxe {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.depth-resources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.depth-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.depth-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.ore-tag, .gem-tag {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ore-tag em, .gem-tag em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--success);
+}
+
+.gem-tag { border-color: #ec489930; }
+.gem-tag em { color: #f472b6; }
+
+/* Ore breakdown in chain cards */
+.ore-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.ore-breakdown-item {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+}
+
+.ore-breakdown-item strong {
+  color: var(--text-primary);
+  font-weight: 500;
+  margin-right: 0.25rem;
+}
+
+.chain-value small {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 0.25rem;
+}
+
 .phase-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

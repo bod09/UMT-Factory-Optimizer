@@ -2,27 +2,77 @@
 // Source: umt.miraheze.org (v0.5.4)
 
 const ORES = [
-  { name: "Tin", value: 10, depth: "0-149m", hardness: 6 },
-  { name: "Iron", value: 20, depth: "0-149m", hardness: 6 },
-  { name: "Lead", value: 30, depth: "0-350m", hardness: 7 },
-  { name: "Cobalt", value: 50, depth: "65-549m", hardness: 12 },
-  { name: "Aluminium", value: 65, depth: "150-849m", hardness: 18 },
-  { name: "Silver", value: 150, depth: "150-849m", hardness: 18 },
-  { name: "Uranium", value: 180, depth: "400-849m", hardness: 18 },
-  { name: "Vanadium", value: 240, depth: "400-1000m", hardness: 22 },
-  { name: "Tungsten", value: 300, depth: "850-1599m", hardness: 45 },
-  { name: "Gold", value: 350, depth: "550-1199m", hardness: 22 },
-  { name: "Titanium", value: 400, depth: "550-1599m", hardness: 24 },
-  { name: "Molybdenum", value: 600, depth: "1000-1599m", hardness: 75 },
-  { name: "Plutonium", value: 1000, depth: "1000-1599m", hardness: 99 },
-  { name: "Palladium", value: 1200, depth: "1200-1800m", hardness: 120 },
-  { name: "Mithril", value: 2000, depth: "1800-2800m", hardness: 200 },
-  { name: "Thorium", value: 3200, depth: "2100-2800m", hardness: 270 },
-  { name: "Iridium", value: 3700, depth: "1800-2800m", hardness: 180 },
-  { name: "Adamantium", value: 4500, depth: "2300-2800m", hardness: 300 },
-  { name: "Rhodium", value: 15000, depth: "2300-2800m", hardness: 300 },
-  { name: "Unobtainium", value: 30000, depth: "2500-2800m", hardness: 340 },
+  { name: "Tin", value: 10, depth: "0-149m", depthMin: 0, depthMax: 149, hardness: 6 },
+  { name: "Iron", value: 20, depth: "0-149m", depthMin: 0, depthMax: 149, hardness: 6 },
+  { name: "Lead", value: 30, depth: "0-350m", depthMin: 0, depthMax: 350, hardness: 7 },
+  { name: "Cobalt", value: 50, depth: "65-549m", depthMin: 65, depthMax: 549, hardness: 12 },
+  { name: "Aluminium", value: 65, depth: "150-849m", depthMin: 150, depthMax: 849, hardness: 18 },
+  { name: "Silver", value: 150, depth: "150-849m", depthMin: 150, depthMax: 849, hardness: 18 },
+  { name: "Uranium", value: 180, depth: "400-849m", depthMin: 400, depthMax: 849, hardness: 18 },
+  { name: "Vanadium", value: 240, depth: "400-1000m", depthMin: 400, depthMax: 1000, hardness: 22 },
+  { name: "Tungsten", value: 300, depth: "850-1599m", depthMin: 850, depthMax: 1599, hardness: 45 },
+  { name: "Gold", value: 350, depth: "550-1199m", depthMin: 550, depthMax: 1199, hardness: 22 },
+  { name: "Titanium", value: 400, depth: "550-1599m", depthMin: 550, depthMax: 1599, hardness: 24 },
+  { name: "Molybdenum", value: 600, depth: "1000-1599m", depthMin: 1000, depthMax: 1599, hardness: 75 },
+  { name: "Plutonium", value: 1000, depth: "1000-1599m", depthMin: 1000, depthMax: 1599, hardness: 99 },
+  { name: "Palladium", value: 1200, depth: "1200-1800m", depthMin: 1200, depthMax: 1800, hardness: 120 },
+  { name: "Mithril", value: 2000, depth: "1800-2800m", depthMin: 1800, depthMax: 2800, hardness: 200 },
+  { name: "Thorium", value: 3200, depth: "2100-2800m", depthMin: 2100, depthMax: 2800, hardness: 270 },
+  { name: "Iridium", value: 3700, depth: "1800-2800m", depthMin: 1800, depthMax: 2800, hardness: 180 },
+  { name: "Adamantium", value: 4500, depth: "2300-2800m", depthMin: 2300, depthMax: 2800, hardness: 300 },
+  { name: "Rhodium", value: 15000, depth: "2300-2800m", depthMin: 2300, depthMax: 2800, hardness: 300 },
+  { name: "Unobtainium", value: 30000, depth: "2500-2800m", depthMin: 2500, depthMax: 2800, hardness: 340 },
 ];
+
+const GEMS_WITH_DEPTH = [
+  { name: "Topaz", value: 75, depthMin: 0, depthMax: 549, hardness: 6, rarity: "Common" },
+  { name: "Emerald", value: 200, depthMin: 150, depthMax: 849, hardness: 14, rarity: "Uncommon" },
+  { name: "Sapphire", value: 250, depthMin: 150, depthMax: 849, hardness: 14, rarity: "Uncommon" },
+  { name: "Ruby", value: 300, depthMin: 150, depthMax: 849, hardness: 18, rarity: "Uncommon" },
+  { name: "Diamond", value: 1500, depthMin: 400, depthMax: 1800, hardness: 22, rarity: "Rare" },
+  { name: "Poudretteite", value: 1700, depthMin: 550, depthMax: 1199, hardness: 75, rarity: "Very Rare" },
+  { name: "Zultanite", value: 2300, depthMin: 1000, depthMax: 1599, hardness: 110, rarity: "Very Rare" },
+  { name: "Grandidierite", value: 4500, depthMin: 1400, depthMax: 2100, hardness: 120, rarity: "Very Rare" },
+  { name: "Musgravite", value: 5800, depthMin: 1900, depthMax: 2500, hardness: 150, rarity: "Extremely Rare" },
+  { name: "Painite", value: 12000, depthMin: 2100, depthMax: 2500, hardness: 200, rarity: "Extremely Rare" },
+];
+
+const MINE_LAYERS = [
+  { name: "Surface", depthMin: 0, depthMax: 64 },
+  { name: "The Mines", depthMin: 65, depthMax: 149 },
+  { name: "The Depths", depthMin: 150, depthMax: 549 },
+  { name: "Bedrock", depthMin: 550, depthMax: 849 },
+  { name: "The Primordial", depthMin: 850, depthMax: 1199 },
+  { name: "Tectonic Zone", depthMin: 1200, depthMax: 1599 },
+  { name: "The Mantle", depthMin: 1600, depthMax: 2199 },
+  { name: "The Underworld", depthMin: 2200, depthMax: 2800 },
+];
+
+// Get the layer name for a given depth
+function getLayerName(depth) {
+  const layer = MINE_LAYERS.find(l => depth >= l.depthMin && depth <= l.depthMax);
+  return layer ? layer.name : "Beyond";
+}
+
+// Get all ores available at a given depth range
+function getOresAtDepth(minDepth, maxDepth) {
+  return ORES.filter(ore => ore.depthMin <= maxDepth && ore.depthMax >= minDepth);
+}
+
+// Get all gems available at a given depth range
+function getGemsAtDepth(minDepth, maxDepth) {
+  return GEMS_WITH_DEPTH.filter(gem => gem.depthMin <= maxDepth && gem.depthMax >= minDepth);
+}
+
+// Get required pickaxe hardness for a depth
+function getRequiredPickaxe(depth) {
+  const layer = MINE_LAYERS.find(l => depth >= l.depthMin && depth <= l.depthMax);
+  if (!layer) return PICKAXES[PICKAXES.length - 1];
+  // Match hardness to ores at that depth
+  const ores = getOresAtDepth(depth, depth);
+  const maxHardness = Math.max(...ores.map(o => o.hardness), 0);
+  return PICKAXES.find(p => p.hardness >= maxHardness) || PICKAXES[PICKAXES.length - 1];
+}
 
 const GEMS = [
   { name: "Topaz", value: 75, depth: "0-549m", hardness: 6, rarity: "Common" },
