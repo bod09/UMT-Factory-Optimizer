@@ -1,10 +1,10 @@
 // UMT Factory Optimizer - Core Logic
 // Key mechanics:
 // - Tag inheritance: crafted items inherit ALL tags from ingredients
-// - Tags (Cleaned, Polished, Tempered, Infused, QA Tested) prevent re-application
-// - Ore Upgrader: upgrades ore one tier before processing (max Mithril)
-// - Duplicator: duplicate raw ore → 2 copies at 50% value, both get full flat bonuses
-// - Nano Sifter: 16.6% chance ore from dust (stone byproduct bonus income)
+// - Duplicator: can go ANYWHERE in chain. Both copies at 50% value. Products can't be re-duplicated.
+// - Transmuters: bar↔gem conversion preserves value. Items already the target type pass through.
+//   Cross-chain: bar→gem→gem cutter(1.4x)→gem-to-bar = free 1.4x on any bar
+// - Passthrough: items that don't match a machine's input pass through without blocking
 
 class FactoryOptimizer {
   constructor() {
@@ -19,7 +19,6 @@ class FactoryOptimizer {
     this.prestigeItems = prestigeItems;
   }
 
-  // Get the effective ore value after Ore Upgrader (if owned)
   getEffectiveOreValue(ore) {
     if (this.prestigeItems.oreUpgrader) {
       const upgraded = getUpgradedOreValue(ore.name);
@@ -28,8 +27,15 @@ class FactoryOptimizer {
     return ore.value;
   }
 
-  // Helper: get fully pre-processed bar value from an ore value
-  // Clean (+$10) -> Polish (+$10) -> Infuse (1.25x if owned) -> Smelt (1.2x) -> Temper (2x)
+  // Transmuter cross-chain bonus: bar → gem → gem cutter (1.4x) → gem-to-bar
+  // Effectively multiplies bar value by 1.4x using the jewelcrafting chain
+  applyTransmuterBonus(barVal) {
+    if (!this.prestigeItems.transmuters) return barVal;
+    // Bar → bar-to-gem → gem cutter (1.4x) → gem-to-bar → back as bar
+    return barVal * 1.40;
+  }
+
+  // Full bar processing: Clean → Polish → Infuse → Smelt → Temper → Transmuter bonus
   getProcessedBarValue(oreValue) {
     let val = oreValue;
     val += 10; // ore cleaner
@@ -37,64 +43,39 @@ class FactoryOptimizer {
     if (this.prestigeItems.philosophersStone) val *= 1.25;
     val *= 1.20; // ore smelter
     val *= 2.00; // tempering forge
+    val = this.applyTransmuterBonus(val); // cross-chain if transmuters owned
     return val;
   }
 
-  // Helper: apply double seller
   applySeller(val) {
     return this.hasDoubleSeller ? val * 2 : val;
   }
 
-  // Nano Sifter bonus: stone byproduct from smelting produces extra ores
-  // Per ore smelted: ~0.5 stone produced -> crush to dust -> 16.6% chance of ore
-  // Expected bonus value per ore smelted = 0.5 * 0.166 * avgNanoSifterOreValue
   getNanoSifterBonusPerOre() {
     if (!this.prestigeItems.nanoSifter) return 0;
-    // Each smelted ore produces ~0.5 stone -> crush -> dust -> 16.6% chance
-    // The produced ore can itself be processed through the same chain
     const rawBonus = 0.5 * 0.166 * NANO_SIFTER_AVG_VALUE;
-    // Process the bonus ore through basic chain (clean+polish+smelt+temper)
     const processedBonus = this.getProcessedBarValue(rawBonus);
     return this.applySeller(processedBonus);
   }
 
-  // Duplicator: duplicate raw ore before processing
-  // 2 copies at 50% value each, but flat bonuses (+$10 clean, +$10 polish) apply to EACH
-  // This makes duplicating early profitable: flat bonuses are doubled in total
-  getDuplicatorMultiplier() {
-    if (!this.prestigeItems.duplicator) return 1;
-    // 2 copies at 50% value = items sold doubles, but base halved
-    // Net: total value = 2 * process(oreValue * 0.5)
-    // vs without: 1 * process(oreValue)
-    // Due to flat bonuses: 2*(V/2 + 10 + 10) = V + 40 vs V + 20
-    // So duplicator adds +20 flat effectively (extra $10+$10 from second copy)
-    return 2; // 2 items produced per ore mined
+  // Duplicator: finds optimal point and duplicates there
+  // Duplicate a value → 2 copies at 50% each
+  // Best used on the FINAL product (before selling) since it doubles item count
+  // But flat bonuses after duplication apply to each copy independently
+  applyDuplicator(finalVal) {
+    if (!this.prestigeItems.duplicator) return finalVal;
+    // Duplicate final product: 2 * (finalVal * 0.5) = finalVal (no gain on pure value)
+    // BUT: duplicating BEFORE flat bonuses like QA (+20%) applies QA to both copies
+    // Net: for late-chain duplicating, you get 2 items to sell from the same ores
+    // The real gain is throughput: 2 products from the same ore input
+    // For the optimizer (value per ore mined), we model it as:
+    // Duplicate the product → 2 items at 50% = same total, but it means
+    // you need half the ores for the same total output
+    return finalVal; // Same per-ore value (2 * 50% = 100%)
+    // The gain shows up in income estimates (double throughput)
   }
 
-  // Calculate single-ore chain value (for simple chains)
-  calculateOreValue(ore, steps) {
-    let value = ore.value;
-    const tags = new Set();
-
-    for (const stepId of steps) {
-      const machine = MACHINES[stepId];
-      if (!machine) continue;
-      if (machine.tag && tags.has(machine.tag)) continue;
-      if (machine.tag) tags.add(machine.tag);
-
-      switch (machine.effect) {
-        case "flat": value += machine.value; break;
-        case "percent": value *= (1 + machine.value); break;
-        case "multiply": value *= machine.value; break;
-        case "set": value = machine.value; break;
-      }
-    }
-
-    if (this.hasDoubleSeller) value *= 2;
-    return value;
-  }
-
-  // === MULTI-INPUT CHAIN CALCULATIONS ===
+  // === CHAIN CALCULATIONS ===
 
   calculateEngineChainValue(oreValue) {
     let barVal = this.getProcessedBarValue(oreValue);
@@ -173,27 +154,32 @@ class FactoryOptimizer {
     const oreValue = this.getEffectiveOreValue(ore);
     const wasUpgraded = oreValue !== ore.value;
     const upgradeLabel = wasUpgraded ? ` [Upgraded: $${oreValue}]` : "";
+    const hasDup = this.prestigeItems.duplicator;
 
-    // Helper to add nano sifter bonus to any chain that smelts
-    const addNanoBonus = (val, oresNeeded) => {
-      const bonus = this.getNanoSifterBonusPerOre() * oresNeeded;
-      return val + bonus;
-    };
+    const addNanoBonus = (val, oresNeeded) => val + this.getNanoSifterBonusPerOre() * oresNeeded;
 
-    // Helper to apply duplicator (doubles items from same ore count)
-    const applyDuplicator = (val, oreValue, oresNeeded) => {
-      if (!this.prestigeItems.duplicator) return { val, oresNeeded };
-      // Duplicate each ore: 2 copies at 50% value, each gets flat bonuses
-      // For simple chains: value = 2 * process(oreValue/2) vs 1 * process(oreValue)
-      // For multi-input: halve the ore value input, double the output
-      return { val, oresNeeded }; // Applied via separate chain variants below
+    // For duplicator: duplicating final product = 2 items from same ores
+    // Per-ore value stays same, but throughput doubles
+    // We show this as a separate "with Duplicator" variant with halved oresNeeded
+    const addDupVariant = (name, val, cost, oresNeeded) => {
+      if (hasDup && oresNeeded >= 2) {
+        // Duplicate inputs: effectively halves ores needed for same output
+        // Actually: duplicate the PRODUCT, get 2 at 50% = same value
+        // But from factory perspective: you produce 2x items per cycle
+        // Show as: same value, but note "2x throughput"
+        results.push({
+          chain: name + " + Dup" + upgradeLabel,
+          value: val, cost, perOre: val / oresNeeded, oresNeeded,
+          note: "Duplicator doubles output throughput"
+        });
+      }
     };
 
     // Direct sell
     let directVal = this.applySeller(oreValue);
     results.push({ chain: "Direct Sell" + upgradeLabel, value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
 
-    // Basic: clean + polish + smelt
+    // Simple chains
     if (budget >= 710) {
       let val = (oreValue + 10 + 10) * 1.20;
       val = this.applySeller(val);
@@ -201,87 +187,90 @@ class FactoryOptimizer {
       results.push({ chain: "Clean + Polish + Smelt" + upgradeLabel, value: val, cost: 710, perOre: val, oresNeeded: 1 });
     }
 
-    // With tempering
     if (budget >= 50710) {
       let val = (oreValue + 10 + 10) * 1.20 * 2.00;
+      if (this.prestigeItems.transmuters) val *= 1.40;
       val = this.applySeller(val);
       val = addNanoBonus(val, 1);
-      results.push({ chain: "Clean + Polish + Smelt + Temper" + upgradeLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
+      results.push({ chain: "Clean + Smelt + Temper" + (this.prestigeItems.transmuters ? " + Transmute" : "") + upgradeLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
     }
 
-    // With philosopher's stone
     if (budget >= 50710 && this.prestigeItems.philosophersStone) {
       let val = (oreValue + 10 + 10) * 1.25 * 1.20 * 2.00;
+      if (this.prestigeItems.transmuters) val *= 1.40;
       val = this.applySeller(val);
       val = addNanoBonus(val, 1);
-      results.push({ chain: "Infuse + Smelt + Temper" + upgradeLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
+      results.push({ chain: "Infuse + Smelt + Temper" + (this.prestigeItems.transmuters ? " + Transmute" : "") + upgradeLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
     }
 
-    // With QA
     if (budget >= 2050710) {
       let val = oreValue + 10 + 10;
       if (this.prestigeItems.philosophersStone) val *= 1.25;
-      val = val * 1.20 * 2.00 * 1.20;
+      val = val * 1.20 * 2.00;
+      if (this.prestigeItems.transmuters) val *= 1.40;
+      val *= 1.20; // QA
       val = this.applySeller(val);
       val = addNanoBonus(val, 1);
-      results.push({ chain: "Full Processing + QA" + upgradeLabel, value: val, cost: 2050710, perOre: val, oresNeeded: 1 });
+      results.push({ chain: "Full Processing + QA" + (this.prestigeItems.transmuters ? " + Transmute" : "") + upgradeLabel, value: val, cost: 2050710, perOre: val, oresNeeded: 1 });
     }
 
-    // Duplicator variants: duplicate ore first, then process both copies
-    // 2 copies at 50% value, each gets flat bonuses independently
-    if (this.prestigeItems.duplicator && budget >= 50710) {
+    // Duplicator on simple bar: duplicate the finished bar, sell both
+    if (hasDup && budget >= 50710) {
       let halfVal = oreValue * 0.50;
-      // Each copy: clean (+10) + polish (+10) + smelt (1.2x) + temper (2x)
-      let perCopy = halfVal + 10 + 10;
+      let perCopy = halfVal + 10 + 10; // flat bonuses on each copy
       if (this.prestigeItems.philosophersStone) perCopy *= 1.25;
       perCopy *= 1.20 * 2.00;
-      if (budget >= 2000000) perCopy *= 1.20; // QA each copy
-      let totalVal = perCopy * 2; // 2 copies from 1 ore
+      if (this.prestigeItems.transmuters) perCopy *= 1.40;
+      if (budget >= 2000000) perCopy *= 1.20;
+      let totalVal = perCopy * 2;
       totalVal = this.applySeller(totalVal);
-      totalVal = addNanoBonus(totalVal, 1); // still 1 ore's worth of stone
+      totalVal = addNanoBonus(totalVal, 1);
       results.push({
-        chain: "Duplicator + Process Both" + upgradeLabel, value: totalVal,
+        chain: "Duplicate Ore + Process Both" + upgradeLabel, value: totalVal,
         cost: 2050710, perOre: totalVal, oresNeeded: 1,
-        note: "Duplicate ore first, process both copies"
       });
     }
 
-    // Multi-input chains (use effective ore value)
+    // Multi-input chains
     if (budget >= 1200000) {
       const r = this.calculateEngineChainValue(oreValue);
       let val = addNanoBonus(r.value, r.oresNeeded);
       results.push({ chain: "Engine Factory" + upgradeLabel, value: val, cost: 1200000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
+      addDupVariant("Engine Factory", val, 1200000, r.oresNeeded);
     }
 
     if (budget >= 2600000) {
       const r = this.calculateTabletChainValue(oreValue);
       let val = addNanoBonus(r.value, r.oresNeeded);
       results.push({ chain: "Tablet Factory" + upgradeLabel, value: val, cost: 2600000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
+      addDupVariant("Tablet Factory", val, 2600000, r.oresNeeded);
     }
 
     if (budget >= 1200000) {
       const r = this.calculateSuperconductorValue(oreValue);
       let val = addNanoBonus(r.value, r.oresNeeded);
       results.push({ chain: "Superconductor" + upgradeLabel, value: val, cost: 1200000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
+      addDupVariant("Superconductor", val, 1200000, r.oresNeeded);
     }
 
     if (budget >= 5700000) {
       const r = this.calculatePowerCoreValue(oreValue);
       let val = addNanoBonus(r.value, r.oresNeeded);
       results.push({ chain: "Power Core" + upgradeLabel, value: val, cost: 5700000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
+      addDupVariant("Power Core", val, 5700000, r.oresNeeded);
     }
 
     if (budget >= 2600000) {
       const r = this.calculateExplosivesValue(oreValue);
       let val = addNanoBonus(r.value, r.oresNeeded);
       results.push({ chain: "Explosives" + upgradeLabel, value: val, cost: 2600000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
+      addDupVariant("Explosives", val, 2600000, r.oresNeeded);
     }
 
     results.sort((a, b) => b.perOre - a.perOre);
     return results;
   }
 
-  // Get recommended factory build
   getRecommendedBuild(budget, medals) {
     const stage = PROGRESSION_STAGES.find(s => s.budgetMax && budget <= s.budgetMax) || PROGRESSION_STAGES[PROGRESSION_STAGES.length - 1];
     const machineCosts = [];
@@ -318,7 +307,6 @@ class FactoryOptimizer {
       { phase: "Phase 3: Value Chain", budget: "$10K - $100K", time: "~15 min", actions: [
         "Buy Frame Maker ($10K) - Bar + Bolts = Frame (1.25x)",
         "Buy Circuit Maker ($20K) - Glass + Coil = Circuit (2x)",
-        "Buy Ring Maker ($15K) if mining gems",
         "Buy Platinum Pickaxe ($25K) - mine Gold/Titanium",
         "Buy Casing Machine ($50K) - Frame + Bolts + Plate = Casing (1.3x)",
         "Buy Tempering Forge ($50K) - 2x bar value (HUGE upgrade)",
@@ -328,7 +316,6 @@ class FactoryOptimizer {
         "Buy Alloy Furnace ($100K) - for Superconductor chain",
         "Buy Output Belt 2 ($100K) - double throughput",
         "Buy Titanium Pickaxe ($100K) - mine deep ores",
-        "Buy Magnetic Machine ($120K)",
         "Buy Super Crawler ($200K) - 180 capacity",
         "Buy Optics Machine ($300K) for laser chain",
         "Build ceramic casing: Dust -> Clay -> Ceramic ($150)",
@@ -347,6 +334,7 @@ class FactoryOptimizer {
         "Maximize factory throughput with parallel lines",
         "Use all 4 output belts",
         "Focus on highest-multiplier chains (Tablet 3x, Superconductor 3x)",
+        "Use Transmuters to cross-chain for extra 1.4x gem cutter bonus",
         "Diamond/Mithril Pickaxe for best ores",
         "Exa-Drill ($8M) for deep mining automation",
         "Reach $20M total earned to prestige!",
