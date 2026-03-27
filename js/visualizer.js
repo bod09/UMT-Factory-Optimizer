@@ -110,6 +110,7 @@ class GraphVisualizer {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
     g.setAttribute("class", "graph-node");
+    if (node.chainIdx !== undefined) g.dataset.chainIdx = node.chainIdx;
     g.style.cursor = "pointer";
 
     const color = CATEGORY_COLORS[node.category] || "#6b7280";
@@ -120,8 +121,8 @@ class GraphVisualizer {
     rect.setAttribute("height", this.nodeHeight);
     rect.setAttribute("rx", "6");
     rect.setAttribute("fill", "#222632");
-    rect.setAttribute("stroke", "#333848");
-    rect.setAttribute("stroke-width", "1");
+    rect.setAttribute("stroke", node.selected ? "#f59e0b" : "#333848");
+    rect.setAttribute("stroke-width", node.selected ? "2" : "1");
     g.appendChild(rect);
 
     // Color accent top bar

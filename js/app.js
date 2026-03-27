@@ -849,9 +849,9 @@ function renderProgression() {
 // === FACTORY BUILDER ===
 let builderChain = []; // array of machine IDs in order
 let builderFilter = "all";
+let builderSelectedNode = -1; // index of selected node in chain, -1 = none (show all machines)
 
 function initBuilder() {
-  const list = $("#builder-machine-list");
   const catContainer = $("#builder-categories");
   const searchInput = $("#builder-search");
   const oreSelect = $("#builder-ore-select");
@@ -863,7 +863,7 @@ function initBuilder() {
     opt.textContent = `${ore.name} ($${ore.value})`;
     oreSelect.appendChild(opt);
   });
-  oreSelect.value = "350"; // default Gold
+  oreSelect.value = "350";
   oreSelect.addEventListener("change", updateBuilderValue);
 
   // Category filter buttons
@@ -877,22 +877,32 @@ function initBuilder() {
       $$(".builder-cat-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       builderFilter = cat;
+      builderSelectedNode = -1;
       renderBuilderMachines();
     });
     catContainer.appendChild(btn);
   });
 
-  // Search
   searchInput.addEventListener("input", renderBuilderMachines);
 
   // Clear button
   $("#builder-clear").addEventListener("click", () => {
     builderChain = [];
-    renderBuilderChain();
+    builderSelectedNode = -1;
     updateBuilderValue();
   });
 
   renderBuilderMachines();
+}
+
+// Get the output type of a machine (or the chain up to that point)
+function getBuilderOutputType(chainIndex) {
+  let currentType = "ore";
+  for (let i = 0; i <= chainIndex && i < builderChain.length; i++) {
+    const m = MACHINES[builderChain[i]];
+    if (m && m.outputType && m.outputType !== "same") currentType = m.outputType;
+  }
+  return currentType;
 }
 
 function renderBuilderMachines() {
@@ -900,9 +910,35 @@ function renderBuilderMachines() {
   const search = ($("#builder-search")?.value || "").toLowerCase();
   list.innerHTML = "";
 
+  // Determine filter type based on selected node or last in chain
+  let filterType = null;
+  if (builderSelectedNode >= 0) {
+    filterType = getBuilderOutputType(builderSelectedNode);
+  } else if (builderChain.length > 0) {
+    filterType = getBuilderOutputType(builderChain.length - 1);
+  }
+
+  // Show filter indicator if filtering
+  if (filterType) {
+    const hint = document.createElement("div");
+    hint.style.cssText = "padding:0.4rem;font-size:0.7rem;color:var(--accent);text-align:center;cursor:pointer;border-bottom:1px solid var(--border);margin-bottom:0.3rem";
+    hint.innerHTML = `Showing: accepts <strong>${ITEM_TYPES[filterType] || filterType}</strong> <span style="color:var(--text-muted)">(click to show all)</span>`;
+    hint.addEventListener("click", () => { builderSelectedNode = -2; renderBuilderMachines(); }); // -2 = force show all
+    list.appendChild(hint);
+  }
+
   Object.entries(MACHINES).forEach(([id, m]) => {
     if (builderFilter !== "all" && m.category !== builderFilter) return;
     if (search && !m.name.toLowerCase().includes(search)) return;
+
+    // Filter by compatibility when a node is selected (not when -2 = show all)
+    if (filterType && builderSelectedNode !== -2 && m.inputTypes) {
+      const accepts = m.inputTypes.some(t => {
+        if (t === "any") return true;
+        return t.split("|").some(sub => sub === filterType);
+      });
+      if (!accepts) return;
+    }
 
     const item = document.createElement("div");
     item.className = "builder-machine-item";
@@ -929,59 +965,17 @@ function renderBuilderMachines() {
     `;
 
     item.addEventListener("click", () => {
-      builderChain.push(id);
+      if (builderSelectedNode >= 0) {
+        builderChain.splice(builderSelectedNode + 1, 0, id);
+        builderSelectedNode++;
+      } else {
+        builderChain.push(id);
+      }
       updateBuilderValue();
+      renderBuilderMachines(); // refresh filter for new last node
     });
 
     list.appendChild(item);
-  });
-}
-
-function renderBuilderChain() {
-  const container = $("#builder-chain");
-  // Keep the start node, remove everything else
-  const startNode = container.querySelector(".builder-start-node");
-  container.innerHTML = "";
-  container.appendChild(startNode);
-
-  const oreVal = parseInt($("#builder-ore-select").value) || 350;
-  let currentVal = oreVal;
-  let currentType = "ore";
-
-  builderChain.forEach((machineId, idx) => {
-    const m = MACHINES[machineId];
-    if (!m) return;
-
-    // Calculate value effect
-    switch (m.effect) {
-      case "flat": currentVal += m.value; break;
-      case "percent": currentVal *= (1 + m.value); break;
-      case "multiply": currentVal *= m.value; break;
-      case "combine": currentVal *= m.value; break; // simplified - combines assume same value inputs
-      case "set": currentVal = m.value; break;
-    }
-
-    if (m.outputType && m.outputType !== "same") currentType = m.outputType;
-    const typeLabel = ITEM_TYPES[currentType] || currentType;
-    const color = CATEGORY_COLORS[m.category] || "#6b7280";
-
-    const node = document.createElement("div");
-    node.className = "builder-node";
-    node.style.borderLeftColor = color;
-    node.style.background = color + "15";
-    node.innerHTML = `
-      <span class="bn-name">${m.name}</span>
-      <span class="bn-val">${formatMoney(currentVal)}</span>
-      <span class="bn-type">${typeLabel}</span>
-    `;
-
-    // Click to remove
-    node.addEventListener("click", () => {
-      builderChain.splice(idx, 1);
-      updateBuilderValue();
-    });
-
-    container.appendChild(node);
   });
 }
 
@@ -1023,9 +1017,51 @@ function updateBuilderValue() {
     canvas.querySelector(".builder-empty-hint")?.remove();
     const graph = buildBuilderGraph(oreVal);
     graphVisualizer.render(graph, canvas);
+
+    // Add click handlers to graph nodes for select/remove/reorder
+    const svgNodes = canvas.querySelectorAll(".graph-node");
+    svgNodes.forEach(nodeEl => {
+      const nodeIdx = parseInt(nodeEl.dataset?.chainIdx);
+      if (isNaN(nodeIdx) || nodeIdx < 0) return;
+
+      nodeEl.style.cursor = "pointer";
+      nodeEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (e.shiftKey) {
+          // Shift+click = remove
+          builderChain.splice(nodeIdx, 1);
+          if (builderSelectedNode >= builderChain.length) builderSelectedNode = -1;
+          updateBuilderValue();
+          renderBuilderMachines();
+        } else if (e.ctrlKey || e.metaKey) {
+          // Ctrl+click = move left
+          if (nodeIdx > 0) {
+            [builderChain[nodeIdx], builderChain[nodeIdx - 1]] = [builderChain[nodeIdx - 1], builderChain[nodeIdx]];
+            builderSelectedNode = nodeIdx - 1;
+            updateBuilderValue();
+            renderBuilderMachines();
+          }
+        } else {
+          // Click = select (filters sidebar)
+          builderSelectedNode = (builderSelectedNode === nodeIdx) ? -1 : nodeIdx;
+          renderBuilderMachines();
+          // Highlight selected node
+          svgNodes.forEach(n => {
+            const rect = n.querySelector("rect");
+            if (rect) rect.setAttribute("stroke", "#333848");
+          });
+          if (builderSelectedNode === nodeIdx) {
+            const rect = nodeEl.querySelector("rect");
+            if (rect) { rect.setAttribute("stroke", "#f59e0b"); rect.setAttribute("stroke-width", "2"); }
+          }
+        }
+      });
+    });
   } else {
     canvas.innerHTML = '<div class="builder-empty-hint">Click machines from the sidebar to build your factory chain</div>';
   }
+
+  renderBuilderMachines();
 }
 
 function buildBuilderGraph(oreVal) {
@@ -1052,7 +1088,8 @@ function buildBuilderGraph(oreVal) {
     }
 
     const outType = (m.outputType && m.outputType !== "same") ? m.outputType : currentType;
-    const node = { id: id++, name: m.name, type: outType, value: val, category: m.category, layer: idx + 1 };
+    const isSelected = (builderSelectedNode === idx);
+    const node = { id: id++, name: m.name, type: outType, value: val, category: m.category, layer: idx + 1, chainIdx: idx, selected: isSelected };
     nodes.push(node);
     edges.push({ from: prevNode.id, to: node.id, itemType: currentType });
 
