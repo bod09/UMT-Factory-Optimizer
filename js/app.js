@@ -393,10 +393,12 @@ function getChainBreakdown(chainName, ore) {
     v *= 1.20; s.push(stepMult("Ore Smelter", "x1.2 → Bar + Stone", v));
     v *= 2.00; s.push(stepMult("Tempering Forge", "x2.0", v));
     if (p.transmuters) {
-      s.push(stepLoop("Bar-to-Gem Transmuter", "→ Gem", v));
-      v *= 1.40; s.push(stepLoop("Gem Cutter", "x1.4 → Cut Gem", v));
-      v *= 1.15; s.push(stepLoop("Prismatic Crucible (pair 2)", "x1.15", v));
-      s.push(stepLoop("Gem-to-Bar Transmuter", "↑ back to Bar", v));
+      let loopSteps = "";
+      loopSteps += stepLoop("Bar → Gem Transmuter", "→ Gem", v);
+      v *= 1.40; loopSteps += stepLoop("Gem Cutter", "x1.4", v);
+      v *= 1.15; loopSteps += stepLoop("Prismatic Crucible", "x1.15 (pair 2)", v);
+      loopSteps += stepLoop("Gem → Bar Transmuter", "→ back to Bar", v);
+      s.push(loopGroup(loopSteps));
     }
     return { s, v };
   }
@@ -419,10 +421,12 @@ function getChainBreakdown(chainName, ore) {
       pc *= 1.20; s.push(stepMult("Each → Ore Smelter", "x1.2 → Bar", pc));
       pc *= 2.00; s.push(stepMult("Each → Tempering Forge", "x2.0", pc));
       if (p.transmuters) {
-        s.push(stepLoop("Each → Bar→Gem Transmuter", "→ Gem", pc));
-        pc *= 1.40; s.push(stepLoop("Each → Gem Cutter", "x1.4", pc));
-        pc *= 1.15; s.push(stepLoop("Each → Prismatic Crucible", "x1.15", pc));
-        s.push(stepLoop("Each → Gem→Bar Transmuter", "↑ back to Bar", pc));
+        let lp = "";
+        lp += stepLoop("Each → Bar→Gem", "→ Gem", pc);
+        pc *= 1.40; lp += stepLoop("Each → Gem Cutter", "x1.4", pc);
+        pc *= 1.15; lp += stepLoop("Each → Prismatic", "x1.15", pc);
+        lp += stepLoop("Each → Gem→Bar", "→ back to Bar", pc);
+        s.push(loopGroup(lp));
       }
       if (hasQA) { pc *= 1.20; s.push(stepMult("Each → Quality Assurance", "x1.2", pc)); }
       let total = pc * 2;
@@ -517,13 +521,11 @@ function getChainBreakdown(chainName, ore) {
   return s.join("");
 }
 
-// Flow diagram helpers
+// Flow diagram helpers - no arrows for normal flow, just colored left borders
 function step(name, effect, value, type = "") {
   const valStr = value === "" ? "" : (typeof value === "number" ? formatMoney(value) : value);
-  if (name.startsWith("===")) return `<div class="flow-section">${name.replace(/=/g, "")}</div>`;
-  const arrow = type === "loop" ? "&#8593;" : "&#8595;";
-  const arrowClass = type === "loop" ? "up" : "";
-  return `<div class="flow-step s-${type}"><span class="flow-arrow ${arrowClass}">${arrow}</span><span class="flow-machine">${name}</span><span class="flow-effect">${effect}</span><span class="flow-value">${valStr}</span></div>`;
+  if (type === "section") return `<div class="flow-section">${name}</div>`;
+  return `<div class="flow-step s-${type}"><span class="flow-machine">${name}</span><span class="flow-effect">${effect}</span><span class="flow-value">${valStr}</span></div>`;
 }
 
 function stepFlat(name, effect, val) { return step(name, effect, val, "flat"); }
@@ -533,6 +535,11 @@ function stepCombine(name, effect, val) { return step(name, effect, val, "combin
 function stepDup(name, effect, val) { return step(name, effect, val, "dup"); }
 function stepSell(name, effect, val) { return step(name, effect, val, "sell"); }
 function stepPlain(name, effect, val) { return step(name, effect, val, ""); }
+
+// Wrap loop-back steps in a group with right-side arrow
+function loopGroup(steps) {
+  return `<div class="flow-loop-group">${steps}</div>`;
+}
 
 function renderIncomeEstimate(results, outputBelts, oreCount) {
   const grid = $("#income-grid");

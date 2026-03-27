@@ -602,7 +602,7 @@ main {
   margin-left: 0.25rem;
 }
 
-/* Chain breakdown - visual flow */
+/* Chain breakdown */
 .chain-breakdown-toggle {
   font-size: 0.75rem;
   color: var(--info);
@@ -619,129 +619,79 @@ main {
 .chain-breakdown {
   display: none;
   margin-top: 0.5rem;
-  padding: 0.75rem;
+  padding: 0.5rem 0.75rem;
   background: var(--bg-primary);
   border-radius: var(--radius);
-  font-size: 0.78rem;
   font-family: var(--font-mono);
+  font-size: 0.75rem;
 }
 
 .chain-breakdown.open { display: block; }
 
+/* Section header */
 .flow-section {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
   color: var(--text-muted);
-  padding: 0.5rem 0 0.2rem;
-  font-weight: 600;
+  padding: 0.6rem 0 0.15rem;
+  font-weight: 700;
+  font-family: var(--font-main);
 }
 
+/* Each step = a horizontal bar, flows top to bottom naturally */
 .flow-step {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.2rem 0;
-  padding-left: 1.2rem;
+  padding: 0.3rem 0.5rem;
+  margin: 1px 0;
+  border-radius: 3px;
   position: relative;
+  gap: 0.5rem;
 }
 
-/* Vertical connector line */
-.flow-step::before {
-  content: "";
-  position: absolute;
-  left: 0.45rem;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border);
-}
+.flow-machine { flex: 1; color: var(--text-primary); font-size: 0.75rem; }
+.flow-effect { color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; }
+.flow-value { color: var(--success); font-weight: 600; min-width: 55px; text-align: right; white-space: nowrap; }
 
-.flow-step:last-child::before { bottom: 50%; }
+/* Color-coded left border by type */
+.flow-step { border-left: 3px solid var(--border); }
+.flow-step.s-flat { border-left-color: var(--success); background: #22c55e08; }
+.flow-step.s-mult { border-left-color: var(--cyan); background: #06b6d408; }
+.flow-step.s-combine { border-left-color: var(--accent); background: #f59e0b08; }
+.flow-step.s-sell { border-left-color: var(--success); background: #22c55e10; }
+.flow-step.s-dup { border-left-color: #f472b6; background: #f472b610; }
+.flow-step.s-section { border-left: none; padding: 0; }
 
-/* Arrow dot on the line */
-.flow-step::after {
-  content: "";
-  position: absolute;
-  left: 0.25rem;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--border);
-}
-
-/* Color-coded step types */
-.flow-step.s-flat::after { background: var(--success); }
-.flow-step.s-mult::after { background: var(--cyan); }
-.flow-step.s-loop::after { background: var(--purple); }
-.flow-step.s-combine::after { background: var(--accent); }
-.flow-step.s-dup::after { background: #f472b6; }
-.flow-step.s-sell::after { background: var(--success); }
-.flow-step.s-section::before { display: none; }
-.flow-step.s-section::after { display: none; }
-
-.flow-arrow {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  flex-shrink: 0;
-  width: 1.2rem;
-  text-align: center;
-}
-
-.flow-arrow.up { color: var(--purple); }
-
-.flow-machine {
-  color: var(--text-primary);
-  flex: 1;
-  font-size: 0.75rem;
-}
-
-.flow-effect {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  white-space: nowrap;
-}
-
-.flow-value {
-  color: var(--success);
-  font-weight: 600;
-  font-size: 0.78rem;
-  white-space: nowrap;
-  min-width: 60px;
-  text-align: right;
+/* Loop-back: right-side arrow indicator */
+.flow-step.s-loop {
+  border-left-color: var(--purple);
+  border-right: 3px solid var(--purple);
+  background: #a855f710;
 }
 
 .flow-step.s-loop .flow-machine { color: var(--purple); }
+
+/* Loop-back group: connected right bracket */
+.flow-loop-group {
+  position: relative;
+  margin-right: 8px;
+}
+
+.flow-loop-group::after {
+  content: "↺";
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--purple);
+  font-size: 1rem;
+}
+
 .flow-step.s-dup .flow-machine { color: #f472b6; }
-.flow-step.s-combine .flow-machine { color: var(--accent); }
+.flow-step.s-combine .flow-machine { color: var(--accent); font-weight: 500; }
 .flow-step.s-mult .flow-effect { color: var(--cyan); }
 .flow-step.s-flat .flow-effect { color: var(--success); }
-
-/* Branch indicator */
-.flow-branch {
-  padding-left: 2.4rem;
-  position: relative;
-}
-
-.flow-branch::before {
-  content: "";
-  position: absolute;
-  left: 0.45rem;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border);
-}
-
-.flow-branch::after {
-  content: "";
-  position: absolute;
-  left: 0.45rem;
-  top: 50%;
-  width: 1rem;
-  height: 2px;
-  background: var(--border);
-}
 
 .phase-card {
   background: var(--bg-card);
