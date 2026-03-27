@@ -259,6 +259,8 @@ function runOptimizer(scrollToResults = false) {
           cost: result.cost,
           medals: result.medals || 0,
           oresNeeded: result.oresNeeded,
+          graph: result.graph || null,
+          usesDup: result.usesDup || false,
           oreBreakdown: [],
           totalValue: 0,
           totalPerOre: 0,
@@ -329,45 +331,64 @@ function renderChainResults(results, oresAtDepth) {
   const container = $("#chain-results");
   container.innerHTML = "";
 
-  // Get a representative ore for breakdown (highest value in range)
-  const repOre = oresAtDepth.reduce((best, o) => o.value > best.value ? o : best, oresAtDepth[0]);
-
   results.forEach((result, idx) => {
     const card = document.createElement("div");
     card.className = `chain-card${idx === 0 ? " best" : ""}`;
 
-    // Show per-ore breakdown
+    // Per-ore breakdown tags
     const oreBreakdownHtml = result.oreBreakdown
-      .sort((a, b) => b.perOre - a.perOre)
-      .map(ob => `<span class="ore-breakdown-item"><strong>${ob.ore}</strong> ${formatMoney(ob.perOre)}</span>`)
-      .join("");
+      ? result.oreBreakdown
+          .sort((a, b) => b.perOre - a.perOre)
+          .map(ob => `<span class="ore-breakdown-item"><strong>${ob.ore}</strong> ${formatMoney(ob.perOre)}</span>`)
+          .join("")
+      : "";
 
-    // Generate machine chain breakdown for the representative ore
-    const chainBreakdown = getChainBreakdown(result.chain, repOre);
-    const breakdownId = `breakdown-${idx}`;
+    const graphId = `graph-${idx}`;
 
     card.innerHTML = `
       <div class="chain-header">
         <span class="chain-name">${result.chain}</span>
-        <span class="chain-value">${formatMoney(result.avgPerOre)} <small>avg/ore</small></span>
+        <span class="chain-value">${formatMoney(result.avgPerOre || result.perOre)} <small>avg/ore</small></span>
       </div>
       <div class="chain-details">
-        <div class="chain-detail">Range: <strong>${formatMoney(result.minValue)} - ${formatMoney(result.maxValue)}</strong></div>
+        <div class="chain-detail">Range: <strong>${result.minValue ? formatMoney(result.minValue) + " - " + formatMoney(result.maxValue) : formatMoney(result.perOre)}</strong></div>
         <div class="chain-detail">Setup Cost: <strong>${formatMoney(result.cost)}</strong></div>
         <div class="chain-detail">Ores/Product: <strong>${result.oresNeeded}</strong></div>
-        ${result.medals ? `<div class="chain-detail">Medals: <strong class="medal-cell">${result.medals}</strong></div>` : ""}
+        ${result.usesDup ? '<div class="chain-detail" style="color:#f472b6">Duplicator active</div>' : ""}
       </div>
-      ${chainBreakdown ? `
-        <button class="chain-breakdown-toggle" onclick="document.getElementById('${breakdownId}').classList.toggle('open')">Show breakdown (${repOre.name} $${repOre.value})</button>
-        <div class="chain-breakdown" id="${breakdownId}">${flowLegend()}${chainBreakdown}</div>
+      ${result.graph ? `
+        <button class="chain-breakdown-toggle" onclick="toggleGraph('${graphId}', this)">View Graph</button>
+        <div class="graph-container hidden" id="${graphId}"></div>
       ` : ""}
-      <div class="ore-breakdown">${oreBreakdownHtml}</div>
+      ${oreBreakdownHtml ? `<div class="ore-breakdown">${oreBreakdownHtml}</div>` : ""}
     `;
     container.appendChild(card);
+
+    // Lazy render graph on first open
+    if (result.graph) {
+      card.querySelector(".chain-breakdown-toggle").addEventListener("click", function handler() {
+        const graphEl = document.getElementById(graphId);
+        if (graphEl && !graphEl.dataset.rendered) {
+          graphVisualizer.render(result.graph, graphEl);
+          graphEl.dataset.rendered = "true";
+        }
+      }, { once: true });
+    }
   });
 }
 
-function getChainBreakdown(chainName, ore) {
+function toggleGraph(graphId, btn) {
+  const el = document.getElementById(graphId);
+  if (el) {
+    el.classList.toggle("hidden");
+    btn.textContent = el.classList.contains("hidden") ? "View Graph" : "Hide Graph";
+  }
+}
+
+// Old text-based breakdowns removed - replaced by SVG graph visualizer
+// See js/visualizer.js and js/graph.js
+
+function _unused_getChainBreakdown(chainName, ore) {
   const p = optimizer.prestigeItems;
   const hasDS = optimizer.hasDoubleSeller;
   const hasQA = optimizer.budget >= 2000000;

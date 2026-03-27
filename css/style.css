@@ -602,7 +602,32 @@ main {
   margin-left: 0.25rem;
 }
 
-/* Chain breakdown */
+/* Graph visualization */
+.graph-container {
+  margin-top: 0.5rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 200px;
+}
+
+.graph-wrapper {
+  width: 100%;
+  overflow: auto;
+  cursor: grab;
+}
+
+.chain-graph-svg {
+  display: block;
+  min-width: 100%;
+}
+
+.graph-node:hover rect:first-child {
+  filter: brightness(1.2);
+}
+
+/* Chain breakdown toggle (shared with graph) */
 .chain-breakdown-toggle {
   font-size: 0.75rem;
   color: var(--info);
