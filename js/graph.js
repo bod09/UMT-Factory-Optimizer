@@ -149,11 +149,12 @@ class PathFinder {
     // 2. Remaining stone → Crusher → Dust
     const dustAmount = stoneRemaining; // all remaining stone becomes dust
 
-    // 3. Nano Sifter: 16.6% of dust becomes ore (if owned)
-    let dustRemaining = dustAmount;
+    // 3. Nano Sifter: ALL dust passes through. 16.6% BONUS ore produced.
+    // Dust is NOT consumed - it continues out tagged "sifted" (can't sift again).
+    // So dust still goes to Kiln/Clay/etc after sifting.
     if (this.prestigeItems.nanoSifter) {
       const siftChance = 0.166;
-      const oresProduced = dustAmount * siftChance;
+      const oresProduced = dustAmount * siftChance; // bonus ores
 
       // Calculate avg ore value after upgrading
       let avgOreVal = 0;
@@ -167,29 +168,24 @@ class PathFinder {
       }
       avgOreVal /= NANO_SIFTER_ORES.length;
 
-      // Process ore through full chain
+      // Process bonus ore through full chain (Ore Upgrader → Clean → ... → Sell)
       const processedVal = this.applySeller(this.processBar(avgOreVal));
-      // Recursive: each bonus ore also produces stone (geometric series)
-      const recursiveChance = stonePerSmelt * siftChance; // ~0.083
+      // Recursive: each bonus ore also produces stone → more sifting (geometric series)
+      const recursiveChance = stonePerSmelt * siftChance;
       const bonusOreValue = (oresProduced * processedVal) / (1 - recursiveChance);
       totalValue += bonusOreValue;
-
-      dustRemaining = dustAmount * (1 - siftChance); // dust continues
     } else if (this.budget >= 4000) {
-      // Regular Sifter: 10% chance, fewer ore types
+      // Regular Sifter: 10% chance bonus ore, dust also continues
       const siftChance = 0.10;
-      const avgSiftVal = (10 + 20 + 50 + 180 + 350) / 5; // Tin, Iron, Cobalt, Uranium, Gold
+      const avgSiftVal = (10 + 20 + 50 + 180 + 350) / 5;
       const processedVal = this.applySeller(this.processBar(avgSiftVal));
       totalValue += dustAmount * siftChance * processedVal;
-      dustRemaining = dustAmount * (1 - siftChance);
     }
 
-    // 4. Remaining dust → Kiln → Glass ($30) → sell or use in circuits
+    // 4. ALL dust → Kiln → Glass ($30). Dust is NOT consumed by sifter.
     if (this.budget >= 4750) {
       const glassVal = 30;
-      // Glass can go to Circuit Maker (2x with coil) or sell directly
-      // For simplicity, sell as glass
-      totalValue += this.applySeller(dustRemaining * glassVal);
+      totalValue += this.applySeller(dustAmount * glassVal);
     }
 
     return totalValue;
@@ -464,19 +460,35 @@ class PathFinder {
     const stoneNode = addNode("Stone (byproduct)", "stone", 0, "stonework", 5);
     addEdge(smeltNode, stoneNode, "stone", true);
 
-    if (this.prestigeItems.nanoSifter) {
+    if (this.prestigeItems.nanoSifter || this.budget >= 4000) {
       const crushNode = addNode("Crusher", "dust", 1, "stonework", 6);
       addEdge(stoneNode, crushNode, "stone", true);
-      const nanoNode = addNode("Nano Sifter (16.6%)", "ore", Math.round(this.nanoBonus()), "prestige", 7);
-      addEdge(crushNode, nanoNode, "dust", true);
-      // Route back: nano ore → Ore Upgrader (if owned) → Ore Cleaner → full chain
-      if (this.prestigeItems.oreUpgrader) {
-        // Find the upgrader node (layer 1)
-        const upgraderNode = nodes.find(n => n.name === "Ore Upgrader");
-        if (upgraderNode) addEdge(nanoNode, upgraderNode, "ore", true);
-        else addEdge(nanoNode, cleanNode, "ore", true);
+
+      if (this.prestigeItems.nanoSifter) {
+        const nanoNode = addNode("Nano Sifter (16.6% bonus ore)", "dust", 0, "prestige", 7);
+        addEdge(crushNode, nanoNode, "dust", true);
+        // Bonus ore output → loops back to Ore Upgrader or Ore Cleaner
+        if (this.prestigeItems.oreUpgrader) {
+          const upgraderNode = nodes.find(n => n.name === "Ore Upgrader");
+          if (upgraderNode) addEdge(nanoNode, upgraderNode, "ore", true);
+          else addEdge(nanoNode, cleanNode, "ore", true);
+        } else {
+          addEdge(nanoNode, cleanNode, "ore", true);
+        }
+        // Dust continues through (NOT consumed) → Kiln
+        if (this.budget >= 4750) {
+          const kilnNode = addNode("Kiln", "glass", 30, "multipurpose", 8);
+          addEdge(nanoNode, kilnNode, "dust", true);
+        }
       } else {
-        addEdge(nanoNode, cleanNode, "ore", true);
+        // Regular Sifter
+        const sifterNode = addNode("Sifter (10% bonus ore)", "dust", 0, "stonework", 7);
+        addEdge(crushNode, sifterNode, "dust", true);
+        addEdge(sifterNode, cleanNode, "ore", true);
+        if (this.budget >= 4750) {
+          const kilnNode = addNode("Kiln", "glass", 30, "multipurpose", 8);
+          addEdge(sifterNode, kilnNode, "dust", true);
+        }
       }
     }
 
