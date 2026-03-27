@@ -891,9 +891,11 @@ function initBuilder() {
   $("#builder-clear").addEventListener("click", () => {
     builderChain = [];
     builderSelectedNode = -1;
+    builderSelectedPills.clear();
     updateBuilderValue();
   });
 
+  initBuilderDragDrop();
   renderBuilderMachines();
 }
 
@@ -1090,8 +1092,14 @@ function renderChainStrip() {
 
     container.appendChild(pill);
   });
+}
 
-  // Trash bin drag handlers
+// Set up trash bin and keyboard handlers ONCE
+function initBuilderDragDrop() {
+  const trash = $("#chain-strip-trash");
+  if (!trash || trash.dataset.bound) return;
+  trash.dataset.bound = "true";
+
   trash.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -1108,7 +1116,6 @@ function renderChainStrip() {
     const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
 
     if (builderSelectedPills.size > 1 && builderSelectedPills.has(fromIdx)) {
-      // Delete all selected
       const selected = [...builderSelectedPills].sort((a, b) => b - a);
       for (const i of selected) builderChain.splice(i, 1);
       builderSelectedPills.clear();
@@ -1119,21 +1126,18 @@ function renderChainStrip() {
     updateBuilderValue();
   });
 
-  // Delete key handler
-  if (!container.dataset.keyBound) {
-    container.dataset.keyBound = "true";
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (builderSelectedPills.size > 0 && document.getElementById("tab-builder")?.classList.contains("active")) {
-          const selected = [...builderSelectedPills].sort((a, b) => b - a);
-          for (const i of selected) builderChain.splice(i, 1);
-          builderSelectedPills.clear();
-          builderSelectedNode = -1;
-          updateBuilderValue();
-        }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (builderSelectedPills.size > 0 && document.getElementById("tab-builder")?.classList.contains("active")) {
+        e.preventDefault();
+        const selected = [...builderSelectedPills].sort((a, b) => b - a);
+        for (const i of selected) builderChain.splice(i, 1);
+        builderSelectedPills.clear();
+        builderSelectedNode = -1;
+        updateBuilderValue();
       }
-    });
-  }
+    }
+  });
 }
 
 function updateBuilderValue() {

@@ -149,12 +149,14 @@ class PathFinder {
     // 2. Remaining stone → Crusher → Dust
     const dustAmount = stoneRemaining; // all remaining stone becomes dust
 
-    // 3. Nano Sifter: ALL dust passes through. 16.6% BONUS ore produced.
-    // Dust is NOT consumed - it continues out tagged "sifted" (can't sift again).
-    // So dust still goes to Kiln/Clay/etc after sifting.
+    // 3. Nano Sifter has 1 input (dust) and 2 outputs:
+    //    - Output 1: Ore (16.6% of dust CONVERTED to ore - dust consumed)
+    //    - Output 2: Dust (remaining 83.4% passes through as dust)
+    let dustRemaining = dustAmount;
     if (this.prestigeItems.nanoSifter) {
       const siftChance = 0.166;
-      const oresProduced = dustAmount * siftChance; // bonus ores
+      const oresProduced = dustAmount * siftChance;
+      dustRemaining = dustAmount * (1 - siftChance); // 83.4% continues as dust
 
       // Calculate avg ore value after upgrading
       let avgOreVal = 0;
@@ -168,24 +170,22 @@ class PathFinder {
       }
       avgOreVal /= NANO_SIFTER_ORES.length;
 
-      // Process bonus ore through full chain (Ore Upgrader → Clean → ... → Sell)
       const processedVal = this.applySeller(this.processBar(avgOreVal));
-      // Recursive: each bonus ore also produces stone → more sifting (geometric series)
+      // Recursive: each bonus ore also produces stone (geometric series)
       const recursiveChance = stonePerSmelt * siftChance;
       const bonusOreValue = (oresProduced * processedVal) / (1 - recursiveChance);
       totalValue += bonusOreValue;
     } else if (this.budget >= 4000) {
-      // Regular Sifter: 10% chance bonus ore, dust also continues
       const siftChance = 0.10;
+      dustRemaining = dustAmount * (1 - siftChance);
       const avgSiftVal = (10 + 20 + 50 + 180 + 350) / 5;
       const processedVal = this.applySeller(this.processBar(avgSiftVal));
       totalValue += dustAmount * siftChance * processedVal;
     }
 
-    // 4. ALL dust → Kiln → Glass ($30). Dust is NOT consumed by sifter.
+    // 4. Remaining dust (83.4%) → Kiln → Glass ($30)
     if (this.budget >= 4750) {
-      const glassVal = 30;
-      totalValue += this.applySeller(dustAmount * glassVal);
+      totalValue += this.applySeller(dustRemaining * 30);
     }
 
     return totalValue;
