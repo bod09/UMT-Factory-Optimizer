@@ -194,10 +194,10 @@ class FactoryOptimizer {
     return { value: this.applySeller(laserVal), oresNeeded: 3 };
   }
 
-  // EXPLOSIVES CHAIN - potentially highest value due to multiplicative scaling
-  // Powder value = $2 base + $1 per refiner pass (no documented limit)
+  // EXPLOSIVES CHAIN - multiplicative scaling
+  // Powder value = $2 base + $1 from single refiner pass (only works once in practice)
   // Explosives value = casing_value * powder_value
-  calculateExplosivesValue(oreValue, refinerPasses = 10) {
+  calculateExplosivesValue(oreValue) {
     let barVal = this.getProcessedBarValue(oreValue);
 
     // Metal casing (from ore chain)
@@ -207,8 +207,8 @@ class FactoryOptimizer {
     let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
 
     // Blasting powder: metal dust + stone dust -> $2 base
-    // Each refiner pass: powder + metal dust -> powder + $1
-    let powderVal = 2 + refinerPasses;
+    // Refiner only works once per powder in practice -> $3
+    let powderVal = 3;
 
     // Explosives = casing_value * powder_value (MULTIPLICATIVE)
     let explosivesVal = casingVal * powderVal;
@@ -278,13 +278,10 @@ class FactoryOptimizer {
 
     // Explosives chain (needs refiner at $2.5M + other machines)
     if (budget >= 2600000) {
-      // Calculate with different refiner pass counts
-      const passes = budget >= 2500000 ? 20 : 5;
-      const r = this.calculateExplosivesValue(ore.value, passes);
+      const r = this.calculateExplosivesValue(ore.value);
       results.push({
-        chain: `Explosives Chain (${passes} refiner passes)`,
+        chain: "Explosives Chain",
         value: r.value, cost: 2600000, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded,
-        note: `Powder: $${r.powderVal} x Casing (multiplicative)`
       });
     }
 

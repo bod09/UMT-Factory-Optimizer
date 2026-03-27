@@ -519,12 +519,11 @@ function multiInputBreakdown(type, oreValue, hasPhilo, hasQA, hasDS) {
     let plateVal = barVal + 20;
     let frameVal = (barVal + boltsVal) * 1.25;
     let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
-    let passes = optimizer.budget >= 2500000 ? 20 : 5;
-    let powderVal = 2 + passes;
+    let powderVal = 3; // $2 base + 1 refiner pass (only works once)
     let explosivesVal = casingVal * powderVal;
 
     steps.push(stepRow("Casing (from Frame+Bolts+Plate)", "x1.3", casingVal));
-    steps.push(stepRow(`Blasting Powder ($2 + ${passes} refiner passes)`, "+$1/pass", powderVal));
+    steps.push(stepRow("Blasting Powder ($2 + 1 refiner)", "= $3", powderVal));
     steps.push(stepRow("Casing x Powder → Explosives", "MULTIPLY", explosivesVal));
     if (hasQA) { explosivesVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", explosivesVal)); }
     if (hasDS) { explosivesVal *= 2; steps.push(stepRow("Double Seller", "x2", explosivesVal)); }
