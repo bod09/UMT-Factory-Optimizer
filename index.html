@@ -48,11 +48,6 @@
             <span class="hint" id="budget-display">$1.00M</span>
           </div>
           <div class="config-group">
-            <label for="prestige-level">Prestige Level</label>
-            <input type="number" id="prestige-level" value="0" min="0" max="50">
-            <span class="hint"><span id="medal-count">0</span> Medals available</span>
-          </div>
-          <div class="config-group">
             <label for="zone-select">Mining Zone</label>
             <select id="zone-select">
               <option value="custom">Custom Depth</option>
@@ -81,6 +76,9 @@
           <div class="config-group">
             <label>&nbsp;</label>
             <button class="btn-primary" id="btn-optimize">Optimize Factory</button>
+            <label class="theoretical-toggle">
+              <input type="checkbox" id="theoretical-max"> Theoretical Max
+            </label>
           </div>
         </div>
       </div>
@@ -101,24 +99,26 @@
       <div class="info-panel">
         <h3>Prestige Items Owned</h3>
         <div class="prestige-items-grid" id="prestige-items-config">
-          <label class="prestige-item-toggle">
-            <input type="checkbox" id="has-nano-sifter" data-medals="1"> Nano Sifter (1 Medal)
-          </label>
-          <label class="prestige-item-toggle">
-            <input type="checkbox" id="has-philosophers-stone" data-medals="3"> Philosopher's Stone (3 Medals)
-          </label>
-          <label class="prestige-item-toggle">
-            <input type="checkbox" id="has-ore-upgrader" data-medals="3"> Ore Upgrader (3 Medals)
-          </label>
-          <label class="prestige-item-toggle">
-            <input type="checkbox" id="has-gem-transmuter" data-medals="4"> Gem to Bar Transmuter (4 Medals)
-          </label>
-          <label class="prestige-item-toggle">
-            <input type="checkbox" id="has-bar-transmuter" data-medals="4"> Bar to Gem Transmuter (4 Medals)
-          </label>
-          <label class="prestige-item-toggle">
-            <input type="checkbox" id="has-duplicator" data-medals="8"> Duplicator (8 Medals)
-          </label>
+          <div class="prestige-item-row">
+            <span>Nano Sifter <em>(1 Medal)</em></span>
+            <input type="number" id="has-nano-sifter" value="0" min="0" max="20">
+          </div>
+          <div class="prestige-item-row">
+            <span>Philosopher's Stone <em>(3 Medals)</em></span>
+            <input type="number" id="has-philosophers-stone" value="0" min="0" max="20">
+          </div>
+          <div class="prestige-item-row">
+            <span>Ore Upgrader <em>(3 Medals)</em></span>
+            <input type="number" id="has-ore-upgrader" value="0" min="0" max="20">
+          </div>
+          <div class="prestige-item-row">
+            <span>Gem/Bar Transmuter <em>(4 Medals)</em></span>
+            <input type="number" id="has-transmuters" value="0" min="0" max="20">
+          </div>
+          <div class="prestige-item-row">
+            <span>Duplicator <em>(8 Medals)</em></span>
+            <input type="number" id="has-duplicator" value="0" min="0" max="20">
+          </div>
         </div>
 
         <h3>Prestige Upgrade Levels</h3>

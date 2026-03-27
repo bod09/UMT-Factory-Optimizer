@@ -11,18 +11,18 @@ const $$ = (sel) => document.querySelectorAll(sel);
 function saveConfig() {
   const config = {
     budget: $("#budget").value,
-    prestigeLevel: $("#prestige-level").value,
     zoneSelect: $("#zone-select").value,
     depthMin: $("#depth-min").value,
     depthMax: $("#depth-max").value,
     outputBelts: $("#output-belts").value,
     doubleSeller: $("#double-seller").checked,
     xxlBackpack: $("#xxl-backpack").checked,
+    theoreticalMax: $("#theoretical-max").checked,
     prestigeItems: {},
     prestigeUpgrades: {},
   };
-  $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
-    config.prestigeItems[cb.id] = cb.checked;
+  $$("#prestige-items-config input[type='number']").forEach(inp => {
+    config.prestigeItems[inp.id] = inp.value;
   });
   $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
     config.prestigeUpgrades[inp.dataset.upgrade] = inp.value;
@@ -37,12 +37,12 @@ function loadConfig() {
     const config = JSON.parse(raw);
 
     if (config.budget) $("#budget").value = config.budget;
-    if (config.prestigeLevel) $("#prestige-level").value = config.prestigeLevel;
     if (config.depthMin) $("#depth-min").value = config.depthMin;
     if (config.depthMax) $("#depth-max").value = config.depthMax;
     if (config.outputBelts) $("#output-belts").value = config.outputBelts;
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
     if (config.xxlBackpack) $("#xxl-backpack").checked = config.xxlBackpack;
+    if (config.theoreticalMax) $("#theoretical-max").checked = config.theoreticalMax;
 
     // Zone select
     if (config.zoneSelect) $("#zone-select").value = config.zoneSelect;
@@ -50,16 +50,11 @@ function loadConfig() {
     // Budget display
     $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
 
-    // Medal count
-    const level = parseInt($("#prestige-level").value) || 0;
-    $("#medal-count").textContent = level;
-    updatePrestigeCheckboxes(level);
-
-    // Prestige item checkboxes
+    // Prestige item quantities
     if (config.prestigeItems) {
-      Object.entries(config.prestigeItems).forEach(([id, checked]) => {
-        const cb = document.getElementById(id);
-        if (cb) cb.checked = checked;
+      Object.entries(config.prestigeItems).forEach(([id, val]) => {
+        const inp = document.getElementById(id);
+        if (inp) inp.value = val;
       });
     }
 
@@ -149,12 +144,7 @@ function attachEvents() {
     $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
     saveConfig();
   });
-  $("#prestige-level").addEventListener("input", () => {
-    const level = parseInt($("#prestige-level").value) || 0;
-    $("#medal-count").textContent = level;
-    updatePrestigeCheckboxes(level);
-    saveConfig();
-  });
+  $("#theoretical-max").addEventListener("change", saveConfig);
   $("#zone-select").addEventListener("change", (e) => {
     applyZone(e.target.value);
     saveConfig();
@@ -178,9 +168,9 @@ function attachEvents() {
     saveConfig();
   });
 
-  // Prestige item checkboxes and upgrade inputs save on change
-  $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
-    cb.addEventListener("change", saveConfig);
+  // Prestige item quantity inputs save on change
+  $$("#prestige-items-config input[type='number']").forEach(inp => {
+    inp.addEventListener("input", saveConfig);
   });
   // Prestige upgrade inputs save on change (delegated after they're created)
   $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
@@ -194,18 +184,6 @@ function attachEvents() {
       btn.classList.add("active");
       filterMachines(btn.dataset.cat);
     });
-  });
-}
-
-function updatePrestigeCheckboxes(medals) {
-  // Don't disable checkboxes - let users check what they own
-  // Just visually indicate if they don't have enough medals yet
-  $$("#prestige-items-config input[type='checkbox']").forEach(cb => {
-    const required = parseInt(cb.dataset.medals);
-    const label = cb.closest(".prestige-item-toggle");
-    if (label) {
-      label.classList.toggle("insufficient-medals", medals < required && !cb.checked);
-    }
   });
 }
 
@@ -223,12 +201,12 @@ function initPrestigeUpgrades() {
 }
 
 function runOptimizer(scrollToResults = false) {
-  const budget = parseInt($("#budget").value) || 0;
-  const prestigeLevel = parseInt($("#prestige-level").value) || 0;
+  const theoreticalMax = $("#theoretical-max").checked;
+  const budget = theoreticalMax ? 999999999 : (parseInt($("#budget").value) || 0);
   const minDepth = parseInt($("#depth-min").value) || 0;
   let maxDepth = parseInt($("#depth-max").value) || 0;
   const outputBelts = parseInt($("#output-belts").value) || 1;
-  const hasDoubleSeller = $("#double-seller").checked;
+  const hasDoubleSeller = theoreticalMax ? true : $("#double-seller").checked;
 
   // Clamp max >= min
   if (maxDepth < minDepth) {
@@ -237,15 +215,20 @@ function runOptimizer(scrollToResults = false) {
     updateDepthLabels();
   }
 
-  // Read prestige item checkboxes
-  const prestigeItems = {
-    philosophersStone: $("#has-philosophers-stone")?.checked || false,
-    nanoSifter: $("#has-nano-sifter")?.checked || false,
-    oreUpgrader: $("#has-ore-upgrader")?.checked || false,
-    duplicator: $("#has-duplicator")?.checked || false,
+  // Read prestige item quantities (>0 means owned)
+  const prestigeItems = theoreticalMax ? {
+    philosophersStone: true,
+    nanoSifter: true,
+    oreUpgrader: true,
+    duplicator: true,
+  } : {
+    philosophersStone: (parseInt($("#has-philosophers-stone")?.value) || 0) > 0,
+    nanoSifter: (parseInt($("#has-nano-sifter")?.value) || 0) > 0,
+    oreUpgrader: (parseInt($("#has-ore-upgrader")?.value) || 0) > 0,
+    duplicator: (parseInt($("#has-duplicator")?.value) || 0) > 0,
   };
 
-  optimizer.configure({ prestigeLevel, budget, hasDoubleSeller, prestigeItems });
+  optimizer.configure({ prestigeLevel: 0, budget, hasDoubleSeller, prestigeItems });
 
   // Get all ores and gems at this depth
   const oresAtDepth = getOresAtDepth(minDepth, maxDepth);
@@ -344,15 +327,22 @@ function renderChainResults(results, oresAtDepth) {
   const container = $("#chain-results");
   container.innerHTML = "";
 
+  // Get a representative ore for breakdown (highest value in range)
+  const repOre = oresAtDepth.reduce((best, o) => o.value > best.value ? o : best, oresAtDepth[0]);
+
   results.forEach((result, idx) => {
     const card = document.createElement("div");
     card.className = `chain-card${idx === 0 ? " best" : ""}`;
 
     // Show per-ore breakdown
-    const breakdownHtml = result.oreBreakdown
+    const oreBreakdownHtml = result.oreBreakdown
       .sort((a, b) => b.perOre - a.perOre)
       .map(ob => `<span class="ore-breakdown-item"><strong>${ob.ore}</strong> ${formatMoney(ob.perOre)}</span>`)
       .join("");
+
+    // Generate machine chain breakdown for the representative ore
+    const chainBreakdown = getChainBreakdown(result.chain, repOre);
+    const breakdownId = `breakdown-${idx}`;
 
     card.innerHTML = `
       <div class="chain-header">
@@ -365,10 +355,182 @@ function renderChainResults(results, oresAtDepth) {
         <div class="chain-detail">Ores/Product: <strong>${result.oresNeeded}</strong></div>
         ${result.medals ? `<div class="chain-detail">Medals: <strong class="medal-cell">${result.medals}</strong></div>` : ""}
       </div>
-      <div class="ore-breakdown">${breakdownHtml}</div>
+      ${chainBreakdown ? `
+        <button class="chain-breakdown-toggle" onclick="document.getElementById('${breakdownId}').classList.toggle('open')">Show breakdown (${repOre.name} $${repOre.value})</button>
+        <div class="chain-breakdown" id="${breakdownId}">${chainBreakdown}</div>
+      ` : ""}
+      <div class="ore-breakdown">${oreBreakdownHtml}</div>
     `;
     container.appendChild(card);
   });
+}
+
+function getChainBreakdown(chainName, ore) {
+  const hasPhilo = optimizer.prestigeItems.philosophersStone;
+  const hasDS = optimizer.hasDoubleSeller;
+  const hasQA = optimizer.budget >= 2000000;
+
+  if (chainName === "Direct Sell") {
+    let steps = [`<div class="chain-step"><span class="chain-step-name">Base ore value</span><span class="chain-step-effect"></span><span class="chain-step-value">$${ore.value}</span></div>`];
+    if (hasDS) steps.push(`<div class="chain-step"><span class="chain-step-name">Double Seller</span><span class="chain-step-effect">x2</span><span class="chain-step-value">$${ore.value * 2}</span></div>`);
+    return steps.join("");
+  }
+
+  if (chainName.startsWith("Clean + Polish + Smelt")) {
+    let val = ore.value;
+    let steps = [];
+    steps.push(stepRow("Base ore", "", val));
+    val += 10; steps.push(stepRow("Ore Cleaner", "+$10", val));
+    val += 10; steps.push(stepRow("Polisher", "+$10", val));
+
+    if (chainName.includes("Infuse")) {
+      val *= 1.25; steps.push(stepRow("Philosopher's Stone", "x1.25", val));
+    }
+
+    val *= 1.20; steps.push(stepRow("Ore Smelter", "x1.2 → Bar", val));
+
+    if (chainName.includes("Temper")) {
+      val *= 2.00; steps.push(stepRow("Tempering Forge", "x2", val));
+    }
+
+    if (chainName.includes("QA")) {
+      val *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", val));
+    }
+
+    if (hasDS) { val *= 2; steps.push(stepRow("Double Seller", "x2", val)); }
+    return steps.join("");
+  }
+
+  if (chainName.includes("Engine")) {
+    return multiInputBreakdown("Engine", ore.value, hasPhilo, hasQA, hasDS);
+  }
+  if (chainName.includes("Tablet")) {
+    return multiInputBreakdown("Tablet", ore.value, hasPhilo, hasQA, hasDS);
+  }
+  if (chainName.includes("Superconductor")) {
+    return multiInputBreakdown("Superconductor", ore.value, hasPhilo, hasQA, hasDS);
+  }
+  if (chainName.includes("Power Core")) {
+    return multiInputBreakdown("PowerCore", ore.value, hasPhilo, hasQA, hasDS);
+  }
+  if (chainName.includes("Explosives")) {
+    return multiInputBreakdown("Explosives", ore.value, hasPhilo, hasQA, hasDS);
+  }
+  if (chainName.includes("Full Pre-Processing")) {
+    let val = ore.value;
+    let steps = [];
+    steps.push(stepRow("Base ore", "", val));
+    val += 10; steps.push(stepRow("Ore Cleaner", "+$10", val));
+    val += 10; steps.push(stepRow("Polisher", "+$10", val));
+    if (hasPhilo) { val *= 1.25; steps.push(stepRow("Philosopher's Stone", "x1.25", val)); }
+    val *= 1.20; steps.push(stepRow("Ore Smelter", "x1.2 → Bar", val));
+    val *= 2.00; steps.push(stepRow("Tempering Forge", "x2", val));
+    if (chainName.includes("QA")) { val *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", val)); }
+    if (hasDS) { val *= 2; steps.push(stepRow("Double Seller", "x2", val)); }
+    return steps.join("");
+  }
+
+  return "";
+}
+
+function stepRow(name, effect, value) {
+  return `<div class="chain-step"><span class="chain-step-name">${name}</span><span class="chain-step-effect">${effect}</span><span class="chain-step-value">${formatMoney(value)}</span></div>`;
+}
+
+function multiInputBreakdown(type, oreValue, hasPhilo, hasQA, hasDS) {
+  let val = oreValue;
+  val += 10; // clean
+  val += 10; // polish
+  if (hasPhilo) val *= 1.25;
+  let barVal = val * 1.20 * 2.00;
+
+  let steps = [];
+  steps.push(stepRow("Ore → Clean → Polish" + (hasPhilo ? " → Infuse" : ""), "", val));
+  steps.push(stepRow("Smelt (x1.2) → Temper (x2)", "→ Bar", barVal));
+
+  if (type === "Engine") {
+    let plateVal = barVal + 20;
+    let mechVal = plateVal + 30;
+    let pipeVal = plateVal + 20;
+    let boltsVal = barVal + 5;
+    let frameVal = (barVal + boltsVal) * 1.25;
+    let bolts2 = barVal + 5;
+    let plate2 = barVal + 20;
+    let casingVal = (frameVal + bolts2 + plate2) * 1.30;
+    let engineVal = (mechVal + pipeVal + casingVal) * 2.50;
+
+    steps.push(stepRow("Bar → Plate (+$20)", "", plateVal));
+    steps.push(stepRow("Plate → Mech Parts (+$30)", "", mechVal));
+    steps.push(stepRow("Plate → Pipe (+$20)", "", pipeVal));
+    steps.push(stepRow("Bar → Bolts (+$5)", "", boltsVal));
+    steps.push(stepRow("Bar + Bolts → Frame", "x1.25", frameVal));
+    steps.push(stepRow("Frame + Bolts + Plate → Casing", "x1.3", casingVal));
+    steps.push(stepRow("Mech + Pipe + Casing → Engine", "x2.5", engineVal));
+    if (hasQA) { engineVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", engineVal)); }
+    if (hasDS) { engineVal *= 2; steps.push(stepRow("Double Seller", "x2", engineVal)); }
+  } else if (type === "Tablet") {
+    let boltsVal = barVal + 5;
+    let plateVal = barVal + 20;
+    let frameVal = (barVal + boltsVal) * 1.25;
+    let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
+    let glassVal = 30;
+    let coilVal = barVal + 20;
+    let circuitVal = (glassVal + coilVal) * 2.00;
+    let tabletVal = (casingVal + glassVal + circuitVal) * 3.00;
+
+    steps.push(stepRow("Bar + Bolts → Frame → Casing", "x1.3", casingVal));
+    steps.push(stepRow("Stone → Dust → Glass (Kiln)", "", glassVal));
+    steps.push(stepRow("Bar → Coil (+$20)", "", coilVal));
+    steps.push(stepRow("Glass + Coil → Circuit", "x2.0", circuitVal));
+    steps.push(stepRow("Casing + Glass + Circuit → Tablet", "x3.0", tabletVal));
+    if (hasQA) { tabletVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", tabletVal)); }
+    if (hasDS) { tabletVal *= 2; steps.push(stepRow("Double Seller", "x2", tabletVal)); }
+  } else if (type === "Superconductor") {
+    let alloyVal = (barVal + barVal) * 1.20;
+    let ceramicVal = 150;
+    let superVal = (alloyVal + ceramicVal) * 3.00;
+
+    steps.push(stepRow("2 Bars → Alloy Bar", "x1.2", alloyVal));
+    steps.push(stepRow("Stone → Dust → Clay → Ceramic", "flat", ceramicVal));
+    steps.push(stepRow("Alloy + Ceramic → Superconductor", "x3.0", superVal));
+    if (hasQA) { superVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", superVal)); }
+    if (hasDS) { superVal *= 2; steps.push(stepRow("Double Seller", "x2", superVal)); }
+  } else if (type === "PowerCore") {
+    let boltsVal = barVal + 5;
+    let plateVal = barVal + 20;
+    let frameVal = (barVal + boltsVal) * 1.25;
+    let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
+    let alloyVal = (barVal + barVal) * 1.20;
+    let superVal = (alloyVal + 150) * 3.00;
+    let coilVal = barVal + 20;
+    let f2 = (barVal + (barVal + 5)) * 1.25;
+    let c2 = (f2 + (barVal + 5) + (barVal + 20)) * 1.30;
+    let electroVal = (coilVal + c2) * 1.50;
+    let pcVal = (casingVal + superVal + electroVal) * 2.50;
+
+    steps.push(stepRow("Casing (from Frame+Bolts+Plate)", "x1.3", casingVal));
+    steps.push(stepRow("Superconductor (Alloy+Ceramic)", "x3.0", superVal));
+    steps.push(stepRow("Electromagnet (Coil+Casing)", "x1.5", electroVal));
+    steps.push(stepRow("Casing + Super + Electro → Core", "x2.5", pcVal));
+    if (hasQA) { pcVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", pcVal)); }
+    if (hasDS) { pcVal *= 2; steps.push(stepRow("Double Seller", "x2", pcVal)); }
+  } else if (type === "Explosives") {
+    let boltsVal = barVal + 5;
+    let plateVal = barVal + 20;
+    let frameVal = (barVal + boltsVal) * 1.25;
+    let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
+    let passes = optimizer.budget >= 2500000 ? 20 : 5;
+    let powderVal = 2 + passes;
+    let explosivesVal = casingVal * powderVal;
+
+    steps.push(stepRow("Casing (from Frame+Bolts+Plate)", "x1.3", casingVal));
+    steps.push(stepRow(`Blasting Powder ($2 + ${passes} refiner passes)`, "+$1/pass", powderVal));
+    steps.push(stepRow("Casing x Powder → Explosives", "MULTIPLY", explosivesVal));
+    if (hasQA) { explosivesVal *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", explosivesVal)); }
+    if (hasDS) { explosivesVal *= 2; steps.push(stepRow("Double Seller", "x2", explosivesVal)); }
+  }
+
+  return steps.join("");
 }
 
 function renderIncomeEstimate(results, outputBelts, oreCount) {
@@ -383,14 +545,13 @@ function renderIncomeEstimate(results, outputBelts, oreCount) {
   const perMin = best.avgPerOre * itemsPerMin;
   const perHour = perMin * 60;
 
-  const prestigeLevel = parseInt($("#prestige-level").value) || 0;
-  const nextPrestigeCost = getPrestigeCost(prestigeLevel + 1);
+  const nextPrestigeCost = getPrestigeCost(1); // First prestige = $20M
 
   const cards = [
     { label: "Avg Per Ore", value: formatMoney(best.avgPerOre), note: `${best.chain}` },
     { label: "Per Minute", value: formatMoney(perMin), note: `${outputBelts} belt${outputBelts > 1 ? "s" : ""} (~${itemsPerMin} items/min)` },
     { label: "Per Hour", value: formatMoney(perHour), note: `${oreCount} ore types in range` },
-    { label: `Time to ${formatMoney(nextPrestigeCost)}`, value: perHour > 0 ? formatTime(nextPrestigeCost / perHour * 60) : "N/A", note: `Prestige ${prestigeLevel + 1}` },
+    { label: `Time to ${formatMoney(nextPrestigeCost)}`, value: perHour > 0 ? formatTime(nextPrestigeCost / perHour * 60) : "N/A", note: "Next prestige" },
   ];
 
   cards.forEach(c => {

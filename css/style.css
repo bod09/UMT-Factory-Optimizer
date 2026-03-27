@@ -412,20 +412,43 @@ main {
   gap: 0.5rem;
 }
 
-.prestige-item-toggle {
+.prestige-item-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.85rem;
-  cursor: pointer;
-  padding: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-primary);
   border-radius: var(--radius);
-  transition: background 0.2s;
 }
 
-.prestige-item-toggle:hover { background: var(--bg-hover); }
-.prestige-item-toggle input { accent-color: var(--purple); width: 16px; height: 16px; cursor: pointer; }
-.prestige-item-toggle.insufficient-medals { opacity: 0.5; }
+.prestige-item-row span { color: var(--text-secondary); }
+.prestige-item-row em { color: var(--purple); font-style: normal; font-size: 0.75rem; }
+
+.prestige-item-row input {
+  width: 50px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.theoretical-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-top: 0.25rem;
+}
+
+.theoretical-toggle input { accent-color: var(--cyan); width: 13px; height: 13px; }
 
 .prestige-upgrades-grid {
   display: grid;
@@ -578,6 +601,46 @@ main {
   color: var(--text-secondary);
   margin-left: 0.25rem;
 }
+
+/* Chain breakdown */
+.chain-breakdown-toggle {
+  font-size: 0.75rem;
+  color: var(--info);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: var(--font-main);
+  padding: 0.25rem 0;
+  margin-top: 0.4rem;
+}
+
+.chain-breakdown-toggle:hover { text-decoration: underline; }
+
+.chain-breakdown {
+  display: none;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  line-height: 1.8;
+}
+
+.chain-breakdown.open { display: block; }
+
+.chain-step {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.chain-step:last-child { border-bottom: none; }
+
+.chain-step-name { color: var(--text-secondary); }
+.chain-step-effect { color: var(--text-muted); }
+.chain-step-value { color: var(--success); font-weight: 600; }
 
 .phase-card {
   background: var(--bg-card);
