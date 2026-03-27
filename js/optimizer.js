@@ -176,40 +176,45 @@ class FactoryOptimizer {
     const oreValue = this.getEffectiveOreValue(ore);
     const wasUpgraded = oreValue !== ore.value;
 
-    // Build label suffixes based on active prestige items
-    const tags = [];
-    if (wasUpgraded) tags.push("Upgraded");
-    if (this.prestigeItems.transmuters) tags.push("Transmute");
-    if (this.prestigeItems.duplicator) tags.push("Dup");
-    if (this.prestigeItems.philosophersStone) tags.push("Infused");
-    const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
+    // Build label suffixes - base tags (no Dup, added per-chain where used)
+    const baseTags = [];
+    if (wasUpgraded) baseTags.push("Upgraded");
+    if (this.prestigeItems.transmuters) baseTags.push("Transmute");
+    if (this.prestigeItems.philosophersStone) baseTags.push("Infused");
+
+    const suffix = (usesDup = false) => {
+      const tags = [...baseTags];
+      if (usesDup) tags.push("Dup");
+      return tags.length ? " [" + tags.join(", ") + "]" : "";
+    };
 
     // Direct sell
     let directVal = this.applySeller(oreValue);
-    results.push({ chain: "Direct Sell" + suffix, value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
+    results.push({ chain: "Direct Sell" + suffix(), value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
 
-    // Simple bar processing (best available pipeline)
+    // Simple bar processing - dup helps here (flat bonuses doubled)
     if (budget >= 710) {
       const r = this.calcSimpleBar(oreValue);
+      const usesDup = this.prestigeItems.duplicator;
       let label = "Processed Bar";
       if (budget >= 2000000) label += " + QA";
-      results.push({ chain: label + suffix, value: r.value, cost: budget >= 2000000 ? 2050710 : 50710, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded });
+      results.push({ chain: label + suffix(usesDup), value: r.value, cost: budget >= 2000000 ? 2050710 : 50710, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded });
     }
 
-    // Multi-input chains
+    // Multi-input chains - only Superconductor benefits from dup
     const chains = [
-      { name: "Engine", fn: "calcEngine", minBudget: 1200000 },
-      { name: "Tablet", fn: "calcTablet", minBudget: 2600000 },
-      { name: "Superconductor", fn: "calcSuperconductor", minBudget: 1200000 },
-      { name: "Power Core", fn: "calcPowerCore", minBudget: 5700000 },
-      { name: "Explosives", fn: "calcExplosives", minBudget: 2600000 },
+      { name: "Engine", fn: "calcEngine", minBudget: 1200000, usesDup: false },
+      { name: "Tablet", fn: "calcTablet", minBudget: 2600000, usesDup: false },
+      { name: "Superconductor", fn: "calcSuperconductor", minBudget: 1200000, usesDup: !!this.prestigeItems.duplicator },
+      { name: "Power Core", fn: "calcPowerCore", minBudget: 5700000, usesDup: false },
+      { name: "Explosives", fn: "calcExplosives", minBudget: 2600000, usesDup: false },
     ];
 
     for (const c of chains) {
       if (budget >= c.minBudget) {
         const r = this[c.fn](oreValue);
         results.push({
-          chain: c.name + suffix, value: r.value,
+          chain: c.name + suffix(c.usesDup), value: r.value,
           cost: c.minBudget, perOre: r.value / r.oresNeeded, oresNeeded: r.oresNeeded,
         });
       }

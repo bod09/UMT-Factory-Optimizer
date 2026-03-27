@@ -672,24 +672,25 @@ main {
 
 .flow-step.s-loop .flow-machine { color: var(--purple); }
 
-/* Loop-back group: right-side bracket with arrow */
+/* Loop-back group: right-side bracket with bent arrow */
 .flow-loop-group {
   position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  min-width: 300px;
-  max-width: 100%;
-  padding-right: 30px;
+  margin-right: 0;
 }
 
-/* Bracket: vertical + top bend + bottom bend */
+/* Make loop steps shorter so bracket is visible */
+.flow-loop-group .flow-step {
+  margin-right: 28px;
+}
+
+/* Bracket with bends top and bottom */
 .flow-loop-group::before {
   content: "";
   position: absolute;
   right: 8px;
   top: 0.3rem;
   bottom: 0.3rem;
-  width: 12px;
+  width: 14px;
   border-right: 2px solid var(--purple);
   border-top: 2px solid var(--purple);
   border-bottom: 2px solid var(--purple);
@@ -697,22 +698,17 @@ main {
   border-bottom-right-radius: 6px;
 }
 
-/* Arrow at top pointing left (item loops back here) */
+/* Arrow: triangle at top-left of bracket pointing left */
 .flow-loop-group::after {
   content: "";
   position: absolute;
   right: 8px;
-  top: calc(0.3rem - 5px);
+  top: calc(0.3rem - 4px);
   width: 0;
   height: 0;
   border-top: 5px solid transparent;
   border-bottom: 5px solid transparent;
-  border-right: 8px solid var(--purple);
-}
-
-/* Steps inside the loop group should not stretch to full width */
-.flow-loop-group .flow-step {
-  width: auto;
+  border-right: 7px solid var(--purple);
 }
 
 /* Color legend */
