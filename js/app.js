@@ -159,7 +159,11 @@ function attachEvents() {
   });
   $("#output-belts").addEventListener("change", saveConfig);
   $("#double-seller").addEventListener("change", saveConfig);
-  $("#xxl-backpack").addEventListener("change", saveConfig);
+  $("#xxl-backpack").addEventListener("change", () => {
+    saveConfig();
+    renderSpeedrun();
+    renderProgression();
+  });
   // Switch to "Custom" when manually editing depths
   $("#depth-min").addEventListener("input", () => {
     $("#zone-select").value = "custom";
@@ -219,7 +223,6 @@ function runOptimizer(scrollToResults = false) {
   let maxDepth = parseInt($("#depth-max").value) || 0;
   const outputBelts = parseInt($("#output-belts").value) || 1;
   const hasDoubleSeller = $("#double-seller").checked;
-  const hasXXLBackpack = $("#xxl-backpack").checked;
 
   // Clamp max >= min
   if (maxDepth < minDepth) {
@@ -235,7 +238,7 @@ function runOptimizer(scrollToResults = false) {
   const gemsAtDepth = getGemsAtDepth(minDepth, maxDepth);
 
   // Render depth summary
-  renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth, hasXXLBackpack);
+  renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth);
 
   if (oresAtDepth.length === 0) {
     $("#chain-results").innerHTML = '<div class="chain-card">No ores found at this depth range.</div>';
@@ -292,11 +295,10 @@ function runOptimizer(scrollToResults = false) {
   }
 }
 
-function renderDepthSummary(minDepth, maxDepth, ores, gems, hasXXLBackpack) {
+function renderDepthSummary(minDepth, maxDepth, ores, gems) {
   const container = $("#depth-ore-summary");
 
   const requiredPick = getRequiredPickaxe(maxDepth);
-  const backpackNote = hasXXLBackpack ? "XXL Backpack (64 slots)" : "";
 
   container.innerHTML = `
     <div class="depth-summary-content">
@@ -304,7 +306,6 @@ function renderDepthSummary(minDepth, maxDepth, ores, gems, hasXXLBackpack) {
         <h3>Mining ${minDepth}m - ${maxDepth}m</h3>
         <span class="depth-layers">${getLayerName(minDepth)}${getLayerName(minDepth) !== getLayerName(maxDepth) ? " to " + getLayerName(maxDepth) : ""}</span>
         <span class="depth-pickaxe">Requires: ${requiredPick.name} (${requiredPick.hardness} hardness)</span>
-        ${backpackNote ? `<span class="depth-pickaxe">${backpackNote}</span>` : ""}
       </div>
       <div class="depth-resources">
         <div class="depth-ores">
@@ -541,12 +542,29 @@ function renderEquipment() {
   });
 }
 
+// Backpack-related keywords to filter out
+const BACKPACK_KEYWORDS = ["backpack", "Backpack"];
+
+function isBackpackItem(text) {
+  return BACKPACK_KEYWORDS.some(kw => text.includes(kw));
+}
+
 // Speedrun
-function initSpeedrun() {
+function initSpeedrun() { renderSpeedrun(); }
+
+function renderSpeedrun() {
   const container = $("#speedrun-steps");
+  container.innerHTML = "";
+  const hasXXL = $("#xxl-backpack").checked;
   const steps = optimizer.getFreshPrestigePath();
 
   steps.forEach((step, idx) => {
+    let actions = step.actions;
+    if (hasXXL) {
+      actions = actions.filter(a => !isBackpackItem(a));
+    }
+    if (actions.length === 0) return;
+
     const card = document.createElement("div");
     card.className = "phase-card";
     card.dataset.phase = `PHASE ${idx + 1}`;
@@ -560,7 +578,7 @@ function initSpeedrun() {
         </div>
       </div>
       <ul class="phase-actions">
-        ${step.actions.map(a => `<li>${a}</li>`).join("")}
+        ${actions.map(a => `<li>${a}</li>`).join("")}
       </ul>
     `;
     container.appendChild(card);
@@ -568,10 +586,20 @@ function initSpeedrun() {
 }
 
 // Progression
-function initProgression() {
+function initProgression() { renderProgression(); }
+
+function renderProgression() {
   const container = $("#progression-stages");
+  container.innerHTML = "";
+  const hasXXL = $("#xxl-backpack").checked;
 
   PROGRESSION_STAGES.forEach(stage => {
+    let priority = stage.priority;
+    let tips = stage.tips;
+    if (hasXXL) {
+      priority = priority.filter(p => !isBackpackItem(p));
+    }
+
     const card = document.createElement("div");
     card.className = "stage-card";
 
@@ -580,11 +608,11 @@ function initProgression() {
         <span class="stage-name">${stage.name}</span>
         <span class="stage-budget">${stage.budget}</span>
       </div>
-      <div class="stage-tips">${stage.tips}</div>
+      <div class="stage-tips">${tips}</div>
       <div class="stage-priority">
         <h4>Priority Purchases</h4>
         <div class="priority-list">
-          ${stage.priority.map(p => `<span class="priority-item">${p}</span>`).join("")}
+          ${priority.map(p => `<span class="priority-item">${p}</span>`).join("")}
         </div>
       </div>
     `;
