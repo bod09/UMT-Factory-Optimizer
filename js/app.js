@@ -400,7 +400,7 @@ function getChainBreakdown(chainName, ore) {
     if (hasPhilo) { perCopy *= 1.25; steps.push(stepRow("Each: Philosopher's Stone", "x1.25", perCopy)); }
     perCopy *= 1.20; steps.push(stepRow("Each: Ore Smelter", "x1.2", perCopy));
     perCopy *= 2.00; steps.push(stepRow("Each: Tempering Forge", "x2", perCopy));
-    if (optimizer.prestigeItems.transmuters) { perCopy *= 1.40; steps.push(stepRow("Each: Bar→Gem→Gem Cutter→Bar", "x1.4", perCopy)); }
+    if (optimizer.prestigeItems.transmuters) { perCopy *= 1.61; steps.push(stepRow("Each: Bar→Gem→Cut→Prismatic→Bar", "x1.61", perCopy)); }
     if (hasQA) { perCopy *= 1.20; steps.push(stepRow("Each: Quality Assurance", "x1.2", perCopy)); }
     let total = perCopy * 2;
     steps.push(stepRow("Total (2 copies)", "x2", total));
@@ -425,7 +425,7 @@ function getChainBreakdown(chainName, ore) {
       val *= 2.00; steps.push(stepRow("Tempering Forge", "x2", val));
     }
     if (chainName.includes("Transmute") || (chainName.includes("Full") && optimizer.prestigeItems.transmuters)) {
-      val *= 1.40; steps.push(stepRow("Bar→Gem→Gem Cutter→Bar", "x1.4", val));
+      val *= 1.61; steps.push(stepRow("Bar→Gem→Cut→Prismatic→Bar", "x1.61", val));
     }
     if (chainName.includes("QA") || chainName.includes("Full")) {
       val *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", val));
@@ -455,12 +455,12 @@ function multiInputBreakdown(type, oreValue, hasPhilo, hasQA, hasDS, hasNano) {
   val += 10; // polish
   if (hasPhilo) val *= 1.25;
   let barVal = val * 1.20 * 2.00;
-  if (optimizer.prestigeItems.transmuters) barVal *= 1.40;
+  if (optimizer.prestigeItems.transmuters) barVal *= 1.61;
 
   let steps = [];
   steps.push(stepRow("Ore → Clean → Polish" + (hasPhilo ? " → Infuse" : ""), "", val));
   steps.push(stepRow("Smelt (x1.2) → Temper (x2)", "→ Bar", val * 1.20 * 2.00));
-  if (optimizer.prestigeItems.transmuters) steps.push(stepRow("Bar→Gem→Gem Cutter→Bar", "x1.4", barVal));
+  if (optimizer.prestigeItems.transmuters) steps.push(stepRow("Bar→Gem→Cut→Prismatic→Bar", "x1.61", barVal));
 
   if (type === "Engine") {
     let plateVal = barVal + 20;

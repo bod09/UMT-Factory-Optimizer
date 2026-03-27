@@ -1,10 +1,12 @@
 // UMT Factory Optimizer - Core Logic
 // Key mechanics:
 // - Tag inheritance: crafted items inherit ALL tags from ingredients
-// - Duplicator: can go ANYWHERE in chain. Both copies at 50% value. Products can't be re-duplicated.
-// - Transmuters: bar↔gem conversion preserves value. Items already the target type pass through.
-//   Cross-chain: bar→gem→gem cutter(1.4x)→gem-to-bar = free 1.4x on any bar
-// - Passthrough: items that don't match a machine's input pass through without blocking
+// - Duplicator: can go ANYWHERE. Best placed on most expensive intermediate before a combiner.
+//   Both copies at 50% value. Products of duplicated items can't be re-duplicated.
+// - Transmuters: bar↔gem preserves value. Extended gem path:
+//   bar → gem → gem cutter(1.4x) → 2 cut gems → prismatic crucible(1.15x) → gem-to-bar
+//   Net: 1.61x per pair of bars (or 1.4x for single bar)
+// - Looping: items can flow backwards through factory as long as same tag isn't re-applied
 
 class FactoryOptimizer {
   constructor() {
@@ -27,15 +29,18 @@ class FactoryOptimizer {
     return ore.value;
   }
 
-  // Transmuter cross-chain bonus: bar → gem → gem cutter (1.4x) → gem-to-bar
-  // Effectively multiplies bar value by 1.4x using the jewelcrafting chain
+  // Transmuter cross-chain: bar → gem → gem cutter (1.4x) → prismatic (1.15x on pairs) → gem-to-bar
+  // For pairs of bars: combined * 1.4 * 1.15 / 2 bars = 1.61x per bar (averaged)
+  // For single bar: just gem cutter = 1.4x
+  // We use 1.61x since most chains use even numbers of bars or can pair them up
   applyTransmuterBonus(barVal) {
     if (!this.prestigeItems.transmuters) return barVal;
-    // Bar → bar-to-gem → gem cutter (1.4x) → gem-to-bar → back as bar
-    return barVal * 1.40;
+    // bar → gem → gem cutter (1.4x) → pair 2 cut gems → prismatic (1.15x combined) → gem-to-bar
+    // Per bar: value * 1.4, then paired: (val*1.4 + val*1.4) * 1.15 / 2 = val * 1.4 * 1.15 = val * 1.61
+    return barVal * 1.61;
   }
 
-  // Full bar processing: Clean → Polish → Infuse → Smelt → Temper → Transmuter bonus
+  // Full bar processing pipeline
   getProcessedBarValue(oreValue) {
     let val = oreValue;
     val += 10; // ore cleaner
@@ -43,7 +48,7 @@ class FactoryOptimizer {
     if (this.prestigeItems.philosophersStone) val *= 1.25;
     val *= 1.20; // ore smelter
     val *= 2.00; // tempering forge
-    val = this.applyTransmuterBonus(val); // cross-chain if transmuters owned
+    val = this.applyTransmuterBonus(val);
     return val;
   }
 
@@ -58,26 +63,11 @@ class FactoryOptimizer {
     return this.applySeller(processedBonus);
   }
 
-  // Duplicator: finds optimal point and duplicates there
-  // Duplicate a value → 2 copies at 50% each
-  // Best used on the FINAL product (before selling) since it doubles item count
-  // But flat bonuses after duplication apply to each copy independently
-  applyDuplicator(finalVal) {
-    if (!this.prestigeItems.duplicator) return finalVal;
-    // Duplicate final product: 2 * (finalVal * 0.5) = finalVal (no gain on pure value)
-    // BUT: duplicating BEFORE flat bonuses like QA (+20%) applies QA to both copies
-    // Net: for late-chain duplicating, you get 2 items to sell from the same ores
-    // The real gain is throughput: 2 products from the same ore input
-    // For the optimizer (value per ore mined), we model it as:
-    // Duplicate the product → 2 items at 50% = same total, but it means
-    // you need half the ores for the same total output
-    return finalVal; // Same per-ore value (2 * 50% = 100%)
-    // The gain shows up in income estimates (double throughput)
-  }
-
   // === CHAIN CALCULATIONS ===
+  // All return { value, oresNeeded }
+  // "oresNeeded" tracks actual ore consumption including duplicator savings
 
-  calculateEngineChainValue(oreValue) {
+  calculateEngineChainValue(oreValue, useDup = false) {
     let barVal = this.getProcessedBarValue(oreValue);
     let plateVal = barVal + 20;
     let mechPartsVal = plateVal + 30;
@@ -87,12 +77,29 @@ class FactoryOptimizer {
     let bolts2Val = barVal + 5;
     let plate2Val = barVal + 20;
     let casingVal = (frameVal + bolts2Val + plate2Val) * 1.30;
-    let engineVal = (mechPartsVal + pipeVal + casingVal) * 2.50;
+
+    // Duplicator: best on casing (most expensive intermediate, 3 ores worth)
+    // Duplicate casing → 2 casings at 50%, each gets its own mech+pipe
+    // Without dup: 5 ores → 1 engine
+    // With dup on casing: 3 ores for casing(dup) + 2*2 ores for mech+pipe = 7 ores → 2 engines
+    let oresNeeded = 5;
+    let engineVal;
+
+    if (useDup) {
+      let dupCasing = casingVal * 0.50;
+      engineVal = (mechPartsVal + pipeVal + dupCasing) * 2.50;
+      // 2 engines from: 3 ores(casing) + 2*2 ores(mech+pipe) = 7 ores
+      // But each engine has half-value casing
+      oresNeeded = 4; // per engine: 7/2 rounded = 3.5, use 4 for conservative estimate
+    } else {
+      engineVal = (mechPartsVal + pipeVal + casingVal) * 2.50;
+    }
+
     if (this.budget >= 2000000) engineVal *= 1.20;
-    return { value: this.applySeller(engineVal), oresNeeded: 5 };
+    return { value: this.applySeller(engineVal), oresNeeded };
   }
 
-  calculateTabletChainValue(oreValue) {
+  calculateTabletChainValue(oreValue, useDup = false) {
     let barVal = this.getProcessedBarValue(oreValue);
     let boltsVal = barVal + 5;
     let plateVal = barVal + 20;
@@ -101,50 +108,107 @@ class FactoryOptimizer {
     let glassVal = 30;
     let coilVal = barVal + 20;
     let circuitVal = (glassVal + coilVal) * 2.00;
-    let tabletVal = (casingVal + glassVal + circuitVal) * 3.00;
+
+    let oresNeeded = 5;
+    let tabletVal;
+
+    if (useDup) {
+      // Duplicate casing (most expensive), use with glass+circuit for each
+      let dupCasing = casingVal * 0.50;
+      tabletVal = (dupCasing + glassVal + circuitVal) * 3.00;
+      oresNeeded = 4;
+    } else {
+      tabletVal = (casingVal + glassVal + circuitVal) * 3.00;
+    }
+
     if (this.budget >= 2000000) tabletVal *= 1.20;
-    return { value: this.applySeller(tabletVal), oresNeeded: 5 };
+    return { value: this.applySeller(tabletVal), oresNeeded };
   }
 
-  calculateSuperconductorValue(oreValue) {
+  calculateSuperconductorValue(oreValue, useDup = false) {
     let barVal = this.getProcessedBarValue(oreValue);
     let alloyVal = (barVal + barVal) * 1.20;
     let ceramicVal = 150;
-    let superVal = (alloyVal + ceramicVal) * 3.00;
+
+    let oresNeeded = 2;
+    let superVal;
+
+    if (useDup) {
+      // Duplicate alloy bar before combining with ceramic
+      let dupAlloy = alloyVal * 0.50;
+      superVal = (dupAlloy + ceramicVal) * 3.00;
+      // 2 supers from: 2 ores(alloy) + 0(ceramic from stone) = 2 ores for 2 items
+      oresNeeded = 1; // per super
+    } else {
+      superVal = (alloyVal + ceramicVal) * 3.00;
+    }
+
     if (this.budget >= 2000000) superVal *= 1.20;
-    return { value: this.applySeller(superVal), oresNeeded: 2 };
+    return { value: this.applySeller(superVal), oresNeeded };
   }
 
-  calculatePowerCoreValue(oreValue) {
+  calculatePowerCoreValue(oreValue, useDup = false) {
     let barVal = this.getProcessedBarValue(oreValue);
+
+    // Casing (costs ~4 bars = most expensive)
     let boltsVal = barVal + 5;
     let plateVal = barVal + 20;
     let frameVal = (barVal + boltsVal) * 1.25;
     let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
+
+    // Superconductor (costs ~2 bars)
     let alloyVal = (barVal + barVal) * 1.20;
     let ceramicVal = 150;
     let superVal = (alloyVal + ceramicVal) * 3.00;
+
+    // Electromagnet (costs ~4 bars)
     let coilVal = barVal + 20;
     let bolts2Val = barVal + 5;
     let plate2Val = barVal + 20;
     let frame2Val = (barVal + bolts2Val) * 1.25;
     let casing2Val = (frame2Val + bolts2Val + plate2Val) * 1.30;
     let electroVal = (coilVal + casing2Val) * 1.50;
-    let pcVal = (casingVal + superVal + electroVal) * 2.50;
+
+    let oresNeeded = 10;
+    let pcVal;
+
+    if (useDup) {
+      // Duplicate casing (most expensive sub-component at ~4 ores)
+      // 2 casings at 50% → each combines with super + electro for 2 power cores
+      // Saves: 4 ores (don't need 2nd casing), costs: 2+4 extra for 2nd super+electro
+      // Net: 4(casing dup) + 2(super) + 4(electro) + 2(super2) + 4(electro2) = 16 for 2 PCs = 8/PC
+      let dupCasing = casingVal * 0.50;
+      pcVal = (dupCasing + superVal + electroVal) * 2.50;
+      oresNeeded = 8;
+    } else {
+      pcVal = (casingVal + superVal + electroVal) * 2.50;
+    }
+
     if (this.budget >= 2000000) pcVal *= 1.20;
-    return { value: this.applySeller(pcVal), oresNeeded: 10 };
+    return { value: this.applySeller(pcVal), oresNeeded };
   }
 
-  calculateExplosivesValue(oreValue) {
+  calculateExplosivesValue(oreValue, useDup = false) {
     let barVal = this.getProcessedBarValue(oreValue);
     let boltsVal = barVal + 5;
     let plateVal = barVal + 20;
     let frameVal = (barVal + boltsVal) * 1.25;
     let casingVal = (frameVal + boltsVal + plateVal) * 1.30;
     let powderVal = 3;
-    let explosivesVal = casingVal * powderVal;
+
+    let oresNeeded = 5;
+    let explosivesVal;
+
+    if (useDup) {
+      let dupCasing = casingVal * 0.50;
+      explosivesVal = dupCasing * powderVal;
+      oresNeeded = 3; // half the casing ores saved
+    } else {
+      explosivesVal = casingVal * powderVal;
+    }
+
     if (this.budget >= 2000000) explosivesVal *= 1.20;
-    return { value: this.applySeller(explosivesVal), oresNeeded: 5, powderVal };
+    return { value: this.applySeller(explosivesVal), oresNeeded, powderVal };
   }
 
   // === MAIN OPTIMIZER ===
@@ -153,125 +217,101 @@ class FactoryOptimizer {
     const results = [];
     const oreValue = this.getEffectiveOreValue(ore);
     const wasUpgraded = oreValue !== ore.value;
-    const upgradeLabel = wasUpgraded ? ` [Upgraded: $${oreValue}]` : "";
+    const uLabel = wasUpgraded ? ` [Upgraded]` : "";
+    const tLabel = this.prestigeItems.transmuters ? " + Transmute" : "";
     const hasDup = this.prestigeItems.duplicator;
 
-    const addNanoBonus = (val, oresNeeded) => val + this.getNanoSifterBonusPerOre() * oresNeeded;
+    const addNano = (val, n) => val + this.getNanoSifterBonusPerOre() * n;
 
-    // For duplicator: duplicating final product = 2 items from same ores
-    // Per-ore value stays same, but throughput doubles
-    // We show this as a separate "with Duplicator" variant with halved oresNeeded
-    const addDupVariant = (name, val, cost, oresNeeded) => {
-      if (hasDup && oresNeeded >= 2) {
-        // Duplicate inputs: effectively halves ores needed for same output
-        // Actually: duplicate the PRODUCT, get 2 at 50% = same value
-        // But from factory perspective: you produce 2x items per cycle
-        // Show as: same value, but note "2x throughput"
-        results.push({
-          chain: name + " + Dup" + upgradeLabel,
-          value: val, cost, perOre: val / oresNeeded, oresNeeded,
-          note: "Duplicator doubles output throughput"
-        });
-      }
-    };
+    // --- Simple chains (1 ore → 1 product) ---
 
     // Direct sell
     let directVal = this.applySeller(oreValue);
-    results.push({ chain: "Direct Sell" + upgradeLabel, value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
+    results.push({ chain: "Direct Sell" + uLabel, value: directVal, cost: 0, perOre: directVal, oresNeeded: 1 });
 
-    // Simple chains
+    // Clean + Polish + Smelt
     if (budget >= 710) {
-      let val = (oreValue + 10 + 10) * 1.20;
-      val = this.applySeller(val);
-      val = addNanoBonus(val, 1);
-      results.push({ chain: "Clean + Polish + Smelt" + upgradeLabel, value: val, cost: 710, perOre: val, oresNeeded: 1 });
+      let val = this.applySeller((oreValue + 10 + 10) * 1.20);
+      val = addNano(val, 1);
+      results.push({ chain: "Clean + Polish + Smelt" + uLabel, value: val, cost: 710, perOre: val, oresNeeded: 1 });
     }
 
+    // Clean + Smelt + Temper (+ Transmute if owned)
     if (budget >= 50710) {
       let val = (oreValue + 10 + 10) * 1.20 * 2.00;
-      if (this.prestigeItems.transmuters) val *= 1.40;
+      if (this.prestigeItems.transmuters) val *= 1.61;
       val = this.applySeller(val);
-      val = addNanoBonus(val, 1);
-      results.push({ chain: "Clean + Smelt + Temper" + (this.prestigeItems.transmuters ? " + Transmute" : "") + upgradeLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
+      val = addNano(val, 1);
+      results.push({ chain: "Smelt + Temper" + tLabel + uLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
     }
 
+    // With philosopher's stone
     if (budget >= 50710 && this.prestigeItems.philosophersStone) {
       let val = (oreValue + 10 + 10) * 1.25 * 1.20 * 2.00;
-      if (this.prestigeItems.transmuters) val *= 1.40;
+      if (this.prestigeItems.transmuters) val *= 1.61;
       val = this.applySeller(val);
-      val = addNanoBonus(val, 1);
-      results.push({ chain: "Infuse + Smelt + Temper" + (this.prestigeItems.transmuters ? " + Transmute" : "") + upgradeLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
+      val = addNano(val, 1);
+      results.push({ chain: "Infuse + Temper" + tLabel + uLabel, value: val, cost: 50710, perOre: val, oresNeeded: 1 });
     }
 
+    // Full processing + QA
     if (budget >= 2050710) {
       let val = oreValue + 10 + 10;
       if (this.prestigeItems.philosophersStone) val *= 1.25;
-      val = val * 1.20 * 2.00;
-      if (this.prestigeItems.transmuters) val *= 1.40;
-      val *= 1.20; // QA
+      val *= 1.20 * 2.00;
+      if (this.prestigeItems.transmuters) val *= 1.61;
+      val *= 1.20;
       val = this.applySeller(val);
-      val = addNanoBonus(val, 1);
-      results.push({ chain: "Full Processing + QA" + (this.prestigeItems.transmuters ? " + Transmute" : "") + upgradeLabel, value: val, cost: 2050710, perOre: val, oresNeeded: 1 });
+      val = addNano(val, 1);
+      results.push({ chain: "Full + QA" + tLabel + uLabel, value: val, cost: 2050710, perOre: val, oresNeeded: 1 });
     }
 
-    // Duplicator on simple bar: duplicate the finished bar, sell both
+    // Duplicator on simple bar (duplicate ore, process both copies)
     if (hasDup && budget >= 50710) {
       let halfVal = oreValue * 0.50;
-      let perCopy = halfVal + 10 + 10; // flat bonuses on each copy
+      let perCopy = halfVal + 10 + 10;
       if (this.prestigeItems.philosophersStone) perCopy *= 1.25;
       perCopy *= 1.20 * 2.00;
-      if (this.prestigeItems.transmuters) perCopy *= 1.40;
+      if (this.prestigeItems.transmuters) perCopy *= 1.61;
       if (budget >= 2000000) perCopy *= 1.20;
-      let totalVal = perCopy * 2;
-      totalVal = this.applySeller(totalVal);
-      totalVal = addNanoBonus(totalVal, 1);
-      results.push({
-        chain: "Duplicate Ore + Process Both" + upgradeLabel, value: totalVal,
-        cost: 2050710, perOre: totalVal, oresNeeded: 1,
-      });
+      let totalVal = this.applySeller(perCopy * 2);
+      totalVal = addNano(totalVal, 1);
+      results.push({ chain: "Dup Ore + Process Both" + tLabel + uLabel, value: totalVal, cost: 2050710, perOre: totalVal, oresNeeded: 1 });
     }
 
-    // Multi-input chains
-    if (budget >= 1200000) {
-      const r = this.calculateEngineChainValue(oreValue);
-      let val = addNanoBonus(r.value, r.oresNeeded);
-      results.push({ chain: "Engine Factory" + upgradeLabel, value: val, cost: 1200000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
-      addDupVariant("Engine Factory", val, 1200000, r.oresNeeded);
-    }
+    // --- Multi-input chains ---
+    const chainDefs = [
+      { name: "Engine", fn: "calculateEngineChainValue", minBudget: 1200000 },
+      { name: "Tablet", fn: "calculateTabletChainValue", minBudget: 2600000 },
+      { name: "Superconductor", fn: "calculateSuperconductorValue", minBudget: 1200000 },
+      { name: "Power Core", fn: "calculatePowerCoreValue", minBudget: 5700000 },
+      { name: "Explosives", fn: "calculateExplosivesValue", minBudget: 2600000 },
+    ];
 
-    if (budget >= 2600000) {
-      const r = this.calculateTabletChainValue(oreValue);
-      let val = addNanoBonus(r.value, r.oresNeeded);
-      results.push({ chain: "Tablet Factory" + upgradeLabel, value: val, cost: 2600000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
-      addDupVariant("Tablet Factory", val, 2600000, r.oresNeeded);
-    }
+    for (const def of chainDefs) {
+      if (budget >= def.minBudget) {
+        // Without duplicator
+        const r = this[def.fn](oreValue, false);
+        let val = addNano(r.value, r.oresNeeded);
+        results.push({ chain: def.name + tLabel + uLabel, value: val, cost: def.minBudget, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
 
-    if (budget >= 1200000) {
-      const r = this.calculateSuperconductorValue(oreValue);
-      let val = addNanoBonus(r.value, r.oresNeeded);
-      results.push({ chain: "Superconductor" + upgradeLabel, value: val, cost: 1200000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
-      addDupVariant("Superconductor", val, 1200000, r.oresNeeded);
-    }
-
-    if (budget >= 5700000) {
-      const r = this.calculatePowerCoreValue(oreValue);
-      let val = addNanoBonus(r.value, r.oresNeeded);
-      results.push({ chain: "Power Core" + upgradeLabel, value: val, cost: 5700000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
-      addDupVariant("Power Core", val, 5700000, r.oresNeeded);
-    }
-
-    if (budget >= 2600000) {
-      const r = this.calculateExplosivesValue(oreValue);
-      let val = addNanoBonus(r.value, r.oresNeeded);
-      results.push({ chain: "Explosives" + upgradeLabel, value: val, cost: 2600000, perOre: val / r.oresNeeded, oresNeeded: r.oresNeeded });
-      addDupVariant("Explosives", val, 2600000, r.oresNeeded);
+        // With duplicator (optimal placement on most expensive intermediate)
+        if (hasDup) {
+          const rd = this[def.fn](oreValue, true);
+          let valD = addNano(rd.value, rd.oresNeeded);
+          results.push({
+            chain: def.name + " + Dup" + tLabel + uLabel, value: valD,
+            cost: def.minBudget, perOre: valD / rd.oresNeeded, oresNeeded: rd.oresNeeded,
+          });
+        }
+      }
     }
 
     results.sort((a, b) => b.perOre - a.perOre);
     return results;
   }
 
-  getRecommendedBuild(budget, medals) {
+  getRecommendedBuild(budget) {
     const stage = PROGRESSION_STAGES.find(s => s.budgetMax && budget <= s.budgetMax) || PROGRESSION_STAGES[PROGRESSION_STAGES.length - 1];
     const machineCosts = [];
     let totalMachineCost = 0;
@@ -334,7 +374,8 @@ class FactoryOptimizer {
         "Maximize factory throughput with parallel lines",
         "Use all 4 output belts",
         "Focus on highest-multiplier chains (Tablet 3x, Superconductor 3x)",
-        "Use Transmuters to cross-chain for extra 1.4x gem cutter bonus",
+        "Transmuter cross-chain: bar→gem→gem cutter→prismatic→gem-to-bar = 1.61x bonus",
+        "Loop items back through different machines for extra multipliers",
         "Diamond/Mithril Pickaxe for best ores",
         "Exa-Drill ($8M) for deep mining automation",
         "Reach $20M total earned to prestige!",
