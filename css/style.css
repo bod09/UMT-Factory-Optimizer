@@ -167,9 +167,17 @@ main:has(.builder-fullpage.active) {
   margin: 0;
 }
 
-/* Builder-specific: header goes full width */
+/* Builder-specific */
 body:has(.builder-fullpage.active) .header-content {
   max-width: none;
+}
+
+body:has(.builder-fullpage.active) footer {
+  display: none;
+}
+
+body:has(.builder-fullpage.active) {
+  overflow: hidden;
 }
 
 .tab-content { display: none; }
