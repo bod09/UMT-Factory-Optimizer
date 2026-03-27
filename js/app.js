@@ -450,17 +450,14 @@ function multiInputBreakdown(type, oreValue, p, hasQA, hasDS) {
   steps.push(stepRow("Smelt (x1.2) → Temper (x2)", "→ Bar", rawBar));
   if (p.transmuters) steps.push(stepRow("Transmute loop (Cut+Prismatic)", "x1.61", barVal));
 
-  // Helper for casing
   let bolts = barVal + 5, plate = barVal + 20;
   let frame = (barVal + bolts) * 1.25;
   let casing = (frame + bolts + plate) * 1.30;
-  let useCasing = hasDup ? casing * 0.50 : casing;
 
   if (type === "Engine") {
     let mech = plate + 30, pipe = plate + 20;
-    let engineVal = (mech + pipe + useCasing) * 2.50;
+    let engineVal = (mech + pipe + casing) * 2.50;
     steps.push(stepRow("Casing (Frame+Bolts+Plate)", "x1.3", casing));
-    if (hasDup) steps.push(stepRow("Dup casing (saves ores)", "x0.5", useCasing));
     steps.push(stepRow("Mech Parts + Pipe", "", mech + pipe));
     steps.push(stepRow("→ Engine", "x2.5", engineVal));
     if (hasQA) { engineVal *= 1.20; steps.push(stepRow("QA", "x1.2", engineVal)); }
@@ -468,9 +465,8 @@ function multiInputBreakdown(type, oreValue, p, hasQA, hasDS) {
   } else if (type === "Tablet") {
     let glass = 30, coil = barVal + 20;
     let circuit = (glass + coil) * 2.00;
-    let tabletVal = (useCasing + glass + circuit) * 3.00;
+    let tabletVal = (casing + glass + circuit) * 3.00;
     steps.push(stepRow("Casing", "x1.3", casing));
-    if (hasDup) steps.push(stepRow("Dup casing", "x0.5", useCasing));
     steps.push(stepRow("Glass (from stone dust)", "", glass));
     steps.push(stepRow("Coil + Glass → Circuit", "x2.0", circuit));
     steps.push(stepRow("→ Tablet", "x3.0", tabletVal));
@@ -481,7 +477,7 @@ function multiInputBreakdown(type, oreValue, p, hasQA, hasDS) {
     let useAlloy = hasDup ? alloy * 0.50 : alloy;
     let superVal = (useAlloy + 150) * 3.00;
     steps.push(stepRow("2 Bars → Alloy", "x1.2", alloy));
-    if (hasDup) steps.push(stepRow("Dup alloy (saves ores)", "x0.5", useAlloy));
+    if (hasDup) steps.push(stepRow("Dup alloy (saves 1 ore, +3%)", "x0.5", useAlloy));
     steps.push(stepRow("Ceramic (from stone)", "flat", 150));
     steps.push(stepRow("→ Superconductor", "x3.0", superVal));
     if (hasQA) { superVal *= 1.20; steps.push(stepRow("QA", "x1.2", superVal)); }
@@ -490,22 +486,18 @@ function multiInputBreakdown(type, oreValue, p, hasQA, hasDS) {
     let alloy = (barVal + barVal) * 1.20;
     let superVal = (alloy + 150) * 3.00;
     let coil = barVal + 20;
-    let casing2 = this.buildCasing ? casing : (frame + bolts + plate) * 1.30;
-    let electro = (coil + casing2) * 1.50;
-    let pcVal = (useCasing + superVal + electro) * 2.50;
+    let electro = (coil + casing) * 1.50;
+    let pcVal = (casing + superVal + electro) * 2.50;
     steps.push(stepRow("Casing", "x1.3", casing));
-    if (hasDup) steps.push(stepRow("Dup casing", "x0.5", useCasing));
     steps.push(stepRow("Superconductor (Alloy+Ceramic)", "x3.0", superVal));
     steps.push(stepRow("Electromagnet (Coil+Casing)", "x1.5", electro));
     steps.push(stepRow("→ Power Core", "x2.5", pcVal));
     if (hasQA) { pcVal *= 1.20; steps.push(stepRow("QA", "x1.2", pcVal)); }
     if (hasDS) { pcVal *= 2; steps.push(stepRow("Double Seller", "x2", pcVal)); }
   } else if (type === "Explosives") {
-    let powder = 3;
-    let expVal = useCasing * powder;
+    let expVal = casing * 3;
     steps.push(stepRow("Casing", "x1.3", casing));
-    if (hasDup) steps.push(stepRow("Dup casing", "x0.5", useCasing));
-    steps.push(stepRow("Powder ($2 + 1 refiner)", "= $3", powder));
+    steps.push(stepRow("Powder ($2 + 1 refiner)", "= $3", 3));
     steps.push(stepRow("Casing × Powder → Explosives", "MULTIPLY", expVal));
     if (hasQA) { expVal *= 1.20; steps.push(stepRow("QA", "x1.2", expVal)); }
     if (hasDS) { expVal *= 2; steps.push(stepRow("Double Seller", "x2", expVal)); }

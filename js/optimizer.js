@@ -100,76 +100,45 @@ class FactoryOptimizer {
     return (frame + bolts + plate) * 1.30;
   }
 
+  // Duplicator analysis (verified with actual math):
+  // - Simple bar: Dup ore early = BETTER (flat bonuses apply to each copy)
+  // - Superconductor: Dup alloy = BETTER (+3%, ceramic is cheap so halving alloy saves ore efficiently)
+  // - Engine/Tablet/PowerCore/Explosives: No dup = BETTER (components too valuable to halve)
+
   calcEngine(oreValue) {
     let bar = this.processBar(oreValue);
-    let hasDup = this.prestigeItems.duplicator;
     let hasQA = this.budget >= 2000000;
-
     let plate = bar + 20;
-    let mech = plate + 30;
-    let pipe = plate + 20;
-    let casing = this.buildCasing(bar);
-
-    let val, ores;
-    if (hasDup) {
-      // Duplicate casing (most expensive, ~3 bars worth)
-      let dupCasing = casing * 0.50;
-      val = (mech + pipe + dupCasing) * 2.50;
-      ores = 4; // saved 1 ore from casing duplication
-    } else {
-      val = (mech + pipe + casing) * 2.50;
-      ores = 5;
-    }
+    let mech = plate + 30, pipe = plate + 20;
+    let val = (mech + pipe + this.buildCasing(bar)) * 2.50;
     if (hasQA) val *= 1.20;
     val = this.applySeller(val);
-    val += this.nanoBonus() * ores;
-    return { value: val, oresNeeded: ores };
+    val += this.nanoBonus() * 5;
+    return { value: val, oresNeeded: 5 };
   }
 
   calcTablet(oreValue) {
     let bar = this.processBar(oreValue);
-    let hasDup = this.prestigeItems.duplicator;
     let hasQA = this.budget >= 2000000;
-
-    let casing = this.buildCasing(bar);
-    let glass = 30;
-    let coil = bar + 20;
+    let glass = 30, coil = bar + 20;
     let circuit = (glass + coil) * 2.00;
-
-    let val, ores;
-    if (hasDup) {
-      // Duplicate casing
-      let dupCasing = casing * 0.50;
-      val = (dupCasing + glass + circuit) * 3.00;
-      ores = 4;
-    } else {
-      val = (casing + glass + circuit) * 3.00;
-      ores = 5;
-    }
+    let val = (this.buildCasing(bar) + glass + circuit) * 3.00;
     if (hasQA) val *= 1.20;
     val = this.applySeller(val);
-    val += this.nanoBonus() * ores;
-    return { value: val, oresNeeded: ores };
+    val += this.nanoBonus() * 5;
+    return { value: val, oresNeeded: 5 };
   }
 
   calcSuperconductor(oreValue) {
     let bar = this.processBar(oreValue);
     let hasDup = this.prestigeItems.duplicator;
     let hasQA = this.budget >= 2000000;
-
     let alloy = (bar + bar) * 1.20;
     let ceramic = 150;
-
-    let val, ores;
-    if (hasDup) {
-      // Duplicate alloy bar (2 bars → 1 alloy → dup → 2 alloys at 50%)
-      let dupAlloy = alloy * 0.50;
-      val = (dupAlloy + ceramic) * 3.00;
-      ores = 1; // 2 bars for alloy, but dup halves consumption per product
-    } else {
-      val = (alloy + ceramic) * 3.00;
-      ores = 2;
-    }
+    // Dup alloy is +3% better per ore (ceramic is cheap → halving alloy + saving 1 ore = net gain)
+    let useAlloy = hasDup ? alloy * 0.50 : alloy;
+    let ores = hasDup ? 1 : 2;
+    let val = (useAlloy + ceramic) * 3.00;
     if (hasQA) val *= 1.20;
     val = this.applySeller(val);
     val += this.nanoBonus() * ores;
@@ -178,54 +147,27 @@ class FactoryOptimizer {
 
   calcPowerCore(oreValue) {
     let bar = this.processBar(oreValue);
-    let hasDup = this.prestigeItems.duplicator;
     let hasQA = this.budget >= 2000000;
-
     let casing = this.buildCasing(bar);
     let alloy = (bar + bar) * 1.20;
     let supercon = (alloy + 150) * 3.00;
-
     let coil = bar + 20;
-    let casing2 = this.buildCasing(bar);
-    let electro = (coil + casing2) * 1.50;
-
-    let val, ores;
-    if (hasDup) {
-      // Duplicate casing (most expensive sub-component)
-      let dupCasing = casing * 0.50;
-      val = (dupCasing + supercon + electro) * 2.50;
-      ores = 8; // saved ~2 ores from casing dup
-    } else {
-      val = (casing + supercon + electro) * 2.50;
-      ores = 10;
-    }
+    let electro = (coil + this.buildCasing(bar)) * 1.50;
+    let val = (casing + supercon + electro) * 2.50;
     if (hasQA) val *= 1.20;
     val = this.applySeller(val);
-    val += this.nanoBonus() * ores;
-    return { value: val, oresNeeded: ores };
+    val += this.nanoBonus() * 10;
+    return { value: val, oresNeeded: 10 };
   }
 
   calcExplosives(oreValue) {
     let bar = this.processBar(oreValue);
-    let hasDup = this.prestigeItems.duplicator;
     let hasQA = this.budget >= 2000000;
-
-    let casing = this.buildCasing(bar);
-    let powder = 3; // $2 base + 1 refiner pass
-
-    let val, ores;
-    if (hasDup) {
-      let dupCasing = casing * 0.50;
-      val = dupCasing * powder;
-      ores = 3;
-    } else {
-      val = casing * powder;
-      ores = 5;
-    }
+    let val = this.buildCasing(bar) * 3; // casing × powder($3)
     if (hasQA) val *= 1.20;
     val = this.applySeller(val);
-    val += this.nanoBonus() * ores;
-    return { value: val, oresNeeded: ores };
+    val += this.nanoBonus() * 5;
+    return { value: val, oresNeeded: 5 };
   }
 
   // === MAIN: Get best chains for an ore ===
