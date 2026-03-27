@@ -371,141 +371,155 @@ function getChainBreakdown(chainName, ore) {
   const p = optimizer.prestigeItems;
   const hasDS = optimizer.hasDoubleSeller;
   const hasQA = optimizer.budget >= 2000000;
-  const hasDup = p.duplicator;
-  const hasTrans = p.transmuters;
 
   let oreVal = optimizer.getEffectiveOreValue(ore);
   const wasUpgraded = oreVal !== ore.value;
 
-  // Direct sell
   if (chainName.includes("Direct")) {
-    let steps = [];
-    let v = ore.value;
-    steps.push(stepRow("Base ore", "", v));
-    if (wasUpgraded) { v = oreVal; steps.push(stepRow("Ore Upgrader", "→ next tier", v)); }
-    if (hasDS) { v *= 2; steps.push(stepRow("Double Seller", "x2", v)); }
-    return steps.join("");
+    let s = [], v = ore.value;
+    s.push(step("Ore", "", v));
+    if (wasUpgraded) { v = oreVal; s.push(step("→ Ore Upgrader", "next tier", v)); }
+    if (hasDS) { v *= 2; s.push(step("→ Double Seller", "x2", v)); }
+    return s.join("");
   }
 
-  // Processed Bar (simple chain with all prestige items)
-  if (chainName.includes("Processed")) {
-    let steps = [];
-    let v = ore.value;
-    steps.push(stepRow("Base ore", "", v));
-    if (wasUpgraded) { v = oreVal; steps.push(stepRow("Ore Upgrader", "→ next tier", v)); }
-
-    if (hasDup) {
+  // Build the standard bar processing steps (used by all chains)
+  function barSteps(startVal, prefix = "") {
+    let s = [], v = startVal;
+    s.push(step(prefix + "Ore", "", v));
+    if (wasUpgraded) { v = oreVal; s.push(step("→ Ore Upgrader", "next tier", v)); }
+    if (p.duplicator && chainName.includes("Processed")) {
       let half = v * 0.5;
-      steps.push(stepRow("Duplicator (2 copies)", "x0.5 each", half));
+      s.push(step("→ Duplicator", "2 copies at 50%", half));
+      s.push(step("  Each → Ore Cleaner", "+$10", half + 10));
       let pc = half + 10 + 10;
-      steps.push(stepRow("Each: Clean + Polish", "+$20", pc));
-      if (p.philosophersStone) { pc *= 1.25; steps.push(stepRow("Each: Philosopher's Stone", "x1.25", pc)); }
-      pc *= 1.20; steps.push(stepRow("Each: Smelt", "x1.2 → Bar", pc));
-      pc *= 2.00; steps.push(stepRow("Each: Temper", "x2", pc));
-      if (hasTrans) { pc *= 1.61; steps.push(stepRow("Each: Transmute loop", "x1.61", pc)); }
-      if (hasQA) { pc *= 1.20; steps.push(stepRow("Each: QA", "x1.2", pc)); }
+      s.push(step("  Each → Polisher", "+$10", pc));
+      if (p.philosophersStone) { pc *= 1.25; s.push(step("  Each → Philosopher's Stone", "x1.25", pc)); }
+      pc *= 1.20; s.push(step("  Each → Ore Smelter", "x1.2 → Bar", pc));
+      pc *= 2.00; s.push(step("  Each → Tempering Forge", "x2.0", pc));
+      if (p.transmuters) {
+        s.push(step("  Each → Bar-to-Gem Transmuter", "→ Gem", pc));
+        pc *= 1.40; s.push(step("  Each → Gem Cutter", "x1.4", pc));
+        pc *= 1.15; s.push(step("  Each → Prismatic Gem Crucible (pair 2)", "x1.15", pc));
+        s.push(step("  Each → Gem-to-Bar Transmuter", "→ Bar", pc));
+      }
+      if (hasQA) { pc *= 1.20; s.push(step("  Each → Quality Assurance", "x1.2", pc)); }
       let total = pc * 2;
-      steps.push(stepRow("Total (2 copies)", "x2", total));
-      if (hasDS) { total *= 2; steps.push(stepRow("Double Seller", "x2", total)); }
-    } else {
-      v = oreVal;
-      v += 10; steps.push(stepRow("Ore Cleaner", "+$10", v));
-      v += 10; steps.push(stepRow("Polisher", "+$10", v));
-      if (p.philosophersStone) { v *= 1.25; steps.push(stepRow("Philosopher's Stone", "x1.25", v)); }
-      v *= 1.20; steps.push(stepRow("Ore Smelter", "x1.2 → Bar", v));
-      v *= 2.00; steps.push(stepRow("Tempering Forge", "x2", v));
-      if (hasTrans) { v *= 1.61; steps.push(stepRow("Transmute loop", "x1.61", v)); }
-      if (hasQA) { v *= 1.20; steps.push(stepRow("Quality Assurance", "x1.2", v)); }
-      if (hasDS) { v *= 2; steps.push(stepRow("Double Seller", "x2", v)); }
+      s.push(step("  2 copies sold", "x2", total));
+      if (hasDS) { total *= 2; s.push(step("→ Double Seller", "x2", total)); }
+      if (p.nanoSifter) { total += optimizer.nanoBonus(); s.push(step("+ Nano Sifter (stone → dust → ore)", "+bonus", total)); }
+      return { s, v: total };
     }
-    if (p.nanoSifter) steps.push(stepRow("Nano Sifter bonus", "+byproduct", optimizer.nanoBonus()));
-    return steps.join("");
+    v += 10; s.push(step("→ Ore Cleaner", "+$10", v));
+    v += 10; s.push(step("→ Polisher", "+$10", v));
+    if (p.philosophersStone) { v *= 1.25; s.push(step("→ Philosopher's Stone", "x1.25", v)); }
+    v *= 1.20; s.push(step("→ Ore Smelter", "x1.2 → Bar + Stone", v));
+    v *= 2.00; s.push(step("→ Tempering Forge", "x2.0", v));
+    if (p.transmuters) {
+      s.push(step("→ Bar-to-Gem Transmuter", "→ Gem", v));
+      v *= 1.40; s.push(step("→ Gem Cutter", "x1.4 → Cut Gem", v));
+      v *= 1.15; s.push(step("→ Prismatic Gem Crucible (pair 2)", "x1.15", v));
+      s.push(step("→ Gem-to-Bar Transmuter", "→ back to Bar", v));
+    }
+    return { s, v };
   }
 
-  // Multi-input chains
-  if (chainName.includes("Engine")) return multiInputBreakdown("Engine", oreVal, p, hasQA, hasDS);
-  if (chainName.includes("Tablet")) return multiInputBreakdown("Tablet", oreVal, p, hasQA, hasDS);
-  if (chainName.includes("Superconductor")) return multiInputBreakdown("Superconductor", oreVal, p, hasQA, hasDS);
-  if (chainName.includes("Power Core")) return multiInputBreakdown("PowerCore", oreVal, p, hasQA, hasDS);
-  if (chainName.includes("Explosives")) return multiInputBreakdown("Explosives", oreVal, p, hasQA, hasDS);
+  // Processed Bar
+  if (chainName.includes("Processed")) {
+    let { s, v } = barSteps(ore.value);
+    if (!p.duplicator) {
+      if (hasQA) { v *= 1.20; s.push(step("→ Quality Assurance", "x1.2", v)); }
+      if (hasDS) { v *= 2; s.push(step("→ Double Seller", "x2", v)); }
+      if (p.nanoSifter) { v += optimizer.nanoBonus(); s.push(step("+ Nano Sifter (stone → dust → ore)", "+bonus", v)); }
+    }
+    return s.join("");
+  }
 
-  return "";
-}
-
-function stepRow(name, effect, value) {
-  return `<div class="chain-step"><span class="chain-step-name">${name}</span><span class="chain-step-effect">${effect}</span><span class="chain-step-value">${formatMoney(value)}</span></div>`;
-}
-
-function multiInputBreakdown(type, oreValue, p, hasQA, hasDS) {
-  let val = oreValue;
-  val += 10; val += 10;
-  if (p.philosophersStone) val *= 1.25;
-  let rawBar = val * 1.20 * 2.00;
-  let barVal = rawBar;
-  if (p.transmuters) barVal *= 1.61;
-  const hasDup = p.duplicator;
-
-  let steps = [];
-  steps.push(stepRow("Ore → Clean(+10) → Polish(+10)" + (p.philosophersStone ? " → Infuse(1.25x)" : ""), "", val));
-  steps.push(stepRow("Smelt (x1.2) → Temper (x2)", "→ Bar", rawBar));
-  if (p.transmuters) steps.push(stepRow("Transmute loop (Cut+Prismatic)", "x1.61", barVal));
+  // Multi-input chains - show full bar pipeline then the combining steps
+  let { s: barS, v: barVal } = barSteps(ore.value);
+  let s = [];
+  s.push(step("=== Bar Processing (per ore) ===", "", ""));
+  s = s.concat(barS);
+  s.push(step("", "", ""));
 
   let bolts = barVal + 5, plate = barVal + 20;
   let frame = (barVal + bolts) * 1.25;
   let casing = (frame + bolts + plate) * 1.30;
 
-  if (type === "Engine") {
-    let mech = plate + 30, pipe = plate + 20;
-    let engineVal = (mech + pipe + casing) * 2.50;
-    steps.push(stepRow("Casing (Frame+Bolts+Plate)", "x1.3", casing));
-    steps.push(stepRow("Mech Parts + Pipe", "", mech + pipe));
-    steps.push(stepRow("→ Engine", "x2.5", engineVal));
-    if (hasQA) { engineVal *= 1.20; steps.push(stepRow("QA", "x1.2", engineVal)); }
-    if (hasDS) { engineVal *= 2; steps.push(stepRow("Double Seller", "x2", engineVal)); }
-  } else if (type === "Tablet") {
-    let glass = 30, coil = barVal + 20;
-    let circuit = (glass + coil) * 2.00;
-    let tabletVal = (casing + glass + circuit) * 3.00;
-    steps.push(stepRow("Casing", "x1.3", casing));
-    steps.push(stepRow("Glass (from stone dust)", "", glass));
-    steps.push(stepRow("Coil + Glass → Circuit", "x2.0", circuit));
-    steps.push(stepRow("→ Tablet", "x3.0", tabletVal));
-    if (hasQA) { tabletVal *= 1.20; steps.push(stepRow("QA", "x1.2", tabletVal)); }
-    if (hasDS) { tabletVal *= 2; steps.push(stepRow("Double Seller", "x2", tabletVal)); }
-  } else if (type === "Superconductor") {
+  if (chainName.includes("Engine")) {
+    s.push(step("=== Engine Assembly (5 ores) ===", "", ""));
+    s.push(step("Ore 1: Bar → Plate Stamper (+$20)", "→ Plate", plate));
+    s.push(step("  Plate → Mech Parts Maker (+$30)", "→ Mech Parts", plate + 30));
+    s.push(step("Ore 2: Bar → Plate → Pipe Maker (+$20)", "→ Pipe", plate + 20));
+    s.push(step("Ore 3: Bar → Bolt Machine (+$5)", "→ Bolts", bolts));
+    s.push(step("Ore 4: Bar + Bolts → Frame Maker", "x1.25", frame));
+    s.push(step("Ore 5: + Bolts + Plate → Casing Machine", "x1.3", casing));
+    let eng = ((plate+30) + (plate+20) + casing) * 2.50;
+    s.push(step("Mech + Pipe + Casing → Engine Factory", "x2.5", eng));
+    if (hasQA) { eng *= 1.20; s.push(step("→ Quality Assurance", "x1.2", eng)); }
+    if (hasDS) { eng *= 2; s.push(step("→ Double Seller", "x2", eng)); }
+  } else if (chainName.includes("Tablet")) {
+    let coil = barVal + 20, glass = 30;
+    let circuit = (glass + coil) * 2.0;
+    let tab = (casing + glass + circuit) * 3.0;
+    s.push(step("=== Tablet Assembly (5 ores) ===", "", ""));
+    s.push(step("Ores 1-4: → Casing (see Engine for sub-steps)", "x1.3", casing));
+    s.push(step("Stone byproduct → Crusher → Dust → Kiln", "→ Glass", glass));
+    s.push(step("Ore 5: Bar → Coiler (+$20)", "→ Coil", coil));
+    s.push(step("Glass + Coil → Circuit Maker", "x2.0", circuit));
+    s.push(step("Casing + Glass + Circuit → Tablet Factory", "x3.0", tab));
+    if (hasQA) { tab *= 1.20; s.push(step("→ Quality Assurance", "x1.2", tab)); }
+    if (hasDS) { tab *= 2; s.push(step("→ Double Seller", "x2", tab)); }
+  } else if (chainName.includes("Superconductor")) {
     let alloy = (barVal + barVal) * 1.20;
-    let useAlloy = hasDup ? alloy * 0.50 : alloy;
-    let superVal = (useAlloy + 150) * 3.00;
-    steps.push(stepRow("2 Bars → Alloy", "x1.2", alloy));
-    if (hasDup) steps.push(stepRow("Dup alloy (saves 1 ore, +3%)", "x0.5", useAlloy));
-    steps.push(stepRow("Ceramic (from stone)", "flat", 150));
-    steps.push(stepRow("→ Superconductor", "x3.0", superVal));
-    if (hasQA) { superVal *= 1.20; steps.push(stepRow("QA", "x1.2", superVal)); }
-    if (hasDS) { superVal *= 2; steps.push(stepRow("Double Seller", "x2", superVal)); }
-  } else if (type === "PowerCore") {
+    let useAlloy = p.duplicator ? alloy * 0.50 : alloy;
+    let sup = (useAlloy + 150) * 3.0;
+    s.push(step("=== Superconductor (" + (p.duplicator ? "1 ore w/ dup" : "2 ores") + ") ===", "", ""));
+    s.push(step("Ore 1 + Ore 2: 2 Bars → Alloy Furnace", "x1.2", alloy));
+    if (p.duplicator) {
+      s.push(step("→ Duplicator on Alloy Bar", "2 at 50%", useAlloy));
+      s.push(step("  (saves 1 ore per super, +3% per-ore)", "", ""));
+    }
+    s.push(step("Stone byproduct → Crush → Clay → Ceramic Furnace", "→ $150", 150));
+    s.push(step("Alloy + Ceramic → Superconductor Constructor", "x3.0", sup));
+    if (hasQA) { sup *= 1.20; s.push(step("→ Quality Assurance", "x1.2", sup)); }
+    if (hasDS) { sup *= 2; s.push(step("→ Double Seller", "x2", sup)); }
+  } else if (chainName.includes("Power Core")) {
     let alloy = (barVal + barVal) * 1.20;
-    let superVal = (alloy + 150) * 3.00;
+    let sup = (alloy + 150) * 3.0;
     let coil = barVal + 20;
     let electro = (coil + casing) * 1.50;
-    let pcVal = (casing + superVal + electro) * 2.50;
-    steps.push(stepRow("Casing", "x1.3", casing));
-    steps.push(stepRow("Superconductor (Alloy+Ceramic)", "x3.0", superVal));
-    steps.push(stepRow("Electromagnet (Coil+Casing)", "x1.5", electro));
-    steps.push(stepRow("→ Power Core", "x2.5", pcVal));
-    if (hasQA) { pcVal *= 1.20; steps.push(stepRow("QA", "x1.2", pcVal)); }
-    if (hasDS) { pcVal *= 2; steps.push(stepRow("Double Seller", "x2", pcVal)); }
-  } else if (type === "Explosives") {
-    let expVal = casing * 3;
-    steps.push(stepRow("Casing", "x1.3", casing));
-    steps.push(stepRow("Powder ($2 + 1 refiner)", "= $3", 3));
-    steps.push(stepRow("Casing × Powder → Explosives", "MULTIPLY", expVal));
-    if (hasQA) { expVal *= 1.20; steps.push(stepRow("QA", "x1.2", expVal)); }
-    if (hasDS) { expVal *= 2; steps.push(stepRow("Double Seller", "x2", expVal)); }
+    let pc = (casing + sup + electro) * 2.50;
+    s.push(step("=== Power Core (10 ores) ===", "", ""));
+    s.push(step("Ores 1-4: → Casing", "x1.3", casing));
+    s.push(step("Ores 5-6: 2 Bars → Alloy Furnace", "x1.2", alloy));
+    s.push(step("  Alloy + Ceramic → Superconductor", "x3.0", sup));
+    s.push(step("Ore 7: Bar → Coiler (+$20)", "→ Coil", coil));
+    s.push(step("Ores 8-10: → 2nd Casing (for Electromagnet)", "x1.3", casing));
+    s.push(step("  Coil + Casing → Magnetic Machine", "x1.5 → Electromagnet", electro));
+    s.push(step("Casing + Superconductor + Electromagnet", "", ""));
+    s.push(step("  → Power Core Assembler", "x2.5", pc));
+    if (hasQA) { pc *= 1.20; s.push(step("→ Quality Assurance", "x1.2", pc)); }
+    if (hasDS) { pc *= 2; s.push(step("→ Double Seller", "x2", pc)); }
+  } else if (chainName.includes("Explosives")) {
+    let exp = casing * 3;
+    s.push(step("=== Explosives (5 ores) ===", "", ""));
+    s.push(step("Ores 1-4: → Casing", "x1.3", casing));
+    s.push(step("Stone → Crush → Metal Dust + Stone Dust", "→ Dust", 1));
+    s.push(step("  → Blasting Powder Chamber", "→ Powder $2", 2));
+    s.push(step("  → Blasting Powder Refiner (+$1, once)", "→ Powder $3", 3));
+    s.push(step("Casing × Powder → Explosives Maker", "MULTIPLY", exp));
+    if (hasQA) { exp *= 1.20; s.push(step("→ Quality Assurance", "x1.2", exp)); }
+    if (hasDS) { exp *= 2; s.push(step("→ Double Seller", "x2", exp)); }
   }
 
-  if (p.nanoSifter) steps.push(stepRow("Nano Sifter bonus", "+byproduct", optimizer.nanoBonus()));
+  if (p.nanoSifter) s.push(step("+ Nano Sifter (stone → dust → 16.6% ore)", "+bonus/ore", optimizer.nanoBonus()));
+  return s.join("");
+}
 
-  return steps.join("");
+function step(name, effect, value) {
+  const valStr = value === "" ? "" : (typeof value === "number" ? formatMoney(value) : value);
+  return `<div class="chain-step"><span class="chain-step-name">${name}</span><span class="chain-step-effect">${effect}</span><span class="chain-step-value">${valStr}</span></div>`;
 }
 
 function renderIncomeEstimate(results, outputBelts, oreCount) {
