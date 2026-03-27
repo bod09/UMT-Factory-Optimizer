@@ -1443,6 +1443,58 @@ body:has(.builder-fullpage.active) {
   .builder-sidebar { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid var(--border); }
 }
 
+/* Connections Database */
+#connections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.5rem;
+}
+
+.connection-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.conn-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-left: 0.5rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.conn-effect {
+  font-family: var(--font-mono);
+  color: var(--cyan);
+  font-size: 0.8rem;
+}
+
+.conn-row {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  font-size: 0.75rem;
+}
+
+.conn-label {
+  color: var(--text-muted);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.conn-types {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.conn-output { color: var(--success); }
+.conn-byproduct { color: var(--accent); }
+.conn-tag { color: var(--purple); font-family: var(--font-mono); font-size: 0.7rem; }
+
 /* Footer */
 footer {
   max-width: 1200px;

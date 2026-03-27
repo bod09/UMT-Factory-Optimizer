@@ -158,6 +158,7 @@
         <button class="db-btn" data-db="gems">Gems</button>
         <button class="db-btn" data-db="machines">Machines</button>
         <button class="db-btn" data-db="equipment">Equipment</button>
+        <button class="db-btn" data-db="connections">Connections</button>
       </div>
 
       <div id="db-ores" class="db-content active">
@@ -240,6 +241,12 @@
             </table>
           </div>
         </div>
+      </div>
+
+      <div id="db-connections" class="db-content">
+        <h2>Machine Connections</h2>
+        <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1rem">What each machine accepts as input and what it outputs. Use this to verify the optimizer's understanding.</p>
+        <div id="connections-grid"></div>
       </div>
     </section>
 

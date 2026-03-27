@@ -628,6 +628,46 @@ function initDatabase() {
   renderGemTable();
   renderMachineGrid();
   renderEquipment();
+  renderConnections();
+}
+
+function renderConnections() {
+  const grid = $("#connections-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  Object.entries(MACHINES).forEach(([id, m]) => {
+    const color = CATEGORY_COLORS[m.category] || "#6b7280";
+    const inputs = (m.inputTypes || []).map(t => {
+      const parts = t.split("|");
+      return parts.map(p => ITEM_TYPES[p] || p).join(" / ");
+    }).join(" + ");
+    const output = ITEM_TYPES[m.outputType] || m.outputType || "Same";
+    const byproducts = (m.byproducts || []).map(b => ITEM_TYPES[b] || b).join(", ");
+
+    let effectStr = "";
+    if (m.effect === "flat") effectStr = `+$${m.value}`;
+    else if (m.effect === "multiply" || m.effect === "combine") effectStr = `x${m.value}`;
+    else if (m.effect === "percent") effectStr = `+${(m.value * 100).toFixed(0)}%`;
+    else if (m.effect === "set") effectStr = `=$${m.value}`;
+    else if (m.effect === "multiplicative") effectStr = "A × B";
+    else if (m.effect === "chance") effectStr = `${(m.value * 100).toFixed(1)}% chance`;
+    else effectStr = m.effect || "";
+
+    const card = document.createElement("div");
+    card.className = "connection-card";
+    card.innerHTML = `
+      <div class="conn-header" style="border-left:3px solid ${color}">
+        <strong>${m.name}</strong>
+        <span class="conn-effect">${effectStr}</span>
+      </div>
+      <div class="conn-row"><span class="conn-label">Inputs:</span> <span class="conn-types">${inputs || "Any"}</span></div>
+      <div class="conn-row"><span class="conn-label">Output:</span> <span class="conn-types conn-output">${output}</span></div>
+      ${byproducts ? `<div class="conn-row"><span class="conn-label">Byproduct:</span> <span class="conn-types conn-byproduct">${byproducts}</span></div>` : ""}
+      ${m.tag ? `<div class="conn-row"><span class="conn-label">Tag:</span> <span class="conn-tag">${m.tag}</span></div>` : ""}
+    `;
+    grid.appendChild(card);
+  });
 }
 
 function renderOreTable() {
@@ -1015,7 +1055,6 @@ function renderChainStrip() {
     const pill = document.createElement("div");
     pill.className = "chain-pill";
     if (builderSelectedPills.has(idx)) pill.classList.add("selected");
-    pill.draggable = true;
     pill.dataset.idx = idx;
 
     const color = CATEGORY_COLORS[m.category] || "#6b7280";
@@ -1023,6 +1062,7 @@ function renderChainStrip() {
 
     // Click: select/deselect (shift = multiselect)
     pill.addEventListener("click", (e) => {
+      if (pill.dataset.wasDragged) { delete pill.dataset.wasDragged; return; }
       if (e.shiftKey) {
         if (builderSelectedPills.has(idx)) builderSelectedPills.delete(idx);
         else builderSelectedPills.add(idx);
@@ -1040,54 +1080,90 @@ function renderChainStrip() {
       renderBuilderMachines();
     });
 
-    // Drag start
-    pill.addEventListener("dragstart", (e) => {
-      builderDragIdx = idx;
-      pill.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", idx.toString());
-      // If multiselected, drag all selected
-      trash.classList.remove("drag-over");
-    });
+    // Custom mouse-based drag
+    pill.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let isDragging = false;
 
-    pill.addEventListener("dragend", () => {
-      pill.classList.remove("dragging");
-      builderDragIdx = -1;
-      trash.classList.remove("drag-over");
-      // Remove all drop indicators
-      container.querySelectorAll(".chain-pill-drop-indicator").forEach(d => d.classList.remove("visible"));
-    });
+      const onMove = (me) => {
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        if (!isDragging && Math.abs(dx) + Math.abs(dy) > 5) {
+          isDragging = true;
+          pill.classList.add("dragging");
+          builderDragIdx = idx;
+        }
+        if (isDragging) {
+          // Check if over trash
+          const trashRect = trash.getBoundingClientRect();
+          if (me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
+              me.clientY >= trashRect.top && me.clientY <= trashRect.bottom) {
+            trash.classList.add("drag-over");
+          } else {
+            trash.classList.remove("drag-over");
+          }
+          // Check which pill we're over for reorder
+          const allPills = container.querySelectorAll(".chain-pill");
+          allPills.forEach(p => p.style.borderLeftColor = "");
+          for (const p of allPills) {
+            const r = p.getBoundingClientRect();
+            if (me.clientX >= r.left && me.clientX <= r.right && p !== pill) {
+              p.style.borderLeftColor = "var(--accent)";
+              p.style.borderLeftWidth = "3px";
+              break;
+            }
+          }
+        }
+      };
 
-    // Drop target: reorder
-    pill.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-    });
+      const onUp = (me) => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        pill.classList.remove("dragging");
+        trash.classList.remove("drag-over");
+        container.querySelectorAll(".chain-pill").forEach(p => { p.style.borderLeftColor = ""; p.style.borderLeftWidth = ""; });
 
-    pill.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
-      if (isNaN(fromIdx) || fromIdx === idx) return;
+        if (!isDragging) return;
+        pill.dataset.wasDragged = "true"; // prevent click from firing
 
-      // Move the dragged item(s)
-      if (builderSelectedPills.size > 1 && builderSelectedPills.has(fromIdx)) {
-        // Multi-move: extract selected, insert at drop point
-        const selected = [...builderSelectedPills].sort((a, b) => a - b);
-        const items = selected.map(i => builderChain[i]);
-        // Remove from high index to low to preserve indices
-        for (let i = selected.length - 1; i >= 0; i--) builderChain.splice(selected[i], 1);
-        // Insert at target (adjust for removed items)
-        let insertAt = idx;
-        for (const s of selected) { if (s < idx) insertAt--; }
-        builderChain.splice(insertAt, 0, ...items);
-        builderSelectedPills.clear();
-      } else {
-        // Single move
-        const [item] = builderChain.splice(fromIdx, 1);
-        const insertAt = fromIdx < idx ? idx : idx;
-        builderChain.splice(insertAt, 0, item);
-      }
-      updateBuilderValue();
+        // Check if dropped on trash
+        const trashRect = trash.getBoundingClientRect();
+        if (me.clientX >= trashRect.left && me.clientX <= trashRect.right &&
+            me.clientY >= trashRect.top && me.clientY <= trashRect.bottom) {
+          if (builderSelectedPills.size > 1 && builderSelectedPills.has(idx)) {
+            const selected = [...builderSelectedPills].sort((a, b) => b - a);
+            for (const i of selected) builderChain.splice(i, 1);
+            builderSelectedPills.clear();
+          } else {
+            builderChain.splice(idx, 1);
+          }
+          builderSelectedNode = -1;
+          updateBuilderValue();
+          return;
+        }
+
+        // Check if dropped on another pill (reorder)
+        const allPills = container.querySelectorAll(".chain-pill");
+        for (const p of allPills) {
+          const targetIdx = parseInt(p.dataset.idx);
+          if (isNaN(targetIdx) || targetIdx === idx) continue;
+          const r = p.getBoundingClientRect();
+          if (me.clientX >= r.left && me.clientX <= r.right) {
+            const [item] = builderChain.splice(idx, 1);
+            const insertAt = idx < targetIdx ? targetIdx : targetIdx;
+            builderChain.splice(insertAt, 0, item);
+            updateBuilderValue();
+            return;
+          }
+        }
+
+        builderDragIdx = -1;
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
     });
 
     container.appendChild(pill);
