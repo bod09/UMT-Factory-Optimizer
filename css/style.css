@@ -171,13 +171,17 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 1rem;
-  align-items: end;
+  align-items: start;
 }
 
 .config-group {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.config-group .hint {
+  min-height: 1.1em;
 }
 
 .config-group label {
