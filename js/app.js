@@ -994,28 +994,31 @@ function renderProgression() {
 }
 
 function renderProgressionGraph(container, graphData) {
-  if (!container || !graphData) return;
+  if (!container || !graphData || !graphData.nodes.length) return;
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "progression-graph");
 
-  // Use simplified layout - horizontal flow, smaller nodes
-  const nodeWidth = 120;
-  const nodeHeight = 40;
-  const gapX = 30;
-  const gapY = 50;
+  const nodeWidth = 110;
+  const nodeHeight = 36;
+  const gapX = 20;
+  const gapY = 44;
 
-  // Separate main nodes from byproduct nodes
-  const mainNodes = graphData.nodes.filter(n => !n.isByproduct && !n.machineId?.startsWith("sifted"));
-  const byproductNodes = graphData.nodes.filter(n => n.isByproduct || n.machineId?.startsWith("sifted"));
+  // Use the layer property for horizontal positioning
+  // Separate byproduct nodes (stonework category) to bottom row
+  const isByproduct = (n) => n.category === "stonework" || n.name?.includes("Byproduct") || n.name?.includes("Sell Excess");
+  const mainNodes = graphData.nodes.filter(n => !isByproduct(n));
+  const byproductNodes = graphData.nodes.filter(n => isByproduct(n));
 
-  // Position main nodes horizontally
+  // Sort main nodes by layer for left-to-right flow
+  mainNodes.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+  byproductNodes.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+
   mainNodes.forEach((node, i) => {
     node._x = i * (nodeWidth + gapX) + 10;
     node._y = 10;
   });
 
-  // Position byproduct nodes below
   byproductNodes.forEach((node, i) => {
     node._x = i * (nodeWidth + gapX) + 10;
     node._y = nodeHeight + gapY + 10;
@@ -1031,7 +1034,7 @@ function renderProgressionGraph(container, graphData) {
 
   svg.setAttribute("viewBox", `0 0 ${totalWidth} ${totalHeight}`);
   svg.style.width = "100%";
-  svg.style.height = `${Math.min(totalHeight, 140)}px`;
+  svg.style.height = `${Math.min(totalHeight, 120)}px`;
 
   // Draw edges
   graphData.edges.forEach(edge => {
@@ -1044,14 +1047,22 @@ function renderProgressionGraph(container, graphData) {
     line.setAttribute("y1", fromNode._y + nodeHeight / 2);
     line.setAttribute("x2", toNode._x);
     line.setAttribute("y2", toNode._y + nodeHeight / 2);
-    line.setAttribute("stroke", edge.isByproduct ? "#f59e0b55" : "#4b5563");
-    line.setAttribute("stroke-width", "1.5");
+    line.setAttribute("stroke", isByproduct(fromNode) || isByproduct(toNode) ? "#f59e0b44" : "#4b556388");
+    line.setAttribute("stroke-width", "1");
     svg.appendChild(line);
   });
+
+  // Category colors
+  const catColors = {
+    metalwork: "#3b82f6", stonework: "#6b7280", glasswork: "#22c55e",
+    electronics: "#06b6d4", jewelcrafting: "#a855f7", explosives: "#ef4444",
+    multipurpose: "#10b981", prestige: "#f59e0b", source: "#6b7280"
+  };
 
   // Draw nodes
   allNodes.forEach(node => {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const color = catColors[node.category] || "#6b7280";
 
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     rect.setAttribute("x", node._x);
@@ -1060,28 +1071,65 @@ function renderProgressionGraph(container, graphData) {
     rect.setAttribute("height", nodeHeight);
     rect.setAttribute("rx", 4);
     rect.setAttribute("fill", "#1e293b");
-    rect.setAttribute("stroke", node.isByproduct ? "#f59e0b55" : "#3b82f6");
+    rect.setAttribute("stroke", color);
     rect.setAttribute("stroke-width", 1);
     g.appendChild(rect);
 
+    // Top accent line
+    const accent = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    accent.setAttribute("x", node._x);
+    accent.setAttribute("y", node._y);
+    accent.setAttribute("width", nodeWidth);
+    accent.setAttribute("height", 3);
+    accent.setAttribute("fill", color);
+    g.appendChild(accent);
+
+    // Machine name
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", node._x + nodeWidth / 2);
+    text.setAttribute("x", node._x + 5);
     text.setAttribute("y", node._y + 16);
-    text.setAttribute("text-anchor", "middle");
     text.setAttribute("fill", "#e2e8f0");
-    text.setAttribute("font-size", "9");
+    text.setAttribute("font-size", "8");
     text.setAttribute("font-family", "Inter, sans-serif");
-    text.textContent = (node.label || node.machineId || "").substring(0, 16);
+    text.setAttribute("font-weight", "600");
+    text.textContent = (node.name || "?").substring(0, 18);
     g.appendChild(text);
 
-    if (node.qty && node.qty > 1) {
+    // Output type + value
+    const typeName = ITEM_TYPES[node.type] || node.type || "";
+    const valStr = node.value ? formatMoney(node.value) : "";
+    const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    sub.setAttribute("x", node._x + 5);
+    sub.setAttribute("y", node._y + 28);
+    sub.setAttribute("fill", "#9ca3b4");
+    sub.setAttribute("font-size", "7");
+    sub.setAttribute("font-family", "Inter, sans-serif");
+    sub.textContent = typeName;
+    g.appendChild(sub);
+
+    if (valStr) {
+      const val = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      val.setAttribute("x", node._x + nodeWidth - 5);
+      val.setAttribute("y", node._y + 28);
+      val.setAttribute("text-anchor", "end");
+      val.setAttribute("fill", "#22c55e");
+      val.setAttribute("font-size", "7");
+      val.setAttribute("font-weight", "600");
+      val.setAttribute("font-family", "JetBrains Mono, monospace");
+      val.textContent = valStr;
+      g.appendChild(val);
+    }
+
+    // Quantity badge
+    if (node.quantity && node.quantity > 1) {
       const badge = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      badge.setAttribute("x", node._x + nodeWidth - 5);
-      badge.setAttribute("y", node._y + 34);
+      badge.setAttribute("x", node._x + nodeWidth - 3);
+      badge.setAttribute("y", node._y + 12);
       badge.setAttribute("text-anchor", "end");
       badge.setAttribute("fill", "#f59e0b");
-      badge.setAttribute("font-size", "8");
-      badge.textContent = `x${node.qty}`;
+      badge.setAttribute("font-size", "7");
+      badge.setAttribute("font-weight", "700");
+      badge.textContent = `x${node.quantity}`;
       g.appendChild(badge);
     }
 
