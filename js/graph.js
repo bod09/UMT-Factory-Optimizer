@@ -868,8 +868,9 @@ class GraphGenerator {
       }
     }
 
-    // Add byproduct processing chain from machines with byproducts
-    // All machines found from registry, quantities from byproductRatio and config
+    // Add byproduct processing chains using the flow system
+    // For each machine that produces byproducts, resolve the optimal path
+    // for each byproduct type through ALL available machines
     for (const [key, data] of uniqueNodes) {
       const tn = data.treeNode;
       const machine = registry.get(tn.machine);
@@ -883,157 +884,89 @@ class GraphGenerator {
 
       for (const bp of machine.byproducts) {
         const bpQty = Math.round(sourceQty * bpRatio) || 1;
-        let prevId = sourceId;
         let currentLayer = sourceLayer;
 
-        // Byproduct source node (e.g., Stone from smelter)
+        // Byproduct source node
         const bpName = (ITEM_TYPES[bp.type] || bp.type) + " (Byproduct)";
         const bpId = nextId++;
-        nodes.push({ id: bpId, name: bpName, type: bp.type, value: 0, category: "stonework", layer: currentLayer, isByproduct: true, quantity: bpQty });
+        nodes.push({ id: bpId, name: bpName, type: bp.type, value: 0, category: "stonework",
+          layer: currentLayer, isByproduct: true, quantity: bpQty });
         edges.push({ from: sourceId, to: bpId, itemType: bp.type, isByproduct: true });
-        prevId = bpId;
         currentLayer++;
 
-        // Find machines that process this byproduct type from registry
-        let remaining = bpQty;
+        // Use the flow system: find ALL machines that accept this type and build the chain
+        const byproductChain = GraphGenerator._resolveByproductChain(bp.type, bpQty, registry, config, currentLayer);
 
-        // Chance machines (prospectors): consume input at chance rate
-        for (const [machineId, m] of registry.machines) {
-          if (!m.inputs?.includes(bp.type) || m.effect !== "chance") continue;
-          if (!registry.isAvailable(machineId, config)) continue;
-
-          const produced = Math.round(remaining * (m.value || 0.05));
-          const chanceId = nextId++;
-          nodes.push({ id: chanceId, name: m.name || machineId, type: m.gemType || "gem",
-            value: 0, category: m.category || "jewelcrafting", layer: currentLayer,
-            isByproduct: true, quantity: produced || 1 });
-          edges.push({ from: prevId, to: chanceId, itemType: bp.type, isByproduct: true });
-          remaining = Math.round(remaining * (1 - (m.value || 0.05)));
-          prevId = chanceId;
+        // Add all resolved chain nodes and edges to the graph
+        const idMapping = new Map(); // local chain id → global graph id
+        for (const chainNode of byproductChain.nodes) {
+          const globalId = nextId++;
+          idMapping.set(chainNode.id, globalId);
+          nodes.push({ ...chainNode, id: globalId, isByproduct: true });
         }
 
-        // Crusher: converts remaining to dust (find from registry)
-        for (const [machineId, m] of registry.machines) {
-          if (m.effect !== "set" || !m.outputs?.[0]) continue;
-          if (!m.inputs?.includes("any") && !m.inputs?.includes(bp.type)) continue;
-          if (m.outputs[0].type !== "dust") continue;
-          if (!registry.isAvailable(machineId, config)) continue;
-
-          const crushId = nextId++;
-          nodes.push({ id: crushId, name: m.name || machineId, type: "dust",
-            value: m.value || 1, category: m.category || "stonework", layer: currentLayer,
-            isByproduct: true, quantity: remaining });
-          edges.push({ from: prevId, to: crushId, itemType: bp.type, isByproduct: true });
-          prevId = crushId;
-          currentLayer++;
-          break;
+        // Connect byproduct source to first chain node
+        if (byproductChain.nodes.length > 0) {
+          const firstChainId = idMapping.get(byproductChain.nodes[0].id);
+          edges.push({ from: bpId, to: firstChainId, itemType: bp.type, isByproduct: true });
         }
 
-        // Sifter/Nano Sifter: find best available from registry
-        let dustRemaining = remaining;
-        let bestSifter = null;
-
-        // First check for chance_convert type
-        for (const [machineId, m] of registry.machines) {
-          if (!m.inputs?.includes("dust")) continue;
-          if (m.effect !== "chance_convert" && machineId !== "sifter" && machineId !== "nano_sifter") continue;
-          if (!registry.isAvailable(machineId, config)) continue;
-          if (!bestSifter || (m.value || 0) > (bestSifter.m.value || 0)) {
-            bestSifter = { id: machineId, m };
+        // Add chain edges
+        for (const chainEdge of byproductChain.edges) {
+          const fromId = idMapping.get(chainEdge.from);
+          const toId = idMapping.get(chainEdge.to);
+          if (fromId !== undefined && toId !== undefined) {
+            edges.push({ ...chainEdge, from: fromId, to: toId });
           }
         }
 
-        if (bestSifter) {
-          const { id: machineId, m } = bestSifter;
-          const siftChance = m.value || 0.1;
-          const oreProduced = Math.round(dustRemaining * siftChance);
-          const siftId = nextId++;
-          nodes.push({ id: siftId, name: m.name || machineId, type: "dust",
-            value: 0, category: m.category || "prestige", layer: currentLayer,
-            isByproduct: true, quantity: dustRemaining });
-          // Dust entering sifter is main byproduct flow (not a secondary byproduct)
-          edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: false });
+        // Connect loop-back edges (sifted ore → first ore processor in main chain)
+        for (const loopBack of byproductChain.loopBacks) {
+          const fromId = idMapping.get(loopBack.fromId);
+          if (fromId === undefined) continue;
 
-          // Ore output is the BYPRODUCT of sifting - connect back to the first
-          // ore-processing node in the main chain (whatever the flow system chose)
-          if (oreProduced > 0) {
-            // Find the first ore-processing node in the main graph
-            // This is the node with the lowest layer that processes ore type
-            // (could be Ore Upgrader, Ore Cleaner, etc. depending on config)
-            const oreProcessors = nodes.filter(n =>
-              n.type === "ore" && !n.isByproduct && n.name !== "Ore Input"
-            );
-            // Pick the one with the lowest layer (earliest in chain)
-            oreProcessors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
-            const firstOreProcessor = oreProcessors[0];
+          // Find the best target in main graph for this type
+          // Look for the first processor of this type (lowest layer, not byproduct)
+          const processors = nodes.filter(n =>
+            n.type === loopBack.type && !n.isByproduct && n.name !== "Ore Input"
+          );
+          processors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+          const target = processors[0] || nodes.find(n => n.name === "Ore Input");
 
-            if (firstOreProcessor) {
-              edges.push({ from: siftId, to: firstOreProcessor.id, itemType: "ore", isByproduct: true, isLoopBack: true });
-            } else {
-              // No ore processor found - connect to Ore Input as fallback
-              const oreInput = nodes.find(n => n.name === "Ore Input");
-              if (oreInput) {
-                edges.push({ from: siftId, to: oreInput.id, itemType: "ore", isByproduct: true, isLoopBack: true });
-              }
-            }
+          if (target) {
+            edges.push({ from: fromId, to: target.id, itemType: loopBack.type, isByproduct: true, isLoopBack: true });
           }
-
-          dustRemaining = dustRemaining - oreProduced;
-          prevId = siftId;
-          currentLayer++;
         }
 
-        // Connect remaining dust to whatever dust-consuming machine exists in the main graph
-        // The optimizer already chose the best dust path - find it automatically
-        if (dustRemaining > 0) {
+        // Connect remaining outputs to main chain or sell
+        for (const connect of byproductChain.connections) {
+          const fromId = idMapping.get(connect.fromId);
+          if (fromId === undefined) continue;
+
+          // Find a consumer for this type in the main graph
           let connected = false;
-
-          // Find any machine in the main graph that accepts dust as input
           for (const [nodeKey, nodeData] of uniqueNodes) {
             const nodeId = keyToId.get(nodeKey);
             if (nodeId === undefined) continue;
             const m = registry.get(nodeData.treeNode.machine);
             if (!m) continue;
-            // Check if this machine accepts dust (directly or via "any")
-            const acceptsDust = (m.inputs || []).some(inp =>
-              inp === "dust" || inp.split("|").includes("dust")
+            const accepts = (m.inputs || []).some(inp =>
+              inp === connect.type || inp.split("|").includes(connect.type)
             );
-            if (acceptsDust) {
-              edges.push({ from: prevId, to: nodeId, itemType: "dust", isByproduct: true });
+            if (accepts) {
+              edges.push({ from: fromId, to: nodeId, itemType: connect.type, isByproduct: true });
               connected = true;
               break;
             }
           }
 
           if (!connected) {
-            // No dust consumer in main graph - find best from registry and show it
-            let bestDustMachine = null;
-            for (const [machineId, m] of registry.machines) {
-              if (!registry.isAvailable(machineId, config)) continue;
-              if (!(m.inputs || []).some(inp => inp === "dust" || inp.split("|").includes("dust"))) continue;
-              if (machineId === "crusher" || machineId === "sifter" || machineId === "nano_sifter") continue;
-              const outVal = m.value || 0;
-              if (!bestDustMachine || outVal > bestDustMachine.value) {
-                bestDustMachine = { id: machineId, ...m };
-              }
-            }
-
-            if (bestDustMachine) {
-              const dustMachineId = nextId++;
-              nodes.push({ id: dustMachineId, name: bestDustMachine.name || bestDustMachine.id,
-                type: bestDustMachine.outputs?.[0]?.type || "item",
-                value: bestDustMachine.value || 0,
-                category: bestDustMachine.category || "stonework",
-                layer: currentLayer, isByproduct: true, quantity: dustRemaining });
-              edges.push({ from: prevId, to: dustMachineId, itemType: "dust", isByproduct: true });
-            } else {
-              // Truly nothing - sell directly
-              const dustSellId = nextId++;
-              nodes.push({ id: dustSellId, name: "Sell Dust", type: "dust",
-                value: 1, category: "source", layer: currentLayer,
-                isByproduct: true, quantity: dustRemaining });
-              edges.push({ from: prevId, to: dustSellId, itemType: "dust", isByproduct: true });
-            }
+            // No consumer in main graph - add a sell node
+            const sellId = nextId++;
+            nodes.push({ id: sellId, name: "Sell " + (ITEM_TYPES[connect.type] || connect.type),
+              type: connect.type, value: connect.value || 0, category: "source",
+              layer: currentLayer + 1, isByproduct: true, quantity: connect.qty });
+            edges.push({ from: fromId, to: sellId, itemType: connect.type, isByproduct: true });
           }
         }
       }
@@ -1086,6 +1019,190 @@ class GraphGenerator {
     }
 
     return { nodes, edges };
+  }
+
+  // Resolve the optimal processing chain for a byproduct type using the registry
+  // Returns { nodes, edges, loopBacks, connections } for the byproduct sub-graph
+  static _resolveByproductChain(itemType, quantity, registry, config, startLayer) {
+    const nodes = [];
+    const edges = [];
+    const loopBacks = []; // { fromId, type } - items that loop back to main chain
+    const connections = []; // { fromId, type, qty, value } - items that connect to main graph or sell
+    let nextId = 0;
+    let currentLayer = startLayer;
+    let currentType = itemType;
+    let currentQty = quantity;
+    let prevId = null;
+    const visitedTypes = new Set(); // prevent processing same type twice
+    const usedMachines = new Set(); // prevent using same machine twice
+    let iterations = 0;
+
+    while (currentQty > 0 && !visitedTypes.has(currentType) && iterations < 10) {
+      iterations++;
+      visitedTypes.add(currentType);
+
+      // Find ALL machines that accept this type as input
+      const candidates = [];
+      for (const [machineId, m] of registry.machines) {
+        if (!registry.isAvailable(machineId, config)) continue;
+        if (usedMachines.has(machineId)) continue;
+        const hasAnyInput = (m.inputs || []).includes("any");
+        const acceptsType = (m.inputs || []).some(inp =>
+          inp === currentType || inp.split("|").includes(currentType)
+        );
+        if (!acceptsType && !hasAnyInput) continue;
+        // "any" input machines (crusher): only allow for specific conversions
+        if (hasAnyInput && !acceptsType) {
+          // Only allow if it converts to a different type (stone→dust)
+          if (m.effect !== "set") continue;
+          // Don't crush items that have better uses
+          if (currentType === "dust" || currentType === "ore" || currentType === "bar") continue;
+        }
+        candidates.push({ machineId, machine: m });
+      }
+
+      if (candidates.length === 0) {
+        // Nothing processes this type - sell it
+        connections.push({ fromId: prevId, type: currentType, qty: currentQty, value: 0 });
+        break;
+      }
+
+      // Separate chance machines into two types:
+      // 1. Prospectors: main output is DIFFERENT type (gems), input type passes through as byproduct
+      // 2. Sifters: main output is SAME type (dust passthrough), byproduct is DIFFERENT type (ore)
+      const allChanceMachines = candidates.filter(c => c.machine.effect === "chance");
+      const sifters = allChanceMachines.filter(c => {
+        // Sifter: main output type === input type (passthrough)
+        const mainOut = c.machine.outputs?.[0]?.type;
+        return mainOut === currentType;
+      });
+      const prospectors = allChanceMachines.filter(c => {
+        // Prospector: main output type !== input type (produces gems from stone)
+        const mainOut = c.machine.outputs?.[0]?.type;
+        return mainOut !== currentType;
+      });
+
+      // Prospectors first: consume a % of input, rest passes through
+      for (const { machineId, machine } of prospectors) {
+        const produced = Math.round(currentQty * (machine.value || 0.05));
+        if (produced <= 0) continue;
+
+        const nodeId = nextId++;
+        const outputType = machine.gemType || machine.outputs?.[0]?.type || "gem";
+        nodes.push({ id: nodeId, name: machine.name || machineId, type: outputType,
+          value: 0, category: machine.category || "jewelcrafting",
+          layer: currentLayer, quantity: produced || 1 });
+
+        if (prevId !== null) {
+          edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: true });
+        }
+        connections.push({ fromId: nodeId, type: outputType, qty: produced, value: 0 });
+        currentQty = Math.round(currentQty * (1 - (machine.value || 0.05)));
+        prevId = nodeId;
+        usedMachines.add(machineId);
+      }
+
+      // Sifters BEFORE converters: passthrough input, produce byproduct at chance rate
+      if (sifters.length > 0) {
+        // Pick best (highest chance)
+        sifters.sort((a, b) => (b.machine.value || 0) - (a.machine.value || 0));
+        const { machineId, machine } = sifters[0];
+        const siftChance = machine.value || 0.1;
+        const converted = Math.round(currentQty * siftChance);
+        const remaining = currentQty - converted;
+
+        const nodeId = nextId++;
+        nodes.push({ id: nodeId, name: machine.name || machineId, type: currentType,
+          value: 0, category: machine.category || "prestige",
+          layer: currentLayer, quantity: currentQty });
+
+        if (prevId !== null) {
+          // Dust entering sifter is main flow, not byproduct
+          edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: false });
+        }
+
+        // Converted output (ore) loops back to main chain
+        if (converted > 0) {
+          const outputType = machine.byproducts?.[0]?.type || "ore";
+          loopBacks.push({ fromId: nodeId, type: outputType, qty: converted });
+        }
+
+        // Remaining continues as same type with Sifted tag
+        currentQty = remaining;
+        prevId = nodeId;
+        currentLayer++;
+        usedMachines.add(machineId);
+      }
+
+      // Crusher/converter: changes type (stone → dust, etc.)
+      // Runs AFTER sifters so sifters get first pass at the items
+      if (currentQty > 0) {
+        const converters = candidates.filter(c =>
+          c.machine.effect === "set" && c.machine.outputs?.[0]?.type &&
+          c.machine.outputs[0].type !== currentType && !usedMachines.has(c.machineId) &&
+          // Only single-input converters (crusher), not multi-input (cement_mixer needs dust+stone)
+          (c.machine.inputs || []).length <= 1 || (c.machine.inputs || []).every(i => i === currentType || i === "any")
+        );
+        if (converters.length > 0) {
+          // Pick the highest value converter (best output)
+          converters.sort((a, b) => (b.machine.value || 0) - (a.machine.value || 0));
+          const { machineId, machine } = converters[0];
+          const outputType = machine.outputs[0].type;
+          const nodeId = nextId++;
+          nodes.push({ id: nodeId, name: machine.name || machineId, type: outputType,
+            value: machine.value || 1, category: machine.category || "stonework",
+            layer: currentLayer, quantity: currentQty });
+
+          if (prevId !== null) {
+            edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: true });
+          }
+          prevId = nodeId;
+          currentLayer++;
+          usedMachines.add(machineId);
+          currentType = outputType;
+          continue; // Restart loop with new type
+        }
+      }
+
+      // Regular processors: flat/multiply/combine on remaining items
+      if (currentQty > 0) {
+        const processors = candidates.filter(c =>
+          c.machine.effect !== "chance" && c.machine.effect !== "set" &&
+          c.machine.effect !== "chance_convert" &&
+          c.machineId !== "sifter" && c.machineId !== "nano_sifter" &&
+          c.machineId !== "crusher"
+        );
+
+        if (processors.length > 0) {
+          // Pick best value processor
+          processors.sort((a, b) => (b.machine.value || 0) - (a.machine.value || 0));
+          const { machineId, machine } = processors[0];
+          const outputType = machine.outputs?.[0]?.type || currentType;
+          const nodeId = nextId++;
+          nodes.push({ id: nodeId, name: machine.name || machineId, type: outputType,
+            value: machine.value || 0, category: machine.category || "stonework",
+            layer: currentLayer, quantity: Math.ceil(currentQty / (machine.inputs?.length || 1)) });
+
+          if (prevId !== null) {
+            edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: true });
+          }
+
+          // Output goes to main chain or sell
+          connections.push({ fromId: nodeId, type: outputType,
+            qty: Math.ceil(currentQty / (machine.inputs?.length || 1)),
+            value: machine.value || 0 });
+          break;
+        } else {
+          // Nothing left to process - sell remaining
+          connections.push({ fromId: prevId, type: currentType, qty: currentQty, value: 0 });
+          break;
+        }
+      }
+
+      break; // Safety: prevent infinite loop
+    }
+
+    return { nodes, edges, loopBacks, connections };
   }
 
   // Legacy: flat path-based graph (for factory builder)
