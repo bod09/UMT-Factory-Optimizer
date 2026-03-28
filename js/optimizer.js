@@ -15,8 +15,6 @@ class FactoryOptimizer {
     };
     if (machineRegistry) {
       this.flowOptimizer = new FlowOptimizer(machineRegistry, this.config);
-      // Keep old system as fallback
-      this.chainDiscoverer = new ChainDiscoverer(machineRegistry, this.config);
     }
   }
 
@@ -25,19 +23,10 @@ class FactoryOptimizer {
   }
 
   getBestChain(ore, budget) {
-    // Use new FlowOptimizer
-    if (this.flowOptimizer) {
-      try {
-        return this.flowOptimizer.discoverAll(ore.value);
-      } catch(e) {
-        console.error("FlowOptimizer error, falling back:", e);
-      }
+    if (!this.flowOptimizer) {
+      return [{ chain: "Loading...", value: 0, cost: 0, perOre: 0, oresNeeded: 1 }];
     }
-    // Fallback to old system
-    if (this.chainDiscoverer) {
-      return this.chainDiscoverer.discoverChains(ore.value);
-    }
-    return [{ chain: "Loading...", value: 0, cost: 0, perOre: 0, oresNeeded: 1 }];
+    return this.flowOptimizer.discoverAll(ore.value);
   }
 
   // Backwards compatibility
