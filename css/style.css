@@ -883,6 +883,21 @@ body:has(.builder-fullpage.active) {
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   margin-bottom: 1rem;
+  position: relative;
+}
+
+.stage-card::before {
+  content: attr(data-phase);
+  position: absolute;
+  top: -0.6rem;
+  left: 1rem;
+  background: var(--accent);
+  color: var(--bg-primary);
+  padding: 0.1rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .stage-header {
@@ -906,14 +921,63 @@ body:has(.builder-fullpage.active) {
   font-size: 0.9rem;
 }
 
-.stage-tips {
+.stage-desc {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.stage-meta {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.stage-ore {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.stage-best {
   background: var(--bg-primary);
   border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
+  padding: 0.6rem 1rem;
   margin-bottom: 0.75rem;
-  border-left: 3px solid var(--info);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-left: 3px solid var(--success);
+}
+
+.stage-best-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.stage-best-chain {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.stage-best-value {
+  font-family: var(--font-mono);
+  color: var(--success);
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.stage-purchases {
+  margin-bottom: 0.75rem;
+}
+
+.stage-graph-container {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.stage-graph-container svg {
+  min-width: 100%;
 }
 
 .stage-priority h4 {

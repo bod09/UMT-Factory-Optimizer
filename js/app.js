@@ -81,16 +81,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Now render content that reads checkbox/input state
   initDatabase();
-  initSpeedrun();
-  initProgression();
-  initPrestigeCosts();
   initBuilder();
 
-  // Load machine registry from machines.json, then run optimizer
+  // Load machine registry from machines.json, then run optimizer + progression
   loadMachineRegistry().then(() => {
     runOptimizer(false);
+    renderProgression();
   }).catch(() => {
-    runOptimizer(false); // fallback
+    runOptimizer(false);
+    renderProgression();
   });
 });
 
@@ -158,7 +157,6 @@ function attachEvents() {
   $("#double-seller").addEventListener("change", saveConfig);
   $("#xxl-backpack").addEventListener("change", () => {
     saveConfig();
-    renderSpeedrun();
     renderProgression();
   });
   // Switch to "Custom" when manually editing depths
@@ -876,75 +874,235 @@ function isBackpackItem(text) {
   return BACKPACK_KEYWORDS.some(kw => text.includes(kw));
 }
 
-// Speedrun
-function initSpeedrun() { renderSpeedrun(); }
-
-function renderSpeedrun() {
-  const container = $("#speedrun-steps");
-  container.innerHTML = "";
-  const hasXXL = $("#xxl-backpack").checked;
-  const steps = optimizer.getFreshPrestigePath();
-
-  steps.forEach((step, idx) => {
-    let actions = step.actions;
-    if (hasXXL) {
-      actions = actions.filter(a => !isBackpackItem(a));
-    }
-    if (actions.length === 0) return;
-
-    const card = document.createElement("div");
-    card.className = "phase-card";
-    card.dataset.phase = `PHASE ${idx + 1}`;
-
-    card.innerHTML = `
-      <div class="phase-header">
-        <span class="phase-title">${step.phase.split(": ")[1] || step.phase}</span>
-        <div class="phase-meta">
-          <span>${step.budget}</span>
-          <span>${step.time}</span>
-        </div>
-      </div>
-      <ul class="phase-actions">
-        ${actions.map(a => `<li>${a}</li>`).join("")}
-      </ul>
-    `;
-    container.appendChild(card);
-  });
-}
-
-// Progression
+// Progression (combined speedrun + upgrade paths)
 function initProgression() { renderProgression(); }
 
 function renderProgression() {
   const container = $("#progression-stages");
+  if (!container) return;
   container.innerHTML = "";
-  const hasXXL = $("#xxl-backpack").checked;
 
-  PROGRESSION_STAGES.forEach(stage => {
-    let priority = stage.priority;
-    let tips = stage.tips;
-    if (hasXXL) {
-      priority = priority.filter(p => !isBackpackItem(p));
+  // Define budget stages - each builds on previous
+  const stages = [
+    { name: "Bootstrap", budgetMax: 500, ore: "Tin", oreVal: 10, desc: "Mine surface ores, sell with basic processing" },
+    { name: "Smelting Setup", budgetMax: 5000, ore: "Lead", oreVal: 30, desc: "Smelt ores into bars for 1.2x value" },
+    { name: "Early Chains", budgetMax: 50000, ore: "Silver", oreVal: 150, desc: "Build bolt/plate chains, start frame production" },
+    { name: "Mid Game", budgetMax: 500000, ore: "Gold", oreVal: 350, desc: "Tempering Forge doubles bar value, build casing chain" },
+    { name: "Advanced", budgetMax: 2000000, ore: "Titanium", oreVal: 500, desc: "Engine, Superconductor, and multi-input factories" },
+    { name: "Mega Factories", budgetMax: 10000000, ore: "Mithril", oreVal: 3000, desc: "Power Core, Tablet, Laser - maximize per-ore value" },
+    { name: "Push to Prestige", budgetMax: 20000000, ore: "Mithril", oreVal: 3000, desc: "Maximize throughput, reach $20M to prestige" },
+  ];
+
+  let prevMachines = new Set();
+
+  stages.forEach((stage, idx) => {
+    // Use FlowOptimizer at this budget to find best chain
+    const stageConfig = {
+      budget: stage.budgetMax,
+      hasDoubleSeller: false, // no double seller until post-prestige
+      prestigeItems: {},
+    };
+    const flowOpt = new FlowOptimizer(machineRegistry, stageConfig);
+    const results = flowOpt.discoverAll(stage.oreVal);
+
+    // Get best chain that fits budget
+    const best = results.length > 0 ? results[0] : null;
+
+    // Extract machines used in this chain
+    const currentMachines = new Set();
+    let totalCost = 0;
+    if (best?.graph) {
+      best.graph.nodes.forEach(n => {
+        const m = machineRegistry.get(n.machineId);
+        if (m && n.machineId !== "ore_source" && n.machineId !== "seller" &&
+            !n.machineId.startsWith("byproduct") && !n.machineId.startsWith("sifted")) {
+          currentMachines.add(n.machineId);
+        }
+      });
+    }
+    // Also extract from recipe tree if graph is missing
+    if (best?.recipeTree) {
+      const extractMachines = (node) => {
+        if (!node) return;
+        if (node.machine && node.machine !== "ore_source" && node.machine !== "seller") {
+          currentMachines.add(node.machine);
+        }
+        if (node.inputs) node.inputs.forEach(extractMachines);
+      };
+      extractMachines(best.recipeTree);
     }
 
+    // Calculate what's NEW this stage
+    const newMachines = [];
+    currentMachines.forEach(id => {
+      if (!prevMachines.has(id)) {
+        const m = machineRegistry.get(id);
+        if (m) {
+          newMachines.push({ id, name: m.name, cost: m.cost || 0 });
+          totalCost += m.cost || 0;
+        }
+      }
+    });
+    newMachines.sort((a, b) => a.cost - b.cost);
+
+    // Build card
     const card = document.createElement("div");
     card.className = "stage-card";
+    card.dataset.phase = `STAGE ${idx + 1}`;
+
+    const bestChainName = best ? best.chain : "Direct Sell";
+    const bestPerOre = best ? formatMoney(best.perOre) : formatMoney(stage.oreVal);
 
     card.innerHTML = `
       <div class="stage-header">
         <span class="stage-name">${stage.name}</span>
-        <span class="stage-budget">${stage.budget}</span>
-      </div>
-      <div class="stage-tips">${tips}</div>
-      <div class="stage-priority">
-        <h4>Priority Purchases</h4>
-        <div class="priority-list">
-          ${priority.map(p => `<span class="priority-item">${p}</span>`).join("")}
+        <div class="stage-meta">
+          <span class="stage-budget">Budget: ${formatMoney(stage.budgetMax)}</span>
+          <span class="stage-ore">Mining: ${stage.ore}</span>
         </div>
       </div>
+      <div class="stage-desc">${stage.desc}</div>
+      <div class="stage-best">
+        <span class="stage-best-label">Best Chain:</span>
+        <span class="stage-best-chain">${bestChainName}</span>
+        <span class="stage-best-value">${bestPerOre}/ore</span>
+      </div>
+      ${newMachines.length > 0 ? `
+        <div class="stage-purchases">
+          <h4>New Machines to Buy</h4>
+          <div class="priority-list">
+            ${newMachines.map(m => `<span class="priority-item">${m.name} (${formatMoney(m.cost)})</span>`).join("")}
+          </div>
+        </div>
+      ` : ""}
+      <div class="stage-graph-container" id="stage-graph-${idx}"></div>
     `;
     container.appendChild(card);
+
+    // Render mini graph if available
+    if (best?.graph) {
+      const graphContainer = card.querySelector(`#stage-graph-${idx}`);
+      renderProgressionGraph(graphContainer, best.graph);
+    }
+
+    // Update previous machines for next stage
+    prevMachines = new Set([...prevMachines, ...currentMachines]);
   });
+
+  // Prestige cost table
+  renderPrestigeCostTable();
+}
+
+function renderProgressionGraph(container, graphData) {
+  if (!container || !graphData) return;
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "progression-graph");
+
+  // Use simplified layout - horizontal flow, smaller nodes
+  const nodeWidth = 120;
+  const nodeHeight = 40;
+  const gapX = 30;
+  const gapY = 50;
+
+  // Separate main nodes from byproduct nodes
+  const mainNodes = graphData.nodes.filter(n => !n.isByproduct && !n.machineId?.startsWith("sifted"));
+  const byproductNodes = graphData.nodes.filter(n => n.isByproduct || n.machineId?.startsWith("sifted"));
+
+  // Position main nodes horizontally
+  mainNodes.forEach((node, i) => {
+    node._x = i * (nodeWidth + gapX) + 10;
+    node._y = 10;
+  });
+
+  // Position byproduct nodes below
+  byproductNodes.forEach((node, i) => {
+    node._x = i * (nodeWidth + gapX) + 10;
+    node._y = nodeHeight + gapY + 10;
+  });
+
+  const allNodes = [...mainNodes, ...byproductNodes];
+  const totalWidth = Math.max(
+    mainNodes.length * (nodeWidth + gapX) + 20,
+    byproductNodes.length * (nodeWidth + gapX) + 20,
+    200
+  );
+  const totalHeight = byproductNodes.length > 0 ? nodeHeight * 2 + gapY + 30 : nodeHeight + 30;
+
+  svg.setAttribute("viewBox", `0 0 ${totalWidth} ${totalHeight}`);
+  svg.style.width = "100%";
+  svg.style.height = `${Math.min(totalHeight, 140)}px`;
+
+  // Draw edges
+  graphData.edges.forEach(edge => {
+    const fromNode = allNodes.find(n => n.id === edge.from);
+    const toNode = allNodes.find(n => n.id === edge.to);
+    if (!fromNode || !toNode) return;
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", fromNode._x + nodeWidth);
+    line.setAttribute("y1", fromNode._y + nodeHeight / 2);
+    line.setAttribute("x2", toNode._x);
+    line.setAttribute("y2", toNode._y + nodeHeight / 2);
+    line.setAttribute("stroke", edge.isByproduct ? "#f59e0b55" : "#4b5563");
+    line.setAttribute("stroke-width", "1.5");
+    svg.appendChild(line);
+  });
+
+  // Draw nodes
+  allNodes.forEach(node => {
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", node._x);
+    rect.setAttribute("y", node._y);
+    rect.setAttribute("width", nodeWidth);
+    rect.setAttribute("height", nodeHeight);
+    rect.setAttribute("rx", 4);
+    rect.setAttribute("fill", "#1e293b");
+    rect.setAttribute("stroke", node.isByproduct ? "#f59e0b55" : "#3b82f6");
+    rect.setAttribute("stroke-width", 1);
+    g.appendChild(rect);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", node._x + nodeWidth / 2);
+    text.setAttribute("y", node._y + 16);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#e2e8f0");
+    text.setAttribute("font-size", "9");
+    text.setAttribute("font-family", "Inter, sans-serif");
+    text.textContent = (node.label || node.machineId || "").substring(0, 16);
+    g.appendChild(text);
+
+    if (node.qty && node.qty > 1) {
+      const badge = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      badge.setAttribute("x", node._x + nodeWidth - 5);
+      badge.setAttribute("y", node._y + 34);
+      badge.setAttribute("text-anchor", "end");
+      badge.setAttribute("fill", "#f59e0b");
+      badge.setAttribute("font-size", "8");
+      badge.textContent = `x${node.qty}`;
+      g.appendChild(badge);
+    }
+
+    svg.appendChild(g);
+  });
+
+  container.appendChild(svg);
+}
+
+function renderPrestigeCostTable() {
+  const tbody = $("#prestige-cost-table");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  let totalMedals = 0;
+  for (let i = 1; i <= 10; i++) {
+    totalMedals += i;
+    const cost = getPrestigeCost(i);
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${i}</td><td>${formatMoney(cost)}</td><td>${totalMedals}</td>`;
+    tbody.appendChild(row);
+  }
 }
 
 // Prestige cost table
