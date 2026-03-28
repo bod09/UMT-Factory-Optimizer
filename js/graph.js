@@ -722,6 +722,7 @@ class ChainDiscoverer {
       if (this.config.prestigeItems?.oreUpgrader) tags.push("Upgraded");
       if (this.config.prestigeItems?.transmuters) tags.push("Transmute");
       if (this.config.prestigeItems?.philosophersStone) tags.push("Infused");
+      if (result.dupAt) tags.push("Dup");
       const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
       const displayType = ITEM_TYPES[type] || type;
 
@@ -733,6 +734,7 @@ class ChainDiscoverer {
         oresNeeded: result.oreCount,
         endType: type,
         graph,
+        dupAt: result.dupAt,
       });
     }
 
