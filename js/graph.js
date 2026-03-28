@@ -1187,19 +1187,57 @@ class GraphGenerator {
           }
         }
 
-        // Connect remaining sifted dust to clay_mixer if it exists in main graph
+        // Connect remaining dust to whatever dust-consuming machine exists in the main graph
+        // The optimizer already chose the best dust path - find it automatically
         if (dustRemaining > 0) {
-          const clayMixerNodeId = keyToId.get("clay_mixer:clay");
-          if (clayMixerNodeId !== undefined) {
-            // Connect sifter output to clay mixer in main chain
-            edges.push({ from: prevId, to: clayMixerNodeId, itemType: "dust", isByproduct: true });
-          } else {
-            // No clay mixer - show sell node for remaining dust products
-            const dustSellId = nextId++;
-            nodes.push({ id: dustSellId, name: "Sell Dust Products", type: "dust",
-              value: 0, category: "source", layer: currentLayer,
-              isByproduct: true, quantity: dustRemaining });
-            edges.push({ from: prevId, to: dustSellId, itemType: "dust", isByproduct: true });
+          let connected = false;
+
+          // Find any machine in the main graph that accepts dust as input
+          for (const [nodeKey, nodeData] of uniqueNodes) {
+            const nodeId = keyToId.get(nodeKey);
+            if (nodeId === undefined) continue;
+            const m = registry.get(nodeData.treeNode.machine);
+            if (!m) continue;
+            // Check if this machine accepts dust (directly or via "any")
+            const acceptsDust = (m.inputs || []).some(inp =>
+              inp === "dust" || inp.split("|").includes("dust")
+            );
+            if (acceptsDust) {
+              edges.push({ from: prevId, to: nodeId, itemType: "dust", isByproduct: true });
+              connected = true;
+              break;
+            }
+          }
+
+          if (!connected) {
+            // No dust consumer in main graph - find best from registry and show it
+            let bestDustMachine = null;
+            for (const [machineId, m] of registry.machines) {
+              if (!registry.isAvailable(machineId, config)) continue;
+              if (!(m.inputs || []).some(inp => inp === "dust" || inp.split("|").includes("dust"))) continue;
+              if (machineId === "crusher" || machineId === "sifter" || machineId === "nano_sifter") continue;
+              const outVal = m.value || 0;
+              if (!bestDustMachine || outVal > bestDustMachine.value) {
+                bestDustMachine = { id: machineId, ...m };
+              }
+            }
+
+            if (bestDustMachine) {
+              const dustMachineId = nextId++;
+              nodes.push({ id: dustMachineId, name: bestDustMachine.name || bestDustMachine.id,
+                type: bestDustMachine.outputs?.[0]?.type || "item",
+                value: bestDustMachine.value || 0,
+                category: bestDustMachine.category || "stonework",
+                layer: currentLayer, isByproduct: true, quantity: dustRemaining });
+              edges.push({ from: prevId, to: dustMachineId, itemType: "dust", isByproduct: true });
+            } else {
+              // Truly nothing - sell directly
+              const dustSellId = nextId++;
+              nodes.push({ id: dustSellId, name: "Sell Dust", type: "dust",
+                value: 1, category: "source", layer: currentLayer,
+                isByproduct: true, quantity: dustRemaining });
+              edges.push({ from: prevId, to: dustSellId, itemType: "dust", isByproduct: true });
+            }
           }
         }
       }
