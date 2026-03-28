@@ -400,28 +400,23 @@
       "name": "Sifter",
       "cost": 4000,
       "category": "stonework",
-      "inputs": [
-        "dust"
-      ],
-      "outputs": [
-        {
-          "type": "dust",
-          "chance": 0.9,
-          "desc": "Remaining dust passes through (tagged Sifted, can't sift again)"
-        }
-      ],
-      "byproducts": [
-        {
-          "type": "ore",
-          "chance": 0.1,
-          "desc": "Random ore (10%): Tin, Iron, Cobalt, Uranium, Gold"
-        }
-      ],
+      "inputs": ["dust"],
+      "outputs": [{ "type": "dust", "chance": 0.9, "desc": "Remaining dust passes through (tagged Sifted)" }],
+      "byproducts": [{ "type": "ore", "chance": 0.1, "desc": "Random ore (10%): Tin, Iron, Cobalt, Uranium, Gold" }],
       "effect": "chance",
       "value": 0.1,
+      "tag": "Sifted",
       "size": "3x3",
-      "desc": "10% dust\u00e2\u2020\u2019ore. 90% dust passes through tagged Sifted (prevents re-sifting).",
-      "byproductRatio": 0.1
+      "desc": "10% dust→ore. 90% dust passes through tagged Sifted (prevents re-sifting).",
+      "byproductRatio": 0.1,
+      "orePool": [
+        { "name": "Tin", "value": 10, "weight": 1 },
+        { "name": "Iron", "value": 20, "weight": 1 },
+        { "name": "Cobalt", "value": 50, "weight": 1 },
+        { "name": "Uranium", "value": 180, "weight": 1 },
+        { "name": "Gold", "value": 350, "weight": 1 }
+      ],
+      "_orePoolNote": "Equal weight = equal chance. Average ore value = $122."
     },
     "nano_sifter": {
       "name": "Nano Sifter",
@@ -447,9 +442,24 @@
       ],
       "effect": "chance",
       "value": 0.166,
+      "tag": "Sifted",
       "size": "3x3",
-      "desc": "16.6% dust\u00e2\u2020\u2019ore. 83.4% dust passes through tagged Sifted (prevents re-sifting).",
-      "byproductRatio": 0.166
+      "desc": "16.6% dust→ore. 83.4% dust passes through tagged Sifted (prevents re-sifting).",
+      "byproductRatio": 0.166,
+      "orePool": [
+        { "name": "Tin", "value": 10, "weight": 1 },
+        { "name": "Iron", "value": 20, "weight": 1 },
+        { "name": "Lead", "value": 30, "weight": 1 },
+        { "name": "Cobalt", "value": 50, "weight": 1 },
+        { "name": "Silver", "value": 150, "weight": 1 },
+        { "name": "Uranium", "value": 180, "weight": 1 },
+        { "name": "Tungsten", "value": 300, "weight": 1 },
+        { "name": "Gold", "value": 350, "weight": 1 },
+        { "name": "Plutonium", "value": 750, "weight": 1 },
+        { "name": "Palladium", "value": 2000, "weight": 1 },
+        { "name": "Iridium", "value": 2500, "weight": 1 }
+      ],
+      "_orePoolNote": "Equal weight = equal chance. Average ore value = $576. All are upgradable via Ore Upgrader."
     },
     "brick_mold": {
       "name": "Brick Mold",
@@ -807,131 +817,66 @@
       "name": "Topaz Prospector",
       "cost": 2000,
       "category": "jewelcrafting",
-      "inputs": [
-        "stone"
-      ],
-      "outputs": [
-        {
-          "type": "gem",
-          "chance": 0.05,
-          "desc": "Topaz gem ($75)"
-        }
-      ],
-      "byproducts": [
-        {
-          "type": "stone",
-          "chance": 0.95,
-          "desc": "Stone passes through"
-        }
-      ],
+      "inputs": ["stone"],
+      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
+      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Topaz gem ($75)" }],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Topaz",
-      "desc": "5% chance to convert stone to Topaz. Stone passes through on fail."
+      "gemValue": 75,
+      "desc": "5% chance to produce Topaz. Stone passes through on fail."
     },
     "emerald_prospector": {
       "name": "Emerald Prospector",
       "cost": 5000,
       "category": "jewelcrafting",
-      "inputs": [
-        "stone"
-      ],
-      "outputs": [
-        {
-          "type": "gem",
-          "chance": 0.05,
-          "desc": "Emerald gem ($200)"
-        }
-      ],
-      "byproducts": [
-        {
-          "type": "stone",
-          "chance": 0.95,
-          "desc": "Stone passes through"
-        }
-      ],
+      "inputs": ["stone"],
+      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
+      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Emerald gem ($200)" }],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Emerald",
-      "desc": "5% chance to convert stone to Emerald. Stone passes through on fail."
+      "gemValue": 200,
+      "desc": "5% chance to produce Emerald. Stone passes through on fail."
     },
     "sapphire_prospector": {
       "name": "Sapphire Prospector",
       "cost": 8000,
       "category": "jewelcrafting",
-      "inputs": [
-        "stone"
-      ],
-      "outputs": [
-        {
-          "type": "gem",
-          "chance": 0.05,
-          "desc": "Sapphire gem ($250)"
-        }
-      ],
-      "byproducts": [
-        {
-          "type": "stone",
-          "chance": 0.95,
-          "desc": "Stone passes through"
-        }
-      ],
+      "inputs": ["stone"],
+      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
+      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Sapphire gem ($250)" }],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Sapphire",
-      "desc": "5% chance to convert stone to Sapphire. Stone passes through on fail."
+      "gemValue": 250,
+      "desc": "5% chance to produce Sapphire. Stone passes through on fail."
     },
     "ruby_prospector": {
       "name": "Ruby Prospector",
       "cost": 15000,
       "category": "jewelcrafting",
-      "inputs": [
-        "stone"
-      ],
-      "outputs": [
-        {
-          "type": "gem",
-          "chance": 0.05,
-          "desc": "Ruby gem ($300)"
-        }
-      ],
-      "byproducts": [
-        {
-          "type": "stone",
-          "chance": 0.95,
-          "desc": "Stone passes through"
-        }
-      ],
+      "inputs": ["stone"],
+      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
+      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Ruby gem ($300)" }],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Ruby",
-      "desc": "5% chance to convert stone to Ruby. Stone passes through on fail."
+      "gemValue": 300,
+      "desc": "5% chance to produce Ruby. Stone passes through on fail."
     },
     "diamond_prospector": {
       "name": "Diamond Prospector",
       "cost": 30000,
       "category": "jewelcrafting",
-      "inputs": [
-        "stone"
-      ],
-      "outputs": [
-        {
-          "type": "gem",
-          "chance": 0.05,
-          "desc": "Diamond gem ($1500)"
-        }
-      ],
-      "byproducts": [
-        {
-          "type": "stone",
-          "chance": 0.95,
-          "desc": "Stone passes through"
-        }
-      ],
+      "inputs": ["stone"],
+      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
+      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Diamond gem ($1500)" }],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Diamond",
-      "desc": "5% chance to convert stone to Diamond. Stone passes through on fail."
+      "gemValue": 1500,
+      "desc": "5% chance to produce Diamond. Stone passes through on fail."
     },
     "blasting_powder_chamber": {
       "name": "Blasting Powder Chamber",

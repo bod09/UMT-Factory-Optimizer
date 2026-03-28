@@ -1067,37 +1067,39 @@ class GraphGenerator {
         break;
       }
 
-      // Separate chance machines into two types:
-      // 1. Prospectors: main output is DIFFERENT type (gems), input type passes through as byproduct
-      // 2. Sifters: main output is SAME type (dust passthrough), byproduct is DIFFERENT type (ore)
+      // Separate chance machines:
+      // Sifters: have a tag (Sifted) preventing re-processing, only one can run per item
+      // Prospectors: no tag, multiple can chain, sort by byproduct value (highest first)
       const allChanceMachines = candidates.filter(c => c.machine.effect === "chance");
-      const sifters = allChanceMachines.filter(c => {
-        // Sifter: main output type === input type (passthrough)
-        const mainOut = c.machine.outputs?.[0]?.type;
-        return mainOut === currentType;
-      });
-      const prospectors = allChanceMachines.filter(c => {
-        // Prospector: main output type !== input type (produces gems from stone)
-        const mainOut = c.machine.outputs?.[0]?.type;
-        return mainOut !== currentType;
-      });
+      const sifters = allChanceMachines.filter(c => c.machine.tag);
+      const prospectors = allChanceMachines.filter(c => !c.machine.tag);
+      // Sort prospectors by byproduct value (gemValue) highest first
+      prospectors.sort((a, b) => (b.machine.gemValue || 0) - (a.machine.gemValue || 0));
 
-      // Prospectors first: consume a % of input, rest passes through
+      // Prospectors: stone passes through (main flow, solid line), gems are byproduct (dotted)
+      // Sorted highest value first (Diamond → Ruby → Sapphire → Emerald → Topaz)
       for (const { machineId, machine } of prospectors) {
-        const produced = Math.round(currentQty * (machine.value || 0.05));
-        if (produced <= 0) continue;
+        const gemChance = machine.value || 0.05;
+        const gemsProduced = Math.round(currentQty * gemChance);
 
         const nodeId = nextId++;
-        const outputType = machine.gemType || machine.outputs?.[0]?.type || "gem";
-        nodes.push({ id: nodeId, name: machine.name || machineId, type: outputType,
-          value: 0, category: machine.category || "jewelcrafting",
-          layer: currentLayer, quantity: produced || 1 });
+        const gemType = machine.byproducts?.[0]?.type || machine.gemType || "gem";
+        nodes.push({ id: nodeId, name: machine.name || machineId, type: currentType,
+          value: machine.gemValue || 0, category: machine.category || "jewelcrafting",
+          layer: currentLayer, quantity: currentQty });
 
         if (prevId !== null) {
-          edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: true });
+          // Stone entering prospector is main flow (solid)
+          edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: false });
         }
-        connections.push({ fromId: nodeId, type: outputType, qty: produced, value: 0 });
-        currentQty = Math.round(currentQty * (1 - (machine.value || 0.05)));
+
+        // Gem byproduct (dotted line)
+        if (gemsProduced > 0) {
+          connections.push({ fromId: nodeId, type: gemType, qty: gemsProduced,
+            value: machine.gemValue || 0, isByproduct: true });
+        }
+
+        currentQty = Math.round(currentQty * (1 - gemChance));
         prevId = nodeId;
         usedMachines.add(machineId);
       }
