@@ -5,7 +5,9 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(python -c \"import json; json.load\\(open\\(''data/machines.json''\\)\\)\")",
       "Bash(grep -n \",$\" data/machines.json)",
-      "Bash(python -c \"import json; json.load\\(open\\(''data/machines.json''\\)\\); print\\(''JSON valid''\\)\")"
+      "Bash(python -c \"import json; json.load\\(open\\(''data/machines.json''\\)\\); print\\(''JSON valid''\\)\")",
+      "Bash(python -c \"import json; d=json.load\\(open\\(''data/machines.json''\\)\\); [print\\(k,v.get\\(''inputs''\\),v.get\\(''outputs''\\)\\) for k,v in d[''machines''].items\\(\\) if k in [''alloy_furnace'',''bolt_machine'',''plate_stamper'',''frame_maker'']]\")",
+      "Bash(python -c \":*)"
     ]
   }
 }

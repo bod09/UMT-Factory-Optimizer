@@ -1,5 +1,5 @@
 // UMT Factory Optimizer - Uses data-driven MachineRegistry from graph.js
-// All calculations derived from machines.json via MachineRegistry → ValueCalculator → ChainDiscoverer
+// All calculations derived from machines.json via MachineRegistry → FlowOptimizer
 
 class FactoryOptimizer {
   constructor() {
