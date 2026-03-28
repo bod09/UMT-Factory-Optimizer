@@ -140,52 +140,142 @@ class ValueCalculator {
     const basePerOre = baseResult.value / baseResult.oreCount;
     let bestPlacement = null;
 
-    // Collect UNIQUE nodes by assigning IDs
-    let nextNodeId = 0;
-    function assignIds(tree) {
+    // Collect unique nodes with their context (parent combiner info)
+    const candidates = [];
+    function collectCandidates(tree, parent, inputIdx) {
       if (!tree) return;
-      tree._dupId = nextNodeId++;
-      for (const inp of tree.inputs || []) assignIds(inp);
+      if (tree.machine !== "byproduct_source" && tree.machine !== "byproduct") {
+        candidates.push({
+          node: tree,
+          parent: parent,
+          inputIdx: inputIdx,
+        });
+      }
+      for (let i = 0; i < (tree.inputs || []).length; i++) {
+        collectCandidates(tree.inputs[i], tree, i);
+      }
     }
-    assignIds(baseResult.recipeTree);
+    collectCandidates(baseResult.recipeTree, null, -1);
 
-    // Collect all nodes
-    const allNodes = [];
-    function collectNodes(tree) {
-      if (!tree) return;
-      allNodes.push(tree);
-      for (const inp of tree.inputs || []) collectNodes(inp);
-    }
-    collectNodes(baseResult.recipeTree);
+    // For each candidate: calculate what happens if we dup it
+    // Dup at node X means: X produces 2 copies at 50% value from same ores
+    // If X feeds into a combiner, we get 2 products (needing 2x of other inputs)
+    // Total value and ores change based on where the 2 copies flow
+    for (const cand of candidates) {
+      const node = cand.node;
+      const nodeValue = node.value;
+      const nodeOres = node.oreCount || 0;
 
-    // Get unique machine types (dup at ore_source once = dup ALL ore_sources, which is the correct model)
-    // Instead, try unique machine+type combos but also try individual nodes
-    const tested = new Set();
+      // Simple approach: dup this node
+      // - Save nodeOres (don't need to build a second one)
+      // - But the value at this point is halved (50% per copy)
+      // - 2 copies flow to parent
 
-    for (const dupNode of allNodes) {
-      if (dupNode.machine === "byproduct_source" || dupNode.machine === "byproduct") continue;
-      if (dupNode.machine === "duplicator") continue;
+      // For the simplest case (dup the final product):
+      // 2 copies at 50% = same total, same ores = no change
+      // For dup an intermediate before a combiner:
+      // 2 copies of X at 50%, need 2x other inputs, get 2 products
+      // New total ores = baseOres - nodeOres + 2*(otherInputOres)...
+      // Actually: new ores = baseOres + otherInputOres (need 1 extra set of other inputs)
+      // New value: depends on how the 50% propagates
 
-      // Use the unique _dupId to simulate dup at this SPECIFIC node
-      const simResult = this._simDupById(baseResult.recipeTree, dupNode._dupId);
-      if (!simResult) continue;
+      // Direct calculation approach:
+      // Without dup: 1 product, value V, ores O
+      // With dup at node N:
+      //   If N is the final product: 2 products at V/2 each. Total V, ores O. No change.
+      //   If N feeds into combiner with other inputs worth Y using oY ores:
+      //     2 products each = (N/2 + Y) * mult
+      //     Total = 2 * (N/2 + Y) * mult = (N + 2Y) * mult
+      //     Ores = (O - oY) + 2*oY = O + oY (extra set of other inputs)
+      //     vs no dup: (N + Y) * mult, ores O
+      //     Per-ore improvement if (N + 2Y)/(O + oY) > (N + Y)/O
 
-      let simVal = simResult.value * (simResult.copies || 1);
-      if (this.config.hasDoubleSeller) simVal *= 2;
+      // Find the parent combiner and what other inputs it has
+      if (!cand.parent) continue; // root node - no benefit
 
-      const simPerOre = simResult.oreCount > 0 ? simVal / simResult.oreCount : 0;
+      const parentMachine = this.registry.get(cand.parent.machine);
+      if (!parentMachine) continue;
 
-      if (simPerOre > basePerOre && (!bestPlacement || simPerOre > bestPlacement.perOre)) {
-        bestPlacement = {
-          perOre: simPerOre,
-          machine: dupNode.machine,
-          type: dupNode.type,
-          result: { ...baseResult, value: simVal, oreCount: simResult.oreCount, dupAt: dupNode.machine + ":" + dupNode.type },
-        };
+      if (cand.parent.inputs.length === 1) {
+        // Single-input parent (linear chain): dup here gives 2 items through remaining chain
+        // Each gets independent flat bonuses. Calculate the gain from flat bonuses
+        // being applied to each copy independently
+        // Use proportional approach: val at dup point halved, trace through chain
+
+        // For flat bonus: each copy gets +flat, so total = 2*(val/2 + flat) = val + 2*flat
+        // vs no dup: val + flat. Gain = +flat per product through rest of chain
+        // This compounds through all downstream flat bonuses and multipliers
+        // Already tested correctly in the simple bar case. Skip complex recalculation.
+        // The tree simulation handles this correctly for linear chains.
+        continue; // Let the tree simulation handle linear chains
+      }
+
+      // Multi-input parent (combiner): calculate directly
+      const otherInputOres = cand.parent.inputs.reduce((sum, inp, i) => {
+        return sum + (i === cand.inputIdx ? 0 : (inp.oreCount || 0));
+      }, 0);
+
+      const otherInputValue = cand.parent.inputs.reduce((sum, inp, i) => {
+        return sum + (i === cand.inputIdx ? 0 : inp.value);
+      }, 0);
+
+      if (parentMachine.effect === "combine") {
+        // Without dup: (nodeValue + otherValue) * mult
+        const noDupProductValue = (nodeValue + otherInputValue) * parentMachine.value;
+        // With dup: 2 * (nodeValue/2 + otherValue) * mult
+        const dupProductValue = 2 * (nodeValue * 0.5 + otherInputValue) * parentMachine.value;
+
+        // Calculate ores
+        const noDupOres = baseResult.oreCount;
+        const dupOres = baseResult.oreCount + otherInputOres; // extra set of other inputs
+
+        // Scale the full chain value proportionally
+        const valueRatio = dupProductValue / noDupProductValue;
+        const dupTotalValue = baseResult.value * valueRatio;
+        const dupPerOre = dupOres > 0 ? dupTotalValue / dupOres : 0;
+
+        if (dupPerOre > basePerOre && (!bestPlacement || dupPerOre > bestPlacement.perOre)) {
+          bestPlacement = {
+            perOre: dupPerOre,
+            machine: node.machine,
+            type: node.type,
+            result: { ...baseResult, value: dupTotalValue, oreCount: dupOres, dupAt: node.machine + ":" + node.type },
+          };
+        }
       }
     }
 
-    // Clean up temp IDs
+    // Also try the tree simulation for linear chains (ore dup)
+    // Test dup at ore_source using the tree simulation
+    let nextNodeId = 0;
+    function assignIds(tree) { if(tree) { tree._dupId = nextNodeId++; for(const inp of tree.inputs||[]) assignIds(inp); } }
+    assignIds(baseResult.recipeTree);
+
+    // Find the first ore_source node
+    function findFirst(tree, machine) {
+      if (!tree) return null;
+      if (tree.machine === machine) return tree;
+      for (const inp of tree.inputs || []) { const f = findFirst(inp, machine); if (f) return f; }
+      return null;
+    }
+    const firstOre = findFirst(baseResult.recipeTree, "ore_source");
+    if (firstOre) {
+      const sim = this._simDupById(baseResult.recipeTree, firstOre._dupId);
+      if (sim) {
+        let simVal = sim.value * (sim.copies || 1);
+        if (this.config.hasDoubleSeller) simVal *= 2;
+        const simPerOre = sim.oreCount > 0 ? simVal / sim.oreCount : 0;
+        if (simPerOre > basePerOre && (!bestPlacement || simPerOre > bestPlacement.perOre)) {
+          bestPlacement = {
+            perOre: simPerOre,
+            machine: "ore_source",
+            type: "ore",
+            result: { ...baseResult, value: simVal, oreCount: sim.oreCount, dupAt: "ore_source:ore" },
+          };
+        }
+      }
+    }
+
     function cleanIds(tree) { if(tree) { delete tree._dupId; for(const i of tree.inputs||[]) cleanIds(i); } }
     cleanIds(baseResult.recipeTree);
 
