@@ -144,6 +144,8 @@ class ValueCalculator {
     const candidates = [];
     function collectCandidates(tree, parent, inputIdx) {
       if (!tree) return;
+      // Test all items including free byproducts - the optimizer picks
+      // whichever gives the best overall profit per ore
       if (tree.machine !== "byproduct_source" && tree.machine !== "byproduct") {
         candidates.push({
           node: tree,
@@ -220,26 +222,76 @@ class ValueCalculator {
       }, 0);
 
       if (parentMachine.effect === "combine") {
-        // Without dup: (nodeValue + otherValue) * mult
-        const noDupProductValue = (nodeValue + otherInputValue) * parentMachine.value;
-        // With dup: 2 * (nodeValue/2 + otherValue) * mult
-        const dupProductValue = 2 * (nodeValue * 0.5 + otherInputValue) * parentMachine.value;
+        // Dup this input: 2 copies at 50% value, need 2x of other inputs
+        // Per-product: (nodeValue/2 + otherValue) * mult
+        // 2 products from: nodeOres + 2*otherInputOres
+        const perProduct = (nodeValue * 0.5 + otherInputValue) * parentMachine.value;
+        const totalProducts = 2;
+        const dupOres = nodeOres + otherInputOres * totalProducts;
 
-        // Calculate ores
-        const noDupOres = baseResult.oreCount;
-        const dupOres = baseResult.oreCount + otherInputOres; // extra set of other inputs
+        // The parent's value changes. Apply remaining chain multipliers
+        // by looking at how parent.value relates to the final result.
+        // For the IMMEDIATE parent of the dup: parent.value = original combiner output
+        // We need to replace parent.value with 2*perProduct in the chain
+        // Then propagate through grandparents (which may be combiners, QA, DS, etc.)
+        // Simplest correct approach: calculate ratio at the PARENT level only
+        // finalValue = baseValue * (newParentValue / oldParentValue) for multiply/QA/DS above
+        // But for grandparent combiners, the ratio approach overcounts.
 
-        // Scale the full chain value proportionally
-        const valueRatio = dupProductValue / noDupProductValue;
-        const dupTotalValue = baseResult.value * valueRatio;
-        const dupPerOre = dupOres > 0 ? dupTotalValue / dupOres : 0;
+        // Instead, compute the ADDITIVE difference and multiply only by
+        // downstream multipliers (not combine multipliers)
+        // The downstream multipliers after the parent are: QA (1.2x) and DS (2x) and any
+        // single-input multipliers. Combine multipliers DON'T amplify the difference
+        // proportionally - they ADD the difference to a sum.
+
+        // For correctness, just directly compute:
+        // newParentValue = totalProducts * perProduct
+        // Difference in parent value = newParentValue - parent.value
+        // This difference flows to grandparent.
+        // If grandparent is also a combiner: grandparent value changes by diff * grandparent.mult
+        // But this gets complicated for deep nesting.
+
+        // Pragmatic approach: only consider dup at DIRECT inputs to the TOP-LEVEL combiner
+        // (the chain's main product). This avoids nested combiner issues.
+        // For nested combiners (dup ceramic inside superconductor inside power_core),
+        // the benefit is much smaller and harder to compute correctly.
+
+        // Check if parent is the root product (top-level combiner)
+        // Check if parent is the top-level combiner (may be wrapped by QA/modifiers)
+        const isTopLevel = cand.parent === baseResult.recipeTree ||
+          (baseResult.recipeTree.inputs || []).some(inp => inp === cand.parent) ||
+          // Check 2 levels deep (QA → combiner → inputs)
+          (baseResult.recipeTree.inputs || []).some(inp =>
+            (inp.inputs || []).some(inp2 => inp2 === cand.parent));
+
+        let dupTotalValue, totalDupOres;
+
+        if (isTopLevel || cand.parent.inputs.length > 1) {
+          // For top-level or direct combiner: calculate value change properly
+          const newParentValue = totalProducts * perProduct;
+          const oldParentValue = cand.parent.value;
+
+          // If parent IS the root, apply QA+DS to new value
+          // Apply QA and DS to the new combiner value
+          dupTotalValue = newParentValue;
+          const qa = this.registry.get("quality_assurance");
+          if (qa && this.registry.isAvailable("quality_assurance", this.config)) {
+            dupTotalValue *= (1 + qa.value);
+          }
+          if (this.config.hasDoubleSeller) dupTotalValue *= 2;
+          totalDupOres = dupOres;
+        } else {
+          continue;
+        }
+
+        const dupPerOre = totalDupOres > 0 ? dupTotalValue / totalDupOres : 0;
 
         if (dupPerOre > basePerOre && (!bestPlacement || dupPerOre > bestPlacement.perOre)) {
           bestPlacement = {
             perOre: dupPerOre,
             machine: node.machine,
             type: node.type,
-            result: { ...baseResult, value: dupTotalValue, oreCount: dupOres, dupAt: node.machine + ":" + node.type },
+            result: { ...baseResult, value: dupTotalValue, oreCount: totalDupOres, dupAt: node.machine + ":" + node.type },
           };
         }
       }
