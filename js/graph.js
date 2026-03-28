@@ -954,25 +954,26 @@ class GraphGenerator {
           // Dust entering sifter is main byproduct flow (not a secondary byproduct)
           edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: false });
 
-          // Ore output is the BYPRODUCT of sifting - connect back to ore cleaner in main graph
+          // Ore output is the BYPRODUCT of sifting - connect back to the first
+          // ore-processing node in the main chain (whatever the flow system chose)
           if (oreProduced > 0) {
-            // Find the ore_cleaner node in the main graph to loop back to
-            const oreCleanerNode = nodes.find(n => n.name === "Ore Cleaner" || n.machineId === "ore_cleaner");
-            if (oreCleanerNode) {
-              // Loop back to ore cleaner with byproduct edge
-              edges.push({ from: siftId, to: oreCleanerNode.id, itemType: "ore", isByproduct: true, isLoopBack: true });
+            // Find the first ore-processing node in the main graph
+            // This is the node with the lowest layer that processes ore type
+            // (could be Ore Upgrader, Ore Cleaner, etc. depending on config)
+            const oreProcessors = nodes.filter(n =>
+              n.type === "ore" && !n.isByproduct && n.name !== "Ore Input"
+            );
+            // Pick the one with the lowest layer (earliest in chain)
+            oreProcessors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+            const firstOreProcessor = oreProcessors[0];
+
+            if (firstOreProcessor) {
+              edges.push({ from: siftId, to: firstOreProcessor.id, itemType: "ore", isByproduct: true, isLoopBack: true });
             } else {
-              // Fallback: find any ore-processing node in main graph
-              const oreNode = nodes.find(n => n.type === "ore" && !n.isByproduct);
-              if (oreNode) {
-                edges.push({ from: siftId, to: oreNode.id, itemType: "ore", isByproduct: true, isLoopBack: true });
-              } else {
-                // Last resort: show as labeled node
-                const oreOutId = nextId++;
-                nodes.push({ id: oreOutId, name: "Ore → Ore Cleaner", type: "ore",
-                  value: 0, category: "metalwork", layer: currentLayer,
-                  isByproduct: true, quantity: oreProduced });
-                edges.push({ from: siftId, to: oreOutId, itemType: "ore", isByproduct: true });
+              // No ore processor found - connect to Ore Input as fallback
+              const oreInput = nodes.find(n => n.name === "Ore Input");
+              if (oreInput) {
+                edges.push({ from: siftId, to: oreInput.id, itemType: "ore", isByproduct: true, isLoopBack: true });
               }
             }
           }
