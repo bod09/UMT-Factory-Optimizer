@@ -271,6 +271,11 @@ function runOptimizer(scrollToResults = false) {
         });
       }
       const entry = chainMap.get(result.chain);
+      // Use the graph with the most nodes (most complete chain)
+      // Earlier ores might skip machines (e.g., max tier ore skips Ore Upgrader)
+      if (result.graph && (!entry.graph || result.graph.nodes.length > entry.graph.nodes.length)) {
+        entry.graph = result.graph;
+      }
       entry.oreBreakdown.push({ ore: ore.name, value: result.value, perOre: result.perOre, baseValue: ore.value });
       entry.totalValue += result.value;
       entry.totalPerOre += result.perOre;
