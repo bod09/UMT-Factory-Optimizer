@@ -360,30 +360,28 @@ class ValueCalculator {
 
 
   resolveType(targetType, oreValue, visiting) {
-    // Stone is the only true base byproduct - free from smelting
+    // Byproduct types are FREE (come from smelter byproduct chain)
+    // Don't build full stone→crusher→dust chains here - that's handled by
+    // the byproduct sub-graph in fromRecipeTree. Just mark as free inputs.
     if (targetType === "stone") {
-      const recipeTree = { machine: "smelter_byproduct", type: "stone", value: 0, oreCount: 0, inputs: [] };
-      return { type: "stone", value: 0, tags: new Set(), oreCount: 0, path: [{ machine: "smelter_byproduct", type: "stone", value: 0 }], recipeTree };
+      const recipeTree = { machine: "byproduct_free", type: "stone", value: 0, oreCount: 0, inputs: [], _isFreeByproduct: true };
+      return { type: "stone", value: 0, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "stone", value: 0 }], recipeTree };
     }
 
-    // Dust comes from Crusher(stone) - build the chain dynamically
     if (targetType === "dust") {
-      const crusher = this.registry.get("crusher");
-      if (crusher) {
-        const stoneResult = this.resolveType("stone", oreValue, new Set(visiting));
-        if (stoneResult) {
-          const dustValue = crusher.value || 1; // crusher sets value to $1
-          const path = [...(stoneResult.path || []), { machine: "crusher", type: "dust", value: dustValue }];
-          const recipeTree = {
-            machine: "crusher", type: "dust", value: dustValue, oreCount: 0,
-            inputs: [stoneResult.recipeTree || { machine: "smelter_byproduct", type: "stone", value: 0, oreCount: 0, inputs: [] }],
-          };
-          return { type: "dust", value: dustValue, tags: new Set(), oreCount: 0, path, recipeTree };
-        }
-      }
-      // Fallback
-      const recipeTree = { machine: "crusher", type: "dust", value: 1, oreCount: 0, inputs: [] };
-      return { type: "dust", value: 1, tags: new Set(), oreCount: 0, path: [{ machine: "crusher", type: "dust", value: 1 }], recipeTree };
+      const recipeTree = { machine: "byproduct_free", type: "dust", value: 1, oreCount: 0, inputs: [], _isFreeByproduct: true };
+      return { type: "dust", value: 1, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "dust", value: 1 }], recipeTree };
+    }
+
+    // Clay and ceramic_casing also come from byproduct chain (dust→clay→ceramic)
+    if (targetType === "clay") {
+      const recipeTree = { machine: "byproduct_free", type: "clay", value: 50, oreCount: 0, inputs: [], _isFreeByproduct: true };
+      return { type: "clay", value: 50, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "clay", value: 50 }], recipeTree };
+    }
+
+    if (targetType === "ceramic_casing") {
+      const recipeTree = { machine: "byproduct_free", type: "ceramic_casing", value: 150, oreCount: 0, inputs: [], _isFreeByproduct: true };
+      return { type: "ceramic_casing", value: 150, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "ceramic_casing", value: 150 }], recipeTree };
     }
 
     // Base case: ore
@@ -822,6 +820,10 @@ class GraphGenerator {
     for (const key of sorted) {
       const data = uniqueNodes.get(key);
       const tn = data.treeNode;
+      // Skip byproduct_free nodes - they're shown in the byproduct sub-graph
+      if (tn.machine === "byproduct_free" || tn._isFreeByproduct) {
+        continue;
+      }
       const machine = registry.get(tn.machine);
       let category = machine?.category || "source";
       let name = machine?.name || (tn.machine === "ore_source" ? "Ore Input" : tn.machine);
