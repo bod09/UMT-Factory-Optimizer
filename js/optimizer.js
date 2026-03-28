@@ -19,21 +19,17 @@ class FactoryOptimizer {
   }
 
   getEffectiveOreValue(ore) {
-    if (this.config.prestigeItems?.oreUpgrader) {
-      const upgraded = getUpgradedOreValue(ore.name);
-      if (upgraded !== null) return upgraded;
-    }
+    // Don't apply ore upgrader here - it's handled inside ValueCalculator.resolveType
+    // to avoid double-upgrading
     return ore.value;
   }
 
   getBestChain(ore, budget) {
     if (!this.chainDiscoverer) {
-      // Fallback if registry not loaded yet
       return [{ chain: "Loading...", value: 0, cost: 0, perOre: 0, oresNeeded: 1 }];
     }
 
-    const oreValue = this.getEffectiveOreValue(ore);
-    return this.chainDiscoverer.discoverChains(oreValue);
+    return this.chainDiscoverer.discoverChains(ore.value);
   }
 
   // Backwards compatibility

@@ -541,20 +541,36 @@ class ChainDiscoverer {
       const oresProduced = dustAmount * chance;
       siftedDust = dustAmount * (1 - chance);
 
-      // Process bonus ore through full chain
+      // Process each possible nano sifter ore through full chain (including ore upgrader)
+      // Use individual ore values so getOreName can resolve for upgrader
       const calc = new ValueCalculator(this.registry, this.config);
-      const barResult = calc.calculate("bar", NANO_SIFTER_AVG_VALUE);
-      if (barResult) {
-        const recursiveChance = stonePerOre * chance;
-        totalValue += (oresProduced * barResult.value) / (1 - recursiveChance);
+      let avgOreChainValue = 0;
+      for (const oreName of NANO_SIFTER_ORES) {
+        const ore = ORES.find(o => o.name === oreName);
+        if (!ore) continue;
+        const result = calc.calculate("bar", ore.value);
+        if (result) avgOreChainValue += result.value;
       }
+      avgOreChainValue /= NANO_SIFTER_ORES.length;
+
+      // Geometric series for recursive sifting (ore → smelt → stone → dust → sift → ore...)
+      const recursiveChance = stonePerOre * chance;
+      totalValue += (oresProduced * avgOreChainValue) / (1 - recursiveChance);
     } else if (sifter && this.registry.isAvailable("sifter", this.config)) {
       const chance = sifter.value;
       siftedDust = dustAmount * (1 - chance);
-      const avgSiftVal = (10 + 20 + 50 + 180 + 350) / 5;
+      // Process each sifter ore individually for accurate upgrader application
+      const sifterOres = ["Tin", "Iron", "Lead", "Silver", "Gold"];
       const calc = new ValueCalculator(this.registry, this.config);
-      const barResult = calc.calculate("bar", avgSiftVal);
-      if (barResult) totalValue += dustAmount * chance * barResult.value;
+      let avgVal = 0;
+      for (const oreName of sifterOres) {
+        const ore = ORES.find(o => o.name === oreName);
+        if (!ore) continue;
+        const result = calc.calculate("bar", ore.value);
+        if (result) avgVal += result.value;
+      }
+      avgVal /= sifterOres.length;
+      totalValue += dustAmount * chance * avgVal;
     }
 
     // 4. Sifted dust → best path from machine data
