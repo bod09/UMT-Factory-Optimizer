@@ -1101,6 +1101,7 @@ class GraphGenerator {
 
         currentQty = Math.round(currentQty * (1 - gemChance));
         prevId = nodeId;
+        currentLayer++;
         usedMachines.add(machineId);
       }
 
@@ -1156,7 +1157,8 @@ class GraphGenerator {
             layer: currentLayer, quantity: currentQty });
 
           if (prevId !== null) {
-            edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: true });
+            // Main flow continues (solid line) - stone→crusher, dust→clay etc.
+            edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: false });
           }
           prevId = nodeId;
           currentLayer++;
@@ -1186,7 +1188,7 @@ class GraphGenerator {
             layer: currentLayer, quantity: Math.ceil(currentQty / (machine.inputs?.length || 1)) });
 
           if (prevId !== null) {
-            edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: true });
+            edges.push({ from: prevId, to: nodeId, itemType: currentType, isByproduct: false });
           }
 
           // Output goes to main chain or sell
