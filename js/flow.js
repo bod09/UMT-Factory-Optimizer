@@ -342,6 +342,27 @@ class FlowOptimizer {
     const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
     const displayType = ITEM_TYPES[terminalType] || terminalType;
 
+    // Build recipe tree for graph visualization using the old ValueCalculator
+    // (it has proper tree building with all machine paths)
+    const vizCalc = new ValueCalculator(this.registry, this.config);
+    const vizResult = vizCalc.calculate(terminalType, oreValue);
+    let recipeTree = vizResult?.recipeTree || null;
+
+    // If duplicator was used, inject it into the tree
+    if (dupAt && recipeTree && this.config.prestigeItems?.duplicator) {
+      // Use the old system's duplicator injection for the graph
+      const oldDupResult = vizCalc.optimizeDuplicators({ ...vizResult, value: vizResult.value });
+      if (oldDupResult) {
+        recipeTree = vizCalc.injectDuplicatorNodes(recipeTree, oldDupResult.positions);
+        // Update productQty from old system if it found a combiner dup
+      }
+    }
+
+    // Build graph using existing GraphGenerator
+    const graph = recipeTree
+      ? GraphGenerator.fromRecipeTree(recipeTree, this.registry, totalOres, this.config, productQty)
+      : null;
+
     return {
       chain: displayType + suffix,
       totalValue,
@@ -349,12 +370,75 @@ class FlowOptimizer {
       perOre,
       endType: terminalType,
       totalCost: this.sumCosts(chainResult),
-      flowGraph: null, // TODO: build graph from flow data
+      flowGraph: graph,
+      graph, // compatibility with old system
       value: totalValue,
       oresNeeded: totalOres,
       cost: this.sumCosts(chainResult),
       dupAt,
       productQty,
+      recipeTree,
+    };
+  }
+
+  // Build a recipe tree from the flow chain result for graph visualization
+  buildRecipeTree(chainResult, hasQA) {
+    if (!chainResult) return null;
+
+    const tree = this._buildTreeNode(chainResult);
+
+    // Wrap with QA if available
+    if (hasQA && tree) {
+      return {
+        machine: "quality_assurance",
+        type: tree.type,
+        value: tree.value * 1.2,
+        oreCount: tree.oreCount,
+        inputs: [tree],
+      };
+    }
+    return tree;
+  }
+
+  _buildTreeNode(result) {
+    if (!result) return null;
+
+    // Leaf: ore
+    if (result.machines) {
+      // Ore processing chain - build linear tree from machines list
+      let node = { machine: "ore_source", type: "ore", value: 0, oreCount: 1, inputs: [] };
+      for (const mid of result.machines) {
+        if (mid === "ore_source") continue;
+        node = { machine: mid, type: "ore", value: result.value, oreCount: 1, inputs: [node] };
+      }
+      // The final node should be a bar (smelter output)
+      return node;
+    }
+
+    // Byproduct base
+    if (result.isByproduct) {
+      return { machine: "smelter_byproduct", type: result.resolvedType || "stone", value: result.value, oreCount: 0, inputs: [] };
+    }
+
+    // Production machine with inputs
+    if (result.machine && result.inputs) {
+      const inputTrees = result.inputs.map(inp => this._buildTreeNode(inp));
+      return {
+        machine: result.machine,
+        type: result.resolvedType || result.inputs?.[0]?.resolvedType || "item",
+        value: result.value,
+        oreCount: result.oreCount,
+        inputs: inputTrees.filter(Boolean),
+      };
+    }
+
+    // Simple value result
+    return {
+      machine: result.machine || "unknown",
+      type: result.resolvedType || "item",
+      value: result.value,
+      oreCount: result.oreCount || 0,
+      inputs: [],
     };
   }
 
