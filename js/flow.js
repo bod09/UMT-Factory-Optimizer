@@ -269,16 +269,19 @@ class FlowOptimizer {
     return value;
   }
 
-  // Compute transmuter side path value for a bar
+  // Compute transmuter side path value for 2 bars → 1 enhanced bar
+  // Path: 2 bars → bar_to_gem → 2 gems → gem_cutter each → 2 cut gems → prismatic (combine 1.15x) → gem_to_bar → 1 bar
   computeTransmuterValue(barValue) {
     const gemCutter = this.registry.get("gem_cutter");
     const prismatic = this.registry.get("prismatic_crucible");
     if (!gemCutter || !prismatic) return null;
 
-    let val = barValue;
-    val *= gemCutter.value; // 1.4x
-    val *= prismatic.value; // 1.15x
-    return { value: val };
+    // 2 bars → 2 gems → gem cutter on each
+    const cutGemValue = barValue * (gemCutter.value || 1.4);
+    // Prismatic combines 2 cut gems at 1.15x
+    const prismaticValue = (cutGemValue + cutGemValue) * (prismatic.value || 1.15);
+    // Output: 1 bar worth the prismatic value
+    return { value: prismaticValue };
   }
 
   // Find all terminal item types worth evaluating

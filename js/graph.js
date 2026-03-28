@@ -618,13 +618,10 @@ class ValueCalculator {
 
     if (!barToGem || !gemCutter || !prismatic || !gemToBar) return null;
 
-    // bar → gem (preserve)
-    let val = barItem.value;
-    // gem_cutter (multiply)
-    val *= gemCutter.value; // 1.4x
-    // prismatic_crucible: 2 gems → 1 prismatic (combine 1.15x)
-    // 2 bars become 2 gems, combined at 1.15x: (val + val) * 1.15 / 2 bars = val * 1.15
-    val *= prismatic.value; // 1.15x
+    // 2 bars → bar_to_gem → 2 gems → gem_cutter each → 2 cut gems → prismatic (combine) → 1 bar
+    const cutGemValue = barItem.value * (gemCutter.value || 1.4);
+    // Prismatic combines 2 cut gems: (cutGem + cutGem) * 1.15
+    const val = (cutGemValue + cutGemValue) * (prismatic.value || 1.15);
     // gem_to_bar (preserve)
 
     const newTags = new Set(barItem.tags);
