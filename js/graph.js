@@ -45,8 +45,9 @@ class MachineRegistry {
           }
           if (!isSameType && outType !== "same") {
             // Producer: creates a different type
-            // Skip transmuters from producer index - they're handled as side paths
-            if (id !== "bar_to_gem" && id !== "gem_to_bar") {
+            // Exclude "preserve" effect machines (transmuters) - they create cycles
+            // Enhancement paths are discovered via _findEnhancementPath instead
+            if (m.effect !== "preserve") {
               this.addTo(this.producerOf, outType, id);
             }
           }

@@ -59,7 +59,6 @@ class FlowOptimizer {
   // This is a forward propagation: ore → bar → plate → casing → engine...
   // Each type gets its best value considering ALL possible processing paths
   computeAllValues(oreValue) {
-    // Start with ore processing
     this.getItemValue("ore", oreValue);
   }
 
@@ -181,16 +180,14 @@ class FlowOptimizer {
       const inputTypes = new Set(inputResults.map(r => r.resolvedType || ''));
       outputValue = this.applyModifiers(targetType, outputValue, inputTypes);
 
-      // Apply transmuter side path for bars
-      if (targetType === "bar" && this.config.prestigeItems?.transmuters) {
-        const enhanced = this.computeTransmuterValue(outputValue);
-        if (enhanced !== null) {
-          const enhancedPerOre = enhanced.value / (totalOres * 2);
-          const regularPerOre = outputValue / totalOres;
-          if (enhancedPerOre > regularPerOre) {
-            outputValue = enhanced.value;
-            totalOres *= 2;
-          }
+      // Discover type conversion enhancements from registry
+      // For any type, check if there's a convert→process→convert-back path that adds value
+      // e.g., bar → bar_to_gem → gem → gem_cutter → prismatic → gem_to_bar → enhanced bar
+      if (!this._inEnhancement) {
+        const enhanced = this._findEnhancementPath(targetType, outputValue, totalOres);
+        if (enhanced && enhanced.perOre > (totalOres > 0 ? outputValue / totalOres : outputValue)) {
+          outputValue = enhanced.value;
+          totalOres = enhanced.oreCount;
         }
       }
 
@@ -269,19 +266,143 @@ class FlowOptimizer {
     return value;
   }
 
-  // Compute transmuter side path value for 2 bars → 1 enhanced bar
-  // Path: 2 bars → bar_to_gem → 2 gems → gem_cutter each → 2 cut gems → prismatic (combine 1.15x) → gem_to_bar → 1 bar
-  computeTransmuterValue(barValue) {
-    const gemCutter = this.registry.get("gem_cutter");
-    const prismatic = this.registry.get("prismatic_crucible");
-    if (!gemCutter || !prismatic) return null;
+  // Discover enhancement paths: convert type → process → convert back
+  // Searches registry for machines that convert type A → B (preserve) and B → A (preserve)
+  // with processing machines in between that multiply value
+  _findEnhancementPath(sourceType, sourceValue, sourceOres) {
+    if (this._inEnhancement) return null;
+    this._inEnhancement = true;
 
-    // 2 bars → 2 gems → gem cutter on each
-    const cutGemValue = barValue * (gemCutter.value || 1.4);
-    // Prismatic combines 2 cut gems at 1.15x
-    const prismaticValue = (cutGemValue + cutGemValue) * (prismatic.value || 1.15);
-    // Output: 1 bar worth the prismatic value
-    return { value: prismaticValue };
+    try {
+      // Find all "convert away" machines: take sourceType, output different type, preserve value
+      const convertAway = [];
+      for (const [id, m] of this.registry.machines) {
+        if (!this.registry.isAvailable(id, this.config)) continue;
+        if (m.effect !== "preserve") continue;
+        const acceptsSource = (m.inputs || []).some(inp =>
+          inp === sourceType || inp.split("|").includes(sourceType)
+        );
+        const outputType = m.outputs?.[0]?.type;
+        if (acceptsSource && outputType && outputType !== sourceType) {
+          convertAway.push({ machineId: id, outputType });
+        }
+      }
+
+      let bestEnhancement = null;
+
+      for (const { machineId: awayId, outputType: intermediateType } of convertAway) {
+        // Find processing machines for the intermediate type (multiply, combine, etc.)
+        // Build the best processing chain for intermediateType
+        let processedValue = sourceValue;
+        let processedOres = sourceOres;
+        let processedType = intermediateType;
+
+        // Find processing machines for the intermediate type
+        // Include both modifiers (same type in/out) and single-input producers (gem→cut_gem)
+        const skipMods = new Set(["quality_assurance", "duplicator", "crusher"]);
+
+        // Modifiers (same type in/out)
+        const mods = this.registry.getModifiers(intermediateType).filter(id => !skipMods.has(id));
+        for (const modId of mods) {
+          const mod = this.registry.get(modId);
+          if (!this.registry.isAvailable(modId, this.config)) continue;
+          if (mod.effect === "multiply") {
+            processedValue *= mod.value;
+            processedType = mod.outputs?.[0]?.type || processedType;
+          } else if (mod.effect === "flat") {
+            processedValue += mod.value;
+          }
+        }
+
+        // Single-input producers that enhance the type (gem_cutter: gem → cut_gem at 1.4x)
+        for (const [prodId, prod] of this.registry.machines) {
+          if (!this.registry.isAvailable(prodId, this.config)) continue;
+          if (skipMods.has(prodId)) continue;
+          if (prod.effect !== "multiply" && prod.effect !== "flat") continue;
+          if ((prod.inputs || []).length !== 1) continue; // single input only
+          const acceptsType = (prod.inputs || []).some(inp =>
+            inp === processedType || inp.split("|").includes(processedType) ||
+            inp === intermediateType || inp.split("|").includes(intermediateType)
+          );
+          if (!acceptsType) continue;
+          // Don't use machines that are also transmuters (preserve effect)
+          if (prod.effect === "preserve") continue;
+
+          if (prod.effect === "multiply") {
+            processedValue *= prod.value;
+          } else if (prod.effect === "flat") {
+            processedValue += prod.value;
+          }
+          processedType = prod.outputs?.[0]?.type || processedType;
+        }
+
+        // Find combine machines where ALL inputs are the same intermediate type
+        // (e.g., prismatic: gem + gem, NOT laser: optic + gem + circuit)
+        for (const [combId, comb] of this.registry.machines) {
+          if (!this.registry.isAvailable(combId, this.config)) continue;
+          if (comb.effect !== "combine") continue;
+          // ALL inputs must be the processed type (or union containing it)
+          const allSameType = (comb.inputs || []).every(inp =>
+            inp === processedType || inp.split("|").includes(processedType) ||
+            inp === intermediateType || inp.split("|").includes(intermediateType)
+          );
+          if (!allSameType) continue;
+
+          const inputCount = (comb.inputs || []).length;
+          const combinedValue = processedValue * inputCount * (comb.value || 1);
+          const combinedOres = processedOres * inputCount;
+          const combinedType = comb.outputs?.[0]?.type || processedType;
+
+          // Find "convert back" machine: takes combinedType (or processedType), outputs sourceType
+          for (const [backId, backM] of this.registry.machines) {
+            if (!this.registry.isAvailable(backId, this.config)) continue;
+            if (backM.effect !== "preserve") continue;
+            const acceptsCombined = (backM.inputs || []).some(inp =>
+              inp === combinedType || inp.split("|").includes(combinedType) ||
+              inp === processedType || inp.split("|").includes(processedType)
+            );
+            const backOutput = backM.outputs?.[0]?.type;
+            if (!acceptsCombined || backOutput !== sourceType) continue;
+
+            // Found a complete enhancement path!
+            const enhancedPerOre = combinedOres > 0 ? combinedValue / combinedOres : combinedValue;
+            if (!bestEnhancement || enhancedPerOre > bestEnhancement.perOre) {
+              bestEnhancement = {
+                value: combinedValue,
+                oreCount: combinedOres,
+                perOre: enhancedPerOre,
+                path: [awayId, combId, backId],
+              };
+            }
+          }
+        }
+
+        // Also try without combine (just convert → process → convert back)
+        for (const [backId, backM] of this.registry.machines) {
+          if (!this.registry.isAvailable(backId, this.config)) continue;
+          if (backM.effect !== "preserve") continue;
+          const acceptsProcessed = (backM.inputs || []).some(inp =>
+            inp === processedType || inp.split("|").includes(processedType)
+          );
+          const backOutput = backM.outputs?.[0]?.type;
+          if (!acceptsProcessed || backOutput !== sourceType) continue;
+
+          const enhancedPerOre = processedOres > 0 ? processedValue / processedOres : processedValue;
+          if (!bestEnhancement || enhancedPerOre > bestEnhancement.perOre) {
+            bestEnhancement = {
+              value: processedValue,
+              oreCount: processedOres,
+              perOre: enhancedPerOre,
+              path: [awayId, backId],
+            };
+          }
+        }
+      }
+
+      return bestEnhancement;
+    } finally {
+      this._inEnhancement = false;
+    }
   }
 
   // Find all terminal item types worth evaluating
@@ -339,7 +460,9 @@ class FlowOptimizer {
     // Build chain name
     const tags = [];
     if (this.config.prestigeItems?.oreUpgrader) tags.push("Upgraded");
-    if (this.config.prestigeItems?.transmuters) tags.push("Transmute");
+    // Check if transmuter is actually used in this chain
+    const usesTransmuter = chainResult && JSON.stringify(chainResult).includes("gem_to_bar");
+    if (usesTransmuter) tags.push("Transmute");
     if (this.config.prestigeItems?.philosophersStone) tags.push("Infused");
     if (dupAt) tags.push("Dup");
     const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";

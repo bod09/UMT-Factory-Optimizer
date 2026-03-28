@@ -962,13 +962,13 @@
       "medals": 4,
       "category": "prestige",
       "inputs": [
-        "gem"
+        "gem|cut_gem|prismatic_gem"
       ],
       "outputs": [
         {
           "type": "bar",
           "chance": 1.0,
-          "desc": "Bar (same value as gem)"
+          "desc": "Bar (same value as gem). Accepts gem, cut gem, or prismatic gem."
         }
       ],
       "effect": "preserve",
