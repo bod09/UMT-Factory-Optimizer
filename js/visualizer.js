@@ -171,8 +171,8 @@ class GraphVisualizer {
       g.appendChild(valText);
     }
 
-    // Quantity badge (for collapsed graph views)
-    if (node.quantity && node.quantity > 1) {
+    // Quantity badge - always show flow quantity
+    if (node.quantity && node.quantity >= 1) {
       const badgeW = 28;
       const badgeH = 16;
       const badgeX = this.nodeWidth - badgeW - 4;

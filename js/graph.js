@@ -935,6 +935,23 @@ class GraphGenerator {
 
     walkTree(tree, null);
 
+    // Fix quantities: walk the FULL tree counting every occurrence of each key
+    // (the collapsing above undercounts due to shared object references from memoization)
+    const flowCounts = new Map();
+    function countFlows(treeNode) {
+      if (!treeNode) return;
+      const key = getNodeKey(treeNode);
+      flowCounts.set(key, (flowCounts.get(key) || 0) + 1);
+      for (const child of treeNode.inputs || []) {
+        countFlows(child);
+      }
+    }
+    countFlows(tree);
+    // Apply corrected quantities
+    for (const [key, data] of uniqueNodes) {
+      data.quantity = flowCounts.get(key) || data.quantity;
+    }
+
     // Build nodes and edges from unique set
     const keyToId = new Map();
 
