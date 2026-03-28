@@ -726,7 +726,7 @@ class ChainDiscoverer {
 
       // Build graph for visualization (from recipe tree for collapsed view with quantities)
       const graph = result.recipeTree
-        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry)
+        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry, result.oreCount)
         : GraphGenerator.fromPath(result.path, this.registry);
 
       // Build chain name with active prestige items
@@ -894,7 +894,7 @@ class ChainDiscoverer {
 
 class GraphGenerator {
   // Build from recipe tree: collapsed view with quantities
-  static fromRecipeTree(tree, registry) {
+  static fromRecipeTree(tree, registry, actualOreCount) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
@@ -964,6 +964,19 @@ class GraphGenerator {
     // Apply corrected quantities
     for (const [key, data] of uniqueNodes) {
       data.quantity = flowCounts.get(key) || data.quantity;
+    }
+
+    // Scale quantities if duplicator changed the actual ore count
+    // The recipe tree has the original structure, but the duplicator may need
+    // more ores (e.g., doubling combiner inputs). Scale all quantities proportionally.
+    if (actualOreCount) {
+      const treeOreCount = flowCounts.get("ore_source:ore") || 1;
+      if (actualOreCount !== treeOreCount && treeOreCount > 0) {
+        const scale = actualOreCount / treeOreCount;
+        for (const [key, data] of uniqueNodes) {
+          data.quantity = Math.round(data.quantity * scale);
+        }
+      }
     }
 
     // Build nodes and edges from unique set
