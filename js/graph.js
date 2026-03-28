@@ -929,69 +929,57 @@ class GraphGenerator {
           break;
         }
 
-        // Sifter/Nano Sifter: converts dust to ore (find from registry)
+        // Sifter/Nano Sifter: find best available from registry
         let dustRemaining = remaining;
+        let bestSifter = null;
+
+        // First check for chance_convert type
         for (const [machineId, m] of registry.machines) {
-          if (!m.inputs?.includes("dust") || m.effect !== "chance_convert") continue;
-          // Also check for sifter-type machines by looking at outputs
+          if (!m.inputs?.includes("dust")) continue;
+          if (m.effect !== "chance_convert" && machineId !== "sifter" && machineId !== "nano_sifter") continue;
           if (!registry.isAvailable(machineId, config)) continue;
-
-          const siftId = nextId++;
-          const oreProduced = Math.round(dustRemaining * (m.value || 0.1));
-          nodes.push({ id: siftId, name: m.name || machineId, type: "dust",
-            value: 0, category: m.category || "stonework", layer: currentLayer,
-            isByproduct: true, quantity: dustRemaining });
-          edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: true });
-
-          // Ore output branch
-          if (oreProduced > 0) {
-            const oreOutId = nextId++;
-            nodes.push({ id: oreOutId, name: "Ore → Main Chain", type: "ore",
-              value: 0, category: "metalwork", layer: currentLayer,
-              isByproduct: true, quantity: oreProduced });
-            edges.push({ from: siftId, to: oreOutId, itemType: "ore", isByproduct: true });
+          if (!bestSifter || (m.value || 0) > (bestSifter.m.value || 0)) {
+            bestSifter = { id: machineId, m };
           }
-
-          dustRemaining = Math.round(dustRemaining * (1 - (m.value || 0.1)));
-          prevId = siftId;
-          currentLayer++;
-          break;
         }
 
-        // Sifter: find best available sifter from registry (prefer higher chance)
-        if (dustRemaining === remaining) {
-          let bestSifter = null;
-          for (const [machineId, m] of registry.machines) {
-            if (!m.inputs?.includes("dust")) continue;
-            if (machineId !== "sifter" && machineId !== "nano_sifter") continue;
-            if (!registry.isAvailable(machineId, config)) continue;
-            if (!bestSifter || (m.value || 0) > (bestSifter.m.value || 0)) {
-              bestSifter = { id: machineId, m };
+        if (bestSifter) {
+          const { id: machineId, m } = bestSifter;
+          const siftChance = m.value || 0.1;
+          const oreProduced = Math.round(dustRemaining * siftChance);
+          const siftId = nextId++;
+          nodes.push({ id: siftId, name: m.name || machineId, type: "dust",
+            value: 0, category: m.category || "prestige", layer: currentLayer,
+            isByproduct: true, quantity: dustRemaining });
+          // Dust entering sifter is main byproduct flow (not a secondary byproduct)
+          edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: false });
+
+          // Ore output is the BYPRODUCT of sifting - connect back to ore cleaner in main graph
+          if (oreProduced > 0) {
+            // Find the ore_cleaner node in the main graph to loop back to
+            const oreCleanerNode = nodes.find(n => n.name === "Ore Cleaner" || n.machineId === "ore_cleaner");
+            if (oreCleanerNode) {
+              // Loop back to ore cleaner with byproduct edge
+              edges.push({ from: siftId, to: oreCleanerNode.id, itemType: "ore", isByproduct: true, isLoopBack: true });
+            } else {
+              // Fallback: find any ore-processing node in main graph
+              const oreNode = nodes.find(n => n.type === "ore" && !n.isByproduct);
+              if (oreNode) {
+                edges.push({ from: siftId, to: oreNode.id, itemType: "ore", isByproduct: true, isLoopBack: true });
+              } else {
+                // Last resort: show as labeled node
+                const oreOutId = nextId++;
+                nodes.push({ id: oreOutId, name: "Ore → Ore Cleaner", type: "ore",
+                  value: 0, category: "metalwork", layer: currentLayer,
+                  isByproduct: true, quantity: oreProduced });
+                edges.push({ from: siftId, to: oreOutId, itemType: "ore", isByproduct: true });
+              }
             }
           }
 
-          if (bestSifter) {
-            const { id: machineId, m } = bestSifter;
-            const siftChance = m.value || 0.1;
-            const oreProduced = Math.round(dustRemaining * siftChance);
-            const siftId = nextId++;
-            nodes.push({ id: siftId, name: m.name || machineId, type: "dust",
-              value: 0, category: m.category || "prestige", layer: currentLayer,
-              isByproduct: true, quantity: dustRemaining });
-            edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: true });
-
-            if (oreProduced > 0) {
-              const oreOutId = nextId++;
-              nodes.push({ id: oreOutId, name: "Ore → Main Chain", type: "ore",
-                value: 0, category: "metalwork", layer: currentLayer,
-                isByproduct: true, quantity: oreProduced });
-              edges.push({ from: siftId, to: oreOutId, itemType: "ore", isByproduct: true });
-            }
-
-            dustRemaining = dustRemaining - oreProduced;
-            prevId = siftId;
-            currentLayer++;
-          }
+          dustRemaining = dustRemaining - oreProduced;
+          prevId = siftId;
+          currentLayer++;
         }
 
         // Connect remaining dust to whatever dust-consuming machine exists in the main graph
