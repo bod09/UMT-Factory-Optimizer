@@ -794,98 +794,138 @@ class ChainDiscoverer {
     return total;
   }
 
-  // Stone byproduct value - derived from machine data
+  // Byproduct value - finds best processing chain for each waste product automatically
   calculateByproductValue(oresCount, oreValue) {
     const smelter = this.registry.get("ore_smelter");
     if (!smelter) return 0;
     const stonePerOre = smelter.byproductRatio || 0.5;
     let totalStone = oresCount * stonePerOre;
     let totalValue = 0;
+    const seller = this.config.hasDoubleSeller ? 2 : 1;
+    const calc = new ValueCalculator(this.registry, this.config);
 
-    // 1. Prospectors (chance machines consuming stone)
-    const prospectors = [];
-    for (const [id, m] of this.registry.machines) {
-      if (m.inputs?.includes("stone") && m.effect === "chance" && m.gemType) {
-        if (this.registry.isAvailable(id, this.config)) {
-          prospectors.push(m);
-        }
-      }
-    }
-
+    // 1. Prospectors (chance machines consuming stone → gems)
     let stoneRemaining = totalStone;
-    for (const p of prospectors) {
-      const gemsProduced = stoneRemaining * p.value;
-      let gemVal = GEMS.find(g => g.name === p.gemType)?.value || 100;
-      // Apply gem cutter if available
+    for (const [id, m] of this.registry.machines) {
+      if (!m.inputs?.includes("stone") || m.effect !== "chance" || !m.gemType) continue;
+      if (!this.registry.isAvailable(id, this.config)) continue;
+
+      const gemsProduced = stoneRemaining * (m.value || 0.05);
+      const gemBaseVal = GEMS.find(g => g.name === m.gemType)?.value || 100;
+
+      // Find best processing for this gem - only use FREE chains (0 ore cost)
+      // since these gems are byproducts, not from mined ores
+      let bestGemValue = gemBaseVal * seller; // baseline: sell raw
+
+      // Try gem_cutter (multiply effect on gems)
       const gemCutter = this.registry.get("gem_cutter");
       if (gemCutter && this.registry.isAvailable("gem_cutter", this.config)) {
-        gemVal *= gemCutter.value;
+        const cutVal = gemBaseVal * (gemCutter.value || 1.4) * seller;
+        if (cutVal > bestGemValue) bestGemValue = cutVal;
       }
-      totalValue += (this.config.hasDoubleSeller ? 2 : 1) * gemsProduced * gemVal;
-      stoneRemaining *= (1 - p.value);
+
+      // Try polisher (+$10) on gems if available
+      const polisher = this.registry.get("polisher");
+      if (polisher && this.registry.isAvailable("polisher", this.config)) {
+        const polishedVal = (gemBaseVal + (polisher.value || 10)) * seller;
+        if (polishedVal > bestGemValue) bestGemValue = polishedVal;
+        // Polished + gem cutter
+        if (gemCutter && this.registry.isAvailable("gem_cutter", this.config)) {
+          const cutPolished = (gemBaseVal + (polisher.value || 10)) * (gemCutter.value || 1.4) * seller;
+          if (cutPolished > bestGemValue) bestGemValue = cutPolished;
+        }
+      }
+
+      totalValue += gemsProduced * bestGemValue;
+      stoneRemaining *= (1 - (m.value || 0.05));
     }
 
     // 2. Remaining stone → Crusher → Dust
     const dustAmount = stoneRemaining;
 
-    // 3. ALL dust → Sifter/Nano Sifter
+    // 3. ALL dust → best Sifter (find from registry, prefer highest chance)
     let siftedDust = dustAmount;
-    const nanoSifter = this.registry.get("nano_sifter");
-    const sifter = this.registry.get("sifter");
+    let bestSifter = null;
+    for (const [id, m] of this.registry.machines) {
+      if (!m.inputs?.includes("dust")) continue;
+      if (id !== "sifter" && id !== "nano_sifter") continue;
+      if (!this.registry.isAvailable(id, this.config)) continue;
+      if (!bestSifter || (m.value || 0) > (bestSifter.value || 0)) {
+        bestSifter = { id, ...m };
+      }
+    }
 
-    if (nanoSifter && this.registry.isAvailable("nano_sifter", this.config)) {
-      const chance = nanoSifter.value;
+    if (bestSifter) {
+      const chance = bestSifter.value || 0.1;
       const oresProduced = dustAmount * chance;
       siftedDust = dustAmount * (1 - chance);
 
-      // Process each possible nano sifter ore through full chain (including ore upgrader)
-      // Use individual ore values so getOreName can resolve for upgrader
-      const calc = new ValueCalculator(this.registry, this.config);
+      // Find value for sifted ores - process through best chain
+      // Use a separate calc WITHOUT byproduct value to avoid recursive amplification
+      const sifterOrePool = bestSifter.id === "nano_sifter" ? NANO_SIFTER_ORES : ["Tin", "Iron", "Lead", "Silver", "Gold"];
       let avgOreChainValue = 0;
-      for (const oreName of NANO_SIFTER_ORES) {
+      for (const oreName of sifterOrePool) {
         const ore = ORES.find(o => o.name === oreName);
         if (!ore) continue;
+        // Calculate as bar (the base product) - don't recurse into byproducts
         const result = calc.calculate("bar", ore.value);
         if (result) avgOreChainValue += result.value;
+        else avgOreChainValue += ore.value * seller;
       }
-      avgOreChainValue /= NANO_SIFTER_ORES.length;
+      avgOreChainValue /= sifterOrePool.length;
 
-      // Geometric series for recursive sifting (ore → smelt → stone → dust → sift → ore...)
+      // Geometric series for recursive sifting
       const recursiveChance = stonePerOre * chance;
       totalValue += (oresProduced * avgOreChainValue) / (1 - recursiveChance);
-    } else if (sifter && this.registry.isAvailable("sifter", this.config)) {
-      const chance = sifter.value;
-      siftedDust = dustAmount * (1 - chance);
-      // Process each sifter ore individually for accurate upgrader application
-      const sifterOres = ["Tin", "Iron", "Lead", "Silver", "Gold"];
-      const calc = new ValueCalculator(this.registry, this.config);
-      let avgVal = 0;
-      for (const oreName of sifterOres) {
-        const ore = ORES.find(o => o.name === oreName);
-        if (!ore) continue;
-        const result = calc.calculate("bar", ore.value);
-        if (result) avgVal += result.value;
-      }
-      avgVal /= sifterOres.length;
-      totalValue += dustAmount * chance * avgVal;
     }
 
-    // 4. Sifted dust → best path from machine data
+    // 4. Remaining dust → find best processing path from ALL available machines
     if (siftedDust > 0) {
-      const clayMixer = this.registry.get("clay_mixer");
-      const ceramicFurnace = this.registry.get("ceramic_furnace");
-      const kiln = this.registry.get("kiln");
-      const seller = this.config.hasDoubleSeller ? 2 : 1;
+      // Try all machines that accept dust input, find best value per dust
+      let bestDustValue = seller; // $1 × DS = baseline (sell raw dust)
+      for (const [id, m] of this.registry.machines) {
+        if (!this.registry.isAvailable(id, this.config)) continue;
+        if (id === "sifter" || id === "nano_sifter" || id === "crusher") continue;
+        const acceptsDust = (m.inputs || []).some(inp => inp === "dust" || inp.split("|").includes("dust"));
+        if (!acceptsDust) continue;
 
-      if (clayMixer && ceramicFurnace &&
-          this.registry.isAvailable("clay_mixer", this.config) &&
-          this.registry.isAvailable("ceramic_furnace", this.config)) {
-        // Clay Mixer: 2 dust → clay ($50) → Ceramic Furnace → ceramic ($150)
-        const ceramicVal = ceramicFurnace.value; // from machines.json
-        totalValue += seller * (siftedDust / 2) * ceramicVal;
-      } else if (kiln && this.registry.isAvailable("kiln", this.config)) {
-        totalValue += seller * siftedDust * kiln.value;
+        // Calculate value per dust unit for this machine
+        let valuePerDust = 0;
+        if (m.effect === "set") {
+          // Fixed output (kiln=$30, brick_mold=$25)
+          valuePerDust = (m.value || 0) * seller;
+        } else if (m.effect === "combine" && m.inputs?.length === 2) {
+          // Combine 2 dust (clay_mixer, blasting_powder_chamber)
+          // Check if the output can be further processed
+          const outputType = m.outputs?.[0]?.type;
+          if (outputType) {
+            try {
+              const chainResult = calc.resolveType(outputType, 0, new Set());
+              // Value per dust = output value / num dust inputs
+              const dustInputCount = m.inputs.filter(i => i === "dust").length || 1;
+              let outVal = chainResult ? chainResult.value : (m.value || 0);
+
+              // Check if output feeds into another machine for more value
+              const producers = this.registry.getProducers(outputType);
+              // Actually just use the set value if it's a combine
+              outVal = (m.value || 0);
+              // Then check downstream
+              for (const [pid, pm] of this.registry.machines) {
+                if (!this.registry.isAvailable(pid, this.config)) continue;
+                if (!(pm.inputs || []).some(i => i === outputType || i.split("|").includes(outputType))) continue;
+                if (pm.effect === "set") {
+                  outVal = Math.max(outVal, pm.value || 0);
+                }
+              }
+              valuePerDust = (outVal * seller) / dustInputCount;
+            } catch(e) {
+              valuePerDust = (m.value || 0) * seller / 2;
+            }
+          }
+        }
+        bestDustValue = Math.max(bestDustValue, valuePerDust);
       }
+      totalValue += siftedDust * bestDustValue;
     }
 
     return totalValue;
