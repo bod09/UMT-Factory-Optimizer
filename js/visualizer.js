@@ -171,6 +171,32 @@ class GraphVisualizer {
       g.appendChild(valText);
     }
 
+    // Quantity badge (for collapsed graph views)
+    if (node.quantity && node.quantity > 1) {
+      const badgeW = 28;
+      const badgeH = 16;
+      const badgeX = this.nodeWidth - badgeW - 4;
+      const badgeY = 6;
+      const badge = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      badge.setAttribute("x", badgeX);
+      badge.setAttribute("y", badgeY);
+      badge.setAttribute("width", badgeW);
+      badge.setAttribute("height", badgeH);
+      badge.setAttribute("rx", "8");
+      badge.setAttribute("fill", "#f59e0b");
+      g.appendChild(badge);
+
+      const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      badgeText.setAttribute("x", badgeX + badgeW / 2);
+      badgeText.setAttribute("y", badgeY + 12);
+      badgeText.setAttribute("fill", "#000");
+      badgeText.setAttribute("font-size", "10");
+      badgeText.setAttribute("font-weight", "700");
+      badgeText.setAttribute("text-anchor", "middle");
+      badgeText.textContent = "x" + node.quantity;
+      g.appendChild(badgeText);
+    }
+
     // Hover effect
     g.addEventListener("mouseenter", () => {
       rect.setAttribute("stroke", color);

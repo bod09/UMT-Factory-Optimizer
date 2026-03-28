@@ -138,7 +138,8 @@ class ValueCalculator {
 
     if (byproductTypes[targetType]) {
       const bp = byproductTypes[targetType];
-      return { type: targetType, value: bp.value, tags: new Set(), oreCount: bp.oreCount, path: [{ machine: "byproduct", type: targetType, value: bp.value }] };
+      const recipeTree = { machine: "byproduct", type: targetType, value: bp.value, oreCount: bp.oreCount, inputs: [], label: "Byproduct (free)" };
+      return { type: targetType, value: bp.value, tags: new Set(), oreCount: bp.oreCount, path: [{ machine: "byproduct", type: targetType, value: bp.value }], recipeTree };
     }
 
     // Base case: ore
@@ -174,7 +175,13 @@ class ValueCalculator {
         }
       }
 
-      return { type: "ore", value: val, tags, oreCount: 1, path };
+      // Build ore recipe tree: chain of modifiers applied
+      let oreTree = { machine: "ore_source", type: "ore", value: oreValue, oreCount: 1, inputs: [] };
+      for (const step of path.slice(1)) { // skip ore_source
+        oreTree = { machine: step.machine, type: "ore", value: step.value, oreCount: 1, inputs: [oreTree] };
+      }
+
+      return { type: "ore", value: val, tags, oreCount: 1, path, recipeTree: oreTree };
     }
 
     // Memo check
@@ -274,15 +281,24 @@ class ValueCalculator {
       // Add machine tag
       if (machine.tag) allTags.add(machine.tag);
 
-      // Build path
+      // Build path (flat for backwards compat)
       const path = [];
       for (const inp of inputStates) {
         path.push(...(inp.path || []));
       }
       path.push({ machine: machineId, type: targetType, value: outputValue, inputs: inputStates.map(s => s.type) });
 
+      // Build recipe tree (hierarchical, for graph visualization)
+      const recipeTree = {
+        machine: machineId,
+        type: targetType,
+        value: outputValue,
+        oreCount: totalOres,
+        inputs: inputStates.map(s => s.recipeTree || { machine: "ore_source", type: s.type, value: s.value, oreCount: s.oreCount, inputs: [] }),
+      };
+
       // Apply type-specific modifiers (Tempering Forge for bars, etc.)
-      let result = { type: targetType, value: outputValue, tags: allTags, oreCount: totalOres, path };
+      let result = { type: targetType, value: outputValue, tags: allTags, oreCount: totalOres, path, recipeTree };
       result = this.applyTypeModifiers(result);
 
       // Apply transmuter side path for bars (if it improves per-ore value)
@@ -353,7 +369,16 @@ class ValueCalculator {
     const path = [...(item.path || [])];
     path.push({ machine: modId, type: item.type, value: newValue });
 
-    return { ...item, value: newValue, tags: newTags, path };
+    // Wrap recipe tree with this modifier
+    const recipeTree = {
+      machine: modId,
+      type: item.type,
+      value: newValue,
+      oreCount: item.oreCount,
+      inputs: [item.recipeTree || { machine: "unknown", type: item.type, value: item.value, oreCount: item.oreCount, inputs: [] }],
+    };
+
+    return { ...item, value: newValue, tags: newTags, path, recipeTree };
   }
 
   // Transmuter side path: bar → gem → gem_cutter → prismatic → gem_to_bar
@@ -382,8 +407,32 @@ class ValueCalculator {
     path.push({ machine: "prismatic_crucible", type: "prismatic_gem", value: val });
     path.push({ machine: "gem_to_bar", type: "bar", value: val });
 
+    // Recipe tree for transmuter side path
+    const barTree = barItem.recipeTree || { machine: "ore_source", type: "bar", value: barItem.value, oreCount: barItem.oreCount, inputs: [] };
+    const recipeTree = {
+      machine: "gem_to_bar",
+      type: "bar",
+      value: val,
+      oreCount: barItem.oreCount * 2,
+      label: "Transmuter Side Path",
+      inputs: [{
+        machine: "prismatic_crucible",
+        type: "prismatic_gem",
+        value: val,
+        oreCount: barItem.oreCount * 2,
+        inputs: [
+          { machine: "gem_cutter", type: "cut_gem", value: barItem.value * gemCutter.value, oreCount: barItem.oreCount, inputs: [
+            { machine: "bar_to_gem", type: "gem", value: barItem.value, oreCount: barItem.oreCount, inputs: [barTree] }
+          ]},
+          { machine: "gem_cutter", type: "cut_gem", value: barItem.value * gemCutter.value, oreCount: barItem.oreCount, inputs: [
+            { machine: "bar_to_gem", type: "gem", value: barItem.value, oreCount: barItem.oreCount, inputs: [barTree] }
+          ]},
+        ]
+      }]
+    };
+
     // 2 bars consumed (2 ores) → 1 enhanced bar
-    return { ...barItem, value: val, tags: newTags, path, oreCount: barItem.oreCount * 2 };
+    return { ...barItem, value: val, tags: newTags, path, oreCount: barItem.oreCount * 2, recipeTree };
   }
 
   // Get modifiers for a type in optimal order: upgrade_tier → flat → percent → multiply
@@ -434,8 +483,10 @@ class ChainDiscoverer {
       const finalValue = result.value + byproductVal;
       const perOre = finalValue / result.oreCount;
 
-      // Build graph for visualization
-      const graph = GraphGenerator.fromPath(result.path, this.registry);
+      // Build graph for visualization (from recipe tree for collapsed view with quantities)
+      const graph = result.recipeTree
+        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry)
+        : GraphGenerator.fromPath(result.path, this.registry);
 
       // Build chain name with active prestige items
       const tags = [];
@@ -599,6 +650,154 @@ class ChainDiscoverer {
 // Builds {nodes, edges} for visualization from a production path.
 
 class GraphGenerator {
+  // Build from recipe tree: collapsed view with quantities
+  static fromRecipeTree(tree, registry) {
+    const nodes = [];
+    const edges = [];
+    let nextId = 0;
+
+    // Collapse identical sub-chains: find unique processing pipelines
+    // Walk the tree and build a DAG
+    function getNodeKey(treeNode) {
+      // Key by machine + type to identify duplicates
+      return treeNode.machine + ":" + treeNode.type;
+    }
+
+    // Flatten the tree into a linearized list of unique nodes
+    // Count how many times each sub-chain appears (quantity)
+    const uniqueNodes = new Map(); // key → { treeNode, quantity, children[] }
+
+    function walkTree(treeNode, parentKey) {
+      const key = getNodeKey(treeNode);
+
+      if (uniqueNodes.has(key)) {
+        // Same machine+type already exists - increment run count
+        const existing = uniqueNodes.get(key);
+        existing.quantity += 1;
+        // Still add the edge from this to parent
+        if (parentKey) {
+          const edgeKey = key + "->" + parentKey;
+          if (!existing.parentEdges.has(edgeKey)) {
+            existing.parentEdges.add(edgeKey);
+          }
+        }
+        return key;
+      }
+
+      const nodeData = {
+        treeNode,
+        quantity: 1,
+        childKeys: [],
+        parentEdges: new Set(),
+      };
+      if (parentKey) nodeData.parentEdges.add(key + "->" + parentKey);
+      uniqueNodes.set(key, nodeData);
+
+      // Walk children
+      for (const child of treeNode.inputs || []) {
+        const childKey = walkTree(child, key);
+        if (!nodeData.childKeys.includes(childKey)) {
+          nodeData.childKeys.push(childKey);
+        }
+      }
+
+      return key;
+    }
+
+    walkTree(tree, null);
+
+    // Build nodes and edges from unique set
+    const keyToId = new Map();
+
+    // Topological sort: children first, then parents
+    const sorted = [];
+    const visited = new Set();
+    function topoSort(key) {
+      if (visited.has(key)) return;
+      visited.add(key);
+      const data = uniqueNodes.get(key);
+      if (data) {
+        for (const childKey of data.childKeys) {
+          topoSort(childKey);
+        }
+      }
+      sorted.push(key);
+    }
+    topoSort(getNodeKey(tree));
+
+    // Assign layers based on depth from leaves
+    const depthMap = new Map();
+    for (const key of sorted) {
+      const data = uniqueNodes.get(key);
+      let maxChildDepth = -1;
+      for (const ck of data.childKeys) {
+        maxChildDepth = Math.max(maxChildDepth, depthMap.get(ck) || 0);
+      }
+      depthMap.set(key, maxChildDepth + 1);
+    }
+
+    for (const key of sorted) {
+      const data = uniqueNodes.get(key);
+      const tn = data.treeNode;
+      const machine = registry.get(tn.machine);
+      let category = machine?.category || "source";
+      let name = machine?.name || (tn.machine === "ore_source" ? "Ore Input" : tn.machine);
+      if (tn.machine === "byproduct") {
+        name = (ITEM_TYPES[tn.type] || tn.type) + " (Byproduct)";
+        category = "stonework";
+      }
+      if (tn.machine === "unknown") {
+        name = ITEM_TYPES[tn.type] || tn.type;
+      }
+
+      const id = nextId++;
+      keyToId.set(key, id);
+
+      nodes.push({
+        id,
+        name,
+        type: tn.type,
+        value: tn.value,
+        category,
+        layer: depthMap.get(key),
+        quantity: data.quantity,
+      });
+    }
+
+    // Create edges
+    for (const key of sorted) {
+      const data = uniqueNodes.get(key);
+      const fromId = keyToId.get(key);
+      for (const ck of data.childKeys) {
+        const toId = keyToId.get(ck);
+        if (toId !== undefined) {
+          edges.push({ from: toId, to: fromId, itemType: uniqueNodes.get(ck).treeNode.type });
+        }
+      }
+    }
+
+    // Add seller at end
+    const rootKey = getNodeKey(tree);
+    const rootId = keyToId.get(rootKey);
+    if (rootId !== undefined) {
+      const sellerId = nextId++;
+      const rootNode = nodes.find(n => n.id === rootId);
+      nodes.push({
+        id: sellerId,
+        name: "Seller",
+        type: tree.type,
+        value: tree.value,
+        category: "source",
+        layer: (depthMap.get(rootKey) || 0) + 1,
+        quantity: 1,
+      });
+      edges.push({ from: rootId, to: sellerId, itemType: tree.type });
+    }
+
+    return { nodes, edges };
+  }
+
+  // Legacy: flat path-based graph (for factory builder)
   static fromPath(path, registry) {
     if (!path || path.length === 0) return { nodes: [], edges: [] };
 
@@ -607,13 +806,11 @@ class GraphGenerator {
     let nodeId = 0;
     const machineToNode = new Map();
 
-    // Assign layers based on path order
     for (let i = 0; i < path.length; i++) {
       const step = path[i];
       const machine = registry.get(step.machine);
       const category = machine?.category || "source";
       const name = machine?.name || (step.machine === "ore_source" ? "Ore" : step.machine);
-      const typeLabel = ITEM_TYPES[step.type] || step.type;
 
       const node = {
         id: nodeId++,
@@ -625,7 +822,6 @@ class GraphGenerator {
       };
       nodes.push(node);
 
-      // Edge from previous step
       if (i > 0 && !machineToNode.has(step.machine)) {
         const prevNode = nodes[i - 1];
         edges.push({ from: prevNode.id, to: node.id, itemType: prevNode.type });
@@ -634,7 +830,6 @@ class GraphGenerator {
       machineToNode.set(step.machine, node);
     }
 
-    // Add seller at end
     if (nodes.length > 0) {
       const lastNode = nodes[nodes.length - 1];
       const sellerNode = {
