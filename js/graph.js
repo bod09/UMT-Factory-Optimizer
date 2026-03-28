@@ -134,6 +134,7 @@ class ValueCalculator {
           oreCount: best.totalOres,
           recipeTree: displayTree,
           dupAt: best.label,
+          productQty: best.productQty || 1,
         };
       }
     }
@@ -192,6 +193,7 @@ class ValueCalculator {
       const perOre = result.totalValue / result.totalOres;
       if (perOre > basePerOre && (!bestResult || perOre > bestResult.perOre)) {
         bestResult = { perOre, totalValue: result.totalValue, totalOres: result.totalOres,
+          productQty: result.productQty || 1,
           positions: [cand._dupId], label: cand.machine + ":" + cand.type };
       }
     }
@@ -209,6 +211,7 @@ class ValueCalculator {
           const perOre = result.totalValue / result.totalOres;
           if (perOre > bestResult.perOre) {
             bestResult = { perOre, totalValue: result.totalValue, totalOres: result.totalOres,
+              productQty: result.productQty || 1,
               positions: [a._dupId, b._dupId],
               label: a.machine + ":" + a.type + " + " + b.machine + ":" + b.type };
           }
@@ -225,7 +228,7 @@ class ValueCalculator {
     if (!result) return null;
     // Total = (per-item value × qty + excess) × DS
     const totalValue = (result.value * result.qty + result.excessValue) * dsMultiplier;
-    return { totalValue, totalOres: result.oreCount };
+    return { totalValue, totalOres: result.oreCount, productQty: result.qty };
   }
 
   // Recursive: returns { value (per item), qty, oreCount, excessValue }
@@ -726,7 +729,7 @@ class ChainDiscoverer {
 
       // Build graph for visualization (from recipe tree for collapsed view with quantities)
       const graph = result.recipeTree
-        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry, result.oreCount, this.config)
+        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry, result.oreCount, this.config, result.productQty)
         : GraphGenerator.fromPath(result.path, this.registry);
 
       // Build chain name with active prestige items
@@ -894,7 +897,7 @@ class ChainDiscoverer {
 
 class GraphGenerator {
   // Build from recipe tree: collapsed view with quantities
-  static fromRecipeTree(tree, registry, actualOreCount, config) {
+  static fromRecipeTree(tree, registry, actualOreCount, config, productQty) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
@@ -1183,6 +1186,51 @@ class GraphGenerator {
             currentLayer++;
           }
         }
+
+        // Connect remaining sifted dust to clay_mixer if it exists in main graph
+        if (dustRemaining > 0) {
+          const clayMixerNodeId = keyToId.get("clay_mixer:clay");
+          if (clayMixerNodeId !== undefined) {
+            // Connect sifter output to clay mixer in main chain
+            edges.push({ from: prevId, to: clayMixerNodeId, itemType: "dust", isByproduct: true });
+          } else {
+            // No clay mixer - show sell node for remaining dust products
+            const dustSellId = nextId++;
+            nodes.push({ id: dustSellId, name: "Sell Dust Products", type: "dust",
+              value: 0, category: "source", layer: currentLayer,
+              isByproduct: true, quantity: dustRemaining });
+            edges.push({ from: prevId, to: dustSellId, itemType: "dust", isByproduct: true });
+          }
+        }
+      }
+    }
+
+    // Apply productQty to final product nodes (when duplicator doubles combiner output)
+    const pQty = productQty || 1;
+    if (pQty > 1) {
+      // Find the root node (final product) and its direct parents (QA etc.)
+      const rootData = uniqueNodes.get(getNodeKey(tree));
+      if (rootData) rootData.quantity = pQty;
+      // Also update nodes in the chain between the combiner output and root
+      // Walk up from root: QA, electronic_tuner, etc.
+      function updateUpstream(nodeKey) {
+        const data = uniqueNodes.get(nodeKey);
+        if (!data) return;
+        data.quantity = Math.max(data.quantity, pQty);
+        // Update the actual node object
+        const nodeObj = nodes.find(n => n.id === keyToId.get(nodeKey));
+        if (nodeObj) nodeObj.quantity = data.quantity;
+      }
+      // Update root and its single-input parents
+      let currentKey = getNodeKey(tree);
+      for (let i = 0; i < 5; i++) { // max 5 levels up (QA, tuner, etc.)
+        updateUpstream(currentKey);
+        const data = uniqueNodes.get(currentKey);
+        if (!data || data.childKeys.length !== 1) break;
+        // If this node has exactly 1 child and that child is a combine machine, stop
+        const childData = uniqueNodes.get(data.childKeys[0]);
+        if (childData && (data.treeNode.inputs || []).length > 1) break;
+        currentKey = data.childKeys[0];
       }
     }
 
@@ -1198,7 +1246,7 @@ class GraphGenerator {
         value: tree.value,
         category: "source",
         layer: (depthMap.get(rootKey) || 0) + 1,
-        quantity: 1,
+        quantity: pQty,
       });
       edges.push({ from: rootId, to: sellerId, itemType: tree.type });
     }

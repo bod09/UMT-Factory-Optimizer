@@ -3,9 +3,9 @@
 
 class GraphVisualizer {
   constructor() {
-    this.nodeWidth = 160;
+    this.nodeWidth = 170;
     this.nodeHeight = 52;
-    this.layerGap = 200;
+    this.layerGap = 230;
     this.nodeGap = 65;
     this.padding = 40;
   }
