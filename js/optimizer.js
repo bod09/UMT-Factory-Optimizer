@@ -14,22 +14,30 @@ class FactoryOptimizer {
       prestigeItems: config.prestigeItems || {},
     };
     if (machineRegistry) {
+      this.flowOptimizer = new FlowOptimizer(machineRegistry, this.config);
+      // Keep old system as fallback
       this.chainDiscoverer = new ChainDiscoverer(machineRegistry, this.config);
     }
   }
 
   getEffectiveOreValue(ore) {
-    // Don't apply ore upgrader here - it's handled inside ValueCalculator.resolveType
-    // to avoid double-upgrading
     return ore.value;
   }
 
   getBestChain(ore, budget) {
-    if (!this.chainDiscoverer) {
-      return [{ chain: "Loading...", value: 0, cost: 0, perOre: 0, oresNeeded: 1 }];
+    // Use new FlowOptimizer
+    if (this.flowOptimizer) {
+      try {
+        return this.flowOptimizer.discoverAll(ore.value);
+      } catch(e) {
+        console.error("FlowOptimizer error, falling back:", e);
+      }
     }
-
-    return this.chainDiscoverer.discoverChains(ore.value);
+    // Fallback to old system
+    if (this.chainDiscoverer) {
+      return this.chainDiscoverer.discoverChains(ore.value);
+    }
+    return [{ chain: "Loading...", value: 0, cost: 0, perOre: 0, oresNeeded: 1 }];
   }
 
   // Backwards compatibility
