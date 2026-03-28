@@ -357,18 +357,30 @@ class ValueCalculator {
 
 
   resolveType(targetType, oreValue, visiting) {
-    // Byproduct base types: stone and dust are "free" from smelting byproduct
-    // Everything else (glass, clay, ceramic_casing, blasting_powder) should be
-    // resolved dynamically through the actual machine chain from dust/stone
-    const byproductBaseTypes = {
-      "stone": { value: 0, oreCount: 0 },
-      "dust": { value: 1, oreCount: 0 },
-    };
+    // Stone is the only true base byproduct - free from smelting
+    if (targetType === "stone") {
+      const recipeTree = { machine: "smelter_byproduct", type: "stone", value: 0, oreCount: 0, inputs: [] };
+      return { type: "stone", value: 0, tags: new Set(), oreCount: 0, path: [{ machine: "smelter_byproduct", type: "stone", value: 0 }], recipeTree };
+    }
 
-    if (byproductBaseTypes[targetType]) {
-      const bp = byproductBaseTypes[targetType];
-      const recipeTree = { machine: "byproduct_source", type: targetType, value: bp.value, oreCount: 0, inputs: [], label: targetType + " (from smelting)" };
-      return { type: targetType, value: bp.value, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_source", type: targetType, value: bp.value }], recipeTree };
+    // Dust comes from Crusher(stone) - build the chain dynamically
+    if (targetType === "dust") {
+      const crusher = this.registry.get("crusher");
+      if (crusher) {
+        const stoneResult = this.resolveType("stone", oreValue, new Set(visiting));
+        if (stoneResult) {
+          const dustValue = crusher.value || 1; // crusher sets value to $1
+          const path = [...(stoneResult.path || []), { machine: "crusher", type: "dust", value: dustValue }];
+          const recipeTree = {
+            machine: "crusher", type: "dust", value: dustValue, oreCount: 0,
+            inputs: [stoneResult.recipeTree || { machine: "smelter_byproduct", type: "stone", value: 0, oreCount: 0, inputs: [] }],
+          };
+          return { type: "dust", value: dustValue, tags: new Set(), oreCount: 0, path, recipeTree };
+        }
+      }
+      // Fallback
+      const recipeTree = { machine: "crusher", type: "dust", value: 1, oreCount: 0, inputs: [] };
+      return { type: "dust", value: 1, tags: new Set(), oreCount: 0, path: [{ machine: "crusher", type: "dust", value: 1 }], recipeTree };
     }
 
     // Base case: ore
@@ -990,7 +1002,7 @@ class GraphGenerator {
       const machine = registry.get(tn.machine);
       let category = machine?.category || "source";
       let name = machine?.name || (tn.machine === "ore_source" ? "Ore Input" : tn.machine);
-      if (tn.machine === "byproduct" || tn.machine === "byproduct_source") {
+      if (tn.machine === "byproduct" || tn.machine === "byproduct_source" || tn.machine === "smelter_byproduct") {
         const typeName = ITEM_TYPES[tn.type] || tn.type;
         name = typeName + " (Byproduct)";
         category = "stonework";
