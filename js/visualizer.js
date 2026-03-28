@@ -233,7 +233,12 @@ class GraphVisualizer {
     path.setAttribute("d", d);
     path.setAttribute("fill", "none");
 
-    if (edge.dashed) {
+    if (edge.isByproduct) {
+      path.setAttribute("stroke", "#f59e0b");
+      path.setAttribute("stroke-width", "1.5");
+      path.setAttribute("stroke-dasharray", "6 3");
+      path.setAttribute("marker-end", "url(#arrow-dashed)");
+    } else if (edge.dashed) {
       path.setAttribute("stroke", "#4b5563");
       path.setAttribute("stroke-width", "1");
       path.setAttribute("stroke-dasharray", "4 3");

@@ -125,21 +125,18 @@ class ValueCalculator {
   }
 
   resolveType(targetType, oreValue, visiting) {
-    // Byproduct types: available for "free" from smelting stone byproduct
-    // Stone → Crusher → Dust → various paths. Cost is 0 ores (byproduct of main chain)
-    const byproductTypes = {
+    // Byproduct base types: stone and dust are "free" from smelting byproduct
+    // Everything else (glass, clay, ceramic_casing, blasting_powder) should be
+    // resolved dynamically through the actual machine chain from dust/stone
+    const byproductBaseTypes = {
       "stone": { value: 0, oreCount: 0 },
       "dust": { value: 1, oreCount: 0 },
-      "glass": { value: 30, oreCount: 0 },     // Kiln
-      "clay": { value: 50, oreCount: 0 },       // Clay Mixer (2 dust)
-      "ceramic_casing": { value: 150, oreCount: 0 }, // Ceramic Furnace
-      "blasting_powder": { value: 3, oreCount: 0 },  // Powder Chamber + Refiner
     };
 
-    if (byproductTypes[targetType]) {
-      const bp = byproductTypes[targetType];
-      const recipeTree = { machine: "byproduct", type: targetType, value: bp.value, oreCount: bp.oreCount, inputs: [], label: "Byproduct (free)" };
-      return { type: targetType, value: bp.value, tags: new Set(), oreCount: bp.oreCount, path: [{ machine: "byproduct", type: targetType, value: bp.value }], recipeTree };
+    if (byproductBaseTypes[targetType]) {
+      const bp = byproductBaseTypes[targetType];
+      const recipeTree = { machine: "byproduct_source", type: targetType, value: bp.value, oreCount: 0, inputs: [], label: targetType + " (from smelting)" };
+      return { type: targetType, value: bp.value, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_source", type: targetType, value: bp.value }], recipeTree };
     }
 
     // Base case: ore
@@ -179,6 +176,50 @@ class ValueCalculator {
       let oreTree = { machine: "ore_source", type: "ore", value: oreValue, oreCount: 1, inputs: [] };
       for (const step of path.slice(1)) { // skip ore_source
         oreTree = { machine: step.machine, type: "ore", value: step.value, oreCount: 1, inputs: [oreTree] };
+      }
+
+      // Duplicator optimization: duplicate ore BEFORE flat bonuses
+      // This gives 2 copies at 50% base value, each gets independent +$10+$10 flat bonuses
+      // Net: 2×(val/2 + flatBonuses) vs 1×(val + flatBonuses) → extra flatBonuses value
+      if (this.config.prestigeItems?.duplicator && !tags.has("Duplicated")) {
+        // Calculate without dup: val (already calculated above)
+        const withoutDup = val;
+        const withoutDupOres = 1;
+
+        // Calculate with dup: 2 copies at 50%, each gets flat bonuses
+        let dupVal = oreValue;
+        // Apply upgrade first if applicable
+        if (this.config.prestigeItems?.oreUpgrader) {
+          const upgraded = getUpgradedOreValue(this.getOreName(oreValue));
+          if (upgraded !== null) dupVal = upgraded;
+        }
+        // Duplicate: 50% value
+        dupVal *= 0.5;
+        // Apply flat and percent bonuses to each copy
+        for (const modId of oreModifiers) {
+          const mod = this.registry.get(modId);
+          if (!mod || !this.registry.isAvailable(modId, this.config)) continue;
+          if (mod.effect === "flat") dupVal += mod.value;
+          else if (mod.effect === "percent") dupVal *= (1 + mod.value);
+        }
+        // 2 copies total
+        const withDup = dupVal * 2;
+        const withDupOres = 1; // same 1 ore, just duplicated
+
+        // Use dup if it gives better per-ore value
+        if (withDup / withDupOres > withoutDup / withoutDupOres) {
+          tags.add("Duplicated");
+          tags.add("Unduplicatable");
+
+          // Update path and tree
+          path.splice(1, 0, { machine: "duplicator", type: "ore", value: oreValue * 0.5 });
+          oreTree = { machine: "ore_source", type: "ore", value: oreValue, oreCount: 1, inputs: [] };
+          for (const step of path.slice(1)) {
+            oreTree = { machine: step.machine, type: "ore", value: step.value, oreCount: 1, inputs: [oreTree] };
+          }
+          // Represent as 2 copies: effectively double value from 1 ore
+          val = withDup;
+        }
       }
 
       return { type: "ore", value: val, tags, oreCount: 1, path, recipeTree: oreTree };
@@ -742,8 +783,9 @@ class GraphGenerator {
       const machine = registry.get(tn.machine);
       let category = machine?.category || "source";
       let name = machine?.name || (tn.machine === "ore_source" ? "Ore Input" : tn.machine);
-      if (tn.machine === "byproduct") {
-        name = (ITEM_TYPES[tn.type] || tn.type) + " (Byproduct)";
+      if (tn.machine === "byproduct" || tn.machine === "byproduct_source") {
+        const typeName = ITEM_TYPES[tn.type] || tn.type;
+        name = typeName + " (Byproduct)";
         category = "stonework";
       }
       if (tn.machine === "unknown") {
@@ -776,12 +818,42 @@ class GraphGenerator {
       }
     }
 
+    // Add byproduct branch nodes for machines with byproducts (e.g., Ore Smelter → Stone)
+    const addedByproducts = new Set();
+    for (const [key, data] of uniqueNodes) {
+      const tn = data.treeNode;
+      const machine = registry.get(tn.machine);
+      if (!machine?.byproducts) continue;
+
+      const sourceId = keyToId.get(key);
+      if (sourceId === undefined) continue;
+      const sourceLayer = depthMap.get(key) || 0;
+
+      for (const bp of machine.byproducts) {
+        const bpKey = tn.machine + "_bp_" + bp.type;
+        if (addedByproducts.has(bpKey)) continue;
+        addedByproducts.add(bpKey);
+
+        const bpName = (ITEM_TYPES[bp.type] || bp.type) + " (Byproduct)";
+        const bpId = nextId++;
+        nodes.push({
+          id: bpId,
+          name: bpName,
+          type: bp.type,
+          value: 0,
+          category: "stonework",
+          layer: sourceLayer,
+          isByproduct: true,
+        });
+        edges.push({ from: sourceId, to: bpId, itemType: bp.type, isByproduct: true });
+      }
+    }
+
     // Add seller at end
     const rootKey = getNodeKey(tree);
     const rootId = keyToId.get(rootKey);
     if (rootId !== undefined) {
       const sellerId = nextId++;
-      const rootNode = nodes.find(n => n.id === rootId);
       nodes.push({
         id: sellerId,
         name: "Seller",
