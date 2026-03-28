@@ -212,16 +212,34 @@ class GraphVisualizer {
 
   // Create SVG path for an edge (bezier curve)
   createEdgePath(from, to, edge) {
-    const x1 = from.x + this.nodeWidth;
-    const y1 = from.y + this.nodeHeight / 2;
-    const x2 = to.x;
-    const y2 = to.y + this.nodeHeight / 2;
+    // Determine if this should be a vertical connection (byproduct going down)
+    const isVertical = edge.isByproduct && Math.abs(from.x - to.x) < this.nodeWidth * 1.5 && to.y > from.y;
+
+    let x1, y1, x2, y2;
+
+    if (isVertical) {
+      // Source: bottom center. Target: top center
+      x1 = from.x + this.nodeWidth / 2;
+      y1 = from.y + this.nodeHeight;
+      x2 = to.x + this.nodeWidth / 2;
+      y2 = to.y;
+    } else {
+      // Normal: right side → left side
+      x1 = from.x + this.nodeWidth;
+      y1 = from.y + this.nodeHeight / 2;
+      x2 = to.x;
+      y2 = to.y + this.nodeHeight / 2;
+    }
 
     // For back-edges (looping), curve above
-    const isBackEdge = to.x <= from.x;
+    const isBackEdge = !isVertical && to.x <= from.x;
     let d;
 
-    if (isBackEdge) {
+    if (isVertical) {
+      // Vertical curve: straight down with a slight S-curve
+      const cy = (y1 + y2) / 2;
+      d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
+    } else if (isBackEdge) {
       const midY = Math.min(from.y, to.y) - 40;
       d = `M ${x1} ${y1} C ${x1 + 50} ${midY}, ${x2 - 50} ${midY}, ${x2} ${y2}`;
     } else {

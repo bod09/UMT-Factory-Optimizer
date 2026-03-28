@@ -648,6 +648,8 @@ body:has(.builder-fullpage.active) {
   width: 100%;
   overflow: auto;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .chain-graph-svg {
