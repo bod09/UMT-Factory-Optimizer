@@ -296,7 +296,7 @@ class FlowOptimizer {
   }
 
   // Phase 2: Build a complete flow for a terminal product
-  // This traces the full production chain with quantities and byproducts
+  // This traces the full production chain with quantities, byproducts, and duplicator
   buildFlow(terminalType, oreValue) {
     const ds = this.config.hasDoubleSeller ? 2 : 1;
 
@@ -307,16 +307,30 @@ class FlowOptimizer {
     // Apply QA
     let finalValue = chainResult.value;
     const qa = this.registry.get("quality_assurance");
-    if (qa && this.registry.isAvailable("quality_assurance", this.config)) {
-      finalValue *= (1 + qa.value);
-    }
+    const qaMultiplier = (qa && this.registry.isAvailable("quality_assurance", this.config)) ? (1 + qa.value) : 1;
+    finalValue *= qaMultiplier;
     finalValue *= ds;
 
-    // Add byproduct value (stone → prospectors → crusher → sifter → best path)
-    const bpValue = this.computeByproductFlow(chainResult.oreCount, oreValue, finalValue / chainResult.oreCount);
+    let totalOres = chainResult.oreCount;
+    let dupAt = null;
+    let productQty = 1;
+
+    // Try duplicator at every point in the chain
+    if (this.config.prestigeItems?.duplicator) {
+      const dupResult = this.findBestDup(chainResult, terminalType, oreValue, qaMultiplier, ds);
+      if (dupResult && dupResult.perOre > finalValue / totalOres) {
+        finalValue = dupResult.totalValue;
+        totalOres = dupResult.totalOres;
+        dupAt = dupResult.dupAt;
+        productQty = dupResult.productQty;
+      }
+    }
+
+    // Add byproduct value
+    const mainPerOre = totalOres > 0 ? finalValue / totalOres : 0;
+    const bpValue = this.computeByproductFlow(totalOres, oreValue, mainPerOre);
 
     const totalValue = finalValue + bpValue.totalValue;
-    const totalOres = chainResult.oreCount;
     const perOre = totalOres > 0 ? totalValue / totalOres : 0;
 
     // Build chain name
@@ -324,7 +338,7 @@ class FlowOptimizer {
     if (this.config.prestigeItems?.oreUpgrader) tags.push("Upgraded");
     if (this.config.prestigeItems?.transmuters) tags.push("Transmute");
     if (this.config.prestigeItems?.philosophersStone) tags.push("Infused");
-    if (this.config.prestigeItems?.duplicator) tags.push("Dup");
+    if (dupAt) tags.push("Dup");
     const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
     const displayType = ITEM_TYPES[terminalType] || terminalType;
 
@@ -339,7 +353,194 @@ class FlowOptimizer {
       value: totalValue,
       oresNeeded: totalOres,
       cost: this.sumCosts(chainResult),
+      dupAt,
+      productQty,
     };
+  }
+
+  // === DUPLICATOR IN FLOW ===
+  // The duplicator is just another option at each point in the chain.
+  // For each item type in the chain, evaluate: "what if I duplicate here?"
+  // 2 copies at 50% value → may help with flat bonuses or combiner inputs
+
+  findBestDup(chainResult, terminalType, oreValue, qaMultiplier, ds) {
+    const baseValue = chainResult.value * qaMultiplier * ds;
+    const baseOres = chainResult.oreCount;
+    const basePerOre = baseOres > 0 ? baseValue / baseOres : 0;
+
+    let bestDup = null;
+
+    // Strategy 1: Dup at ore level (before flat bonuses)
+    // 2 ores at 50% → each gets +$10+$10 independently → gain extra flat bonuses
+    const oreDupResult = this.tryDupAtOre(oreValue, chainResult, terminalType, qaMultiplier, ds);
+    if (oreDupResult && oreDupResult.perOre > basePerOre) {
+      bestDup = oreDupResult;
+    }
+
+    // Strategy 2: Dup at combiner inputs
+    // For each combiner in the chain, try duplicating each input
+    const combinerDups = this.tryDupAtCombiners(chainResult, terminalType, oreValue, qaMultiplier, ds);
+    for (const dup of combinerDups) {
+      if (dup.perOre > (bestDup?.perOre || basePerOre)) {
+        bestDup = dup;
+      }
+    }
+
+    return bestDup;
+  }
+
+  // Try duplicating at ore level: 2 copies at 50%, each gets flat bonuses independently
+  tryDupAtOre(oreValue, chainResult, terminalType, qaMultiplier, ds) {
+    // Compute ore value with dup: 2 copies at 50%
+    let val = oreValue;
+
+    // Ore upgrader
+    if (this.config.prestigeItems?.oreUpgrader) {
+      const oreName = ORES.find(o => o.value === oreValue)?.name;
+      if (oreName) {
+        const upgraded = getUpgradedOreValue(oreName);
+        if (upgraded !== null) val = upgraded;
+      }
+    }
+
+    // Dup: 50% value
+    val *= 0.5;
+
+    // Apply flat and percent modifiers to each copy
+    const skipMods = new Set(["quality_assurance", "duplicator", "crusher"]);
+    const modifiers = this.registry.getModifiers("ore").filter(id => !skipMods.has(id));
+    const sorted = modifiers.map(id => ({ id, ...this.registry.get(id) }))
+      .filter(m => m && this.registry.isAvailable(m.id, this.config))
+      .sort((a, b) => {
+        const order = { upgrade_tier: 0, flat: 1, percent: 2 };
+        return (order[a.effect] || 99) - (order[b.effect] || 99);
+      });
+
+    for (const mod of sorted) {
+      if (mod.effect === "upgrade_tier") continue;
+      if (mod.effect === "flat") val += mod.value;
+      else if (mod.effect === "percent") val *= (1 + mod.value);
+    }
+
+    // Total from 2 copies per ore
+    const dupOreValue = val * 2;
+
+    // Recalculate chain with this new ore value
+    // The ratio of dup ore value to normal ore value
+    const normalOreResult = this.getItemValue("ore", oreValue);
+    if (!normalOreResult || normalOreResult.value <= 0) return null;
+
+    const ratio = dupOreValue / normalOreResult.value;
+    // Scale the chain value by this ratio (all downstream multipliers preserve the ratio)
+    const dupChainValue = chainResult.value * ratio * qaMultiplier * ds;
+    const dupOres = chainResult.oreCount; // same ore count
+
+    return {
+      totalValue: dupChainValue,
+      totalOres: dupOres,
+      perOre: dupOres > 0 ? dupChainValue / dupOres : 0,
+      dupAt: "ore (before flat bonuses)",
+      productQty: 1,
+    };
+  }
+
+  // Try duplicating at each combiner input in the chain
+  tryDupAtCombiners(chainResult, terminalType, oreValue, qaMultiplier, ds) {
+    const results = [];
+
+    // Find the terminal machine (multi-input machine for the final product)
+    if (!chainResult.machine) return results;
+    const terminalMachine = this.registry.get(chainResult.machine);
+    if (!terminalMachine) return results;
+    // Must be a multi-input machine (combine, multiplicative, etc.)
+    if (!terminalMachine.inputs || terminalMachine.inputs.length < 2) return results;
+
+    // For each input to the combiner, try duplicating it
+    const inputs = chainResult.inputs || [];
+    for (let i = 0; i < inputs.length; i++) {
+      const dupInput = inputs[i];
+      if (!dupInput || dupInput.value <= 0) continue;
+
+      // Dup this input: 2 copies at 50% value, need 2× of other inputs
+      const dupInputValue = dupInput.value * 0.5;
+      let otherInputOres = 0;
+
+      // Calculate per-product value based on machine effect
+      let perProduct;
+      if (terminalMachine.effect === "combine") {
+        let combineSum = dupInputValue;
+        for (let j = 0; j < inputs.length; j++) {
+          if (j === i) continue;
+          combineSum += inputs[j].value;
+          otherInputOres += inputs[j].oreCount;
+        }
+        perProduct = combineSum * terminalMachine.value;
+      } else if (terminalMachine.effect === "multiplicative") {
+        let product = dupInputValue;
+        for (let j = 0; j < inputs.length; j++) {
+          if (j === i) continue;
+          product *= inputs[j].value;
+          otherInputOres += inputs[j].oreCount;
+        }
+        perProduct = product;
+      } else {
+        // Generic multi-input: use applyMachineEffect with modified inputs
+        const modInputs = inputs.map((inp, j) => j === i ? { ...inp, value: dupInputValue } : inp);
+        perProduct = this.applyMachineEffect(terminalMachine, modInputs);
+        for (let j = 0; j < inputs.length; j++) {
+          if (j === i) continue;
+          otherInputOres += inputs[j].oreCount;
+        }
+      }
+      const products = 2; // 2 products from dup
+      const totalOres = dupInput.oreCount + otherInputOres * products;
+
+      // Apply QA and DS
+      const totalValue = perProduct * products * qaMultiplier * ds;
+      const perOre = totalOres > 0 ? totalValue / totalOres : 0;
+
+      results.push({
+        totalValue,
+        totalOres,
+        perOre,
+        dupAt: (dupInput.resolvedType || dupInput.machine || 'input') + " in " + terminalType,
+        productQty: products,
+      });
+    }
+
+    // Also check nested combiners (e.g., dup casing inside electromagnet inside PC)
+    // Recursively check each input that is itself a combiner
+    for (const input of inputs) {
+      if (!input.machine) continue;
+      const inputMachine = this.registry.get(input.machine);
+      if (!inputMachine || !inputMachine.inputs || inputMachine.inputs.length < 2) continue;
+
+      const nestedDups = this.tryDupAtCombiners(input, input.resolvedType || '', oreValue, qaMultiplier, ds);
+      for (const dup of nestedDups) {
+        // Scale to account for this being just one input to the parent combiner
+        // The gain from duplicating a nested input propagates through the parent combine
+        const parentCombineValue = chainResult.value;
+        const inputContribution = input.value / parentCombineValue;
+
+        // New parent value: replace the original input value with the dup result
+        const newInputValue = dup.totalValue / (qaMultiplier * ds * dup.productQty);
+        const valueDiff = newInputValue - input.value;
+        const newParentValue = (parentCombineValue + valueDiff * terminalMachine.value) * qaMultiplier * ds;
+        const newTotalOres = chainResult.oreCount - input.oreCount + dup.totalOres;
+
+        const perOre = newTotalOres > 0 ? newParentValue / newTotalOres : 0;
+
+        results.push({
+          totalValue: newParentValue,
+          totalOres: newTotalOres,
+          perOre,
+          dupAt: dup.dupAt,
+          productQty: 1, // nested dup doesn't double the parent
+        });
+      }
+    }
+
+    return results;
   }
 
   // Compute byproduct flow value
