@@ -1045,34 +1045,73 @@ class GraphGenerator {
       }
     }
 
-    // Add byproduct branch nodes for machines with byproducts (e.g., Ore Smelter → Stone)
-    const addedByproducts = new Set();
-    for (const [key, data] of uniqueNodes) {
-      const tn = data.treeNode;
-      const machine = registry.get(tn.machine);
-      if (!machine?.byproducts) continue;
+    // Add byproduct processing chain: Ore Smelter → Stone → Prospectors → Crusher → Sifter → etc.
+    // Shows ALL machines used in the byproduct value calculation
+    const smelterKey = "ore_smelter:bar";
+    const smelterNodeId = keyToId.get(smelterKey);
+    if (smelterNodeId !== undefined) {
+      const smelterLayer = depthMap.get(smelterKey) || 0;
+      let prevId = smelterNodeId;
+      let currentLayer = smelterLayer;
 
-      const sourceId = keyToId.get(key);
-      if (sourceId === undefined) continue;
-      const sourceLayer = depthMap.get(key) || 0;
+      // Stone byproduct from smelter
+      const stoneId = nextId++;
+      nodes.push({ id: stoneId, name: "Stone (Byproduct)", type: "stone", value: 0, category: "stonework", layer: currentLayer, isByproduct: true });
+      edges.push({ from: smelterNodeId, to: stoneId, itemType: "stone", isByproduct: true });
+      prevId = stoneId;
+      currentLayer++;
 
-      for (const bp of machine.byproducts) {
-        const bpKey = tn.machine + "_bp_" + bp.type;
-        if (addedByproducts.has(bpKey)) continue;
-        addedByproducts.add(bpKey);
+      // Prospectors (if available)
+      for (const [machineId, m] of registry.machines) {
+        if (m.inputs?.includes("stone") && m.effect === "chance" && m.gemType) {
+          if (!registry.isAvailable(machineId, { budget: Infinity, prestigeItems: {} })) continue;
+          const prospId = nextId++;
+          const gemName = m.gemType || "Gem";
+          nodes.push({ id: prospId, name: m.name || machineId, type: "gem", value: 0, category: "jewelcrafting", layer: currentLayer, isByproduct: true, quantity: 1 });
+          edges.push({ from: prevId, to: prospId, itemType: "stone", isByproduct: true });
+          // Prospector output goes to sell (gem) - shown as branch
+          prevId = prospId; // Stone passes through to next prospector
+        }
+      }
 
-        const bpName = (ITEM_TYPES[bp.type] || bp.type) + " (Byproduct)";
-        const bpId = nextId++;
-        nodes.push({
-          id: bpId,
-          name: bpName,
-          type: bp.type,
-          value: 0,
-          category: "stonework",
-          layer: sourceLayer,
-          isByproduct: true,
-        });
-        edges.push({ from: sourceId, to: bpId, itemType: bp.type, isByproduct: true });
+      // Crusher (stone → dust)
+      const crusherId = nextId++;
+      nodes.push({ id: crusherId, name: "Crusher", type: "dust", value: 1, category: "stonework", layer: currentLayer, isByproduct: true });
+      edges.push({ from: prevId, to: crusherId, itemType: "stone", isByproduct: true });
+      prevId = crusherId;
+      currentLayer++;
+
+      // Sifter or Nano Sifter (if available)
+      const nanoSifter = registry.get("nano_sifter");
+      const sifter = registry.get("sifter");
+      if (nanoSifter && registry.isAvailable("nano_sifter", { budget: Infinity, prestigeItems: { nanoSifter: true } })) {
+        const sifterId = nextId++;
+        nodes.push({ id: sifterId, name: "Nano Sifter", type: "dust", value: 0, category: "prestige", layer: currentLayer, isByproduct: true });
+        edges.push({ from: prevId, to: sifterId, itemType: "dust", isByproduct: true });
+
+        // Ore output loops back (shown as label, not a full loop to avoid complexity)
+        const oreOutId = nextId++;
+        nodes.push({ id: oreOutId, name: "Sifted Ore → Main Chain", type: "ore", value: 0, category: "metalwork", layer: currentLayer, isByproduct: true });
+        edges.push({ from: sifterId, to: oreOutId, itemType: "ore", isByproduct: true });
+
+        prevId = sifterId;
+        currentLayer++;
+      } else if (sifter && registry.isAvailable("sifter", { budget: Infinity, prestigeItems: {} })) {
+        const sifterId = nextId++;
+        nodes.push({ id: sifterId, name: "Sifter", type: "dust", value: 0, category: "stonework", layer: currentLayer, isByproduct: true });
+        edges.push({ from: prevId, to: sifterId, itemType: "dust", isByproduct: true });
+        prevId = sifterId;
+        currentLayer++;
+      }
+
+      // Remaining dust → sell or further processing (already in recipe tree if used for ceramic)
+      // Check if crusher→dust is already connected to clay_mixer in the main graph
+      const dustInMainGraph = keyToId.has("crusher:dust") || keyToId.has("clay_mixer:clay");
+      if (!dustInMainGraph) {
+        // Add sell node for remaining dust products
+        const dustSellId = nextId++;
+        nodes.push({ id: dustSellId, name: "Sell Dust Products", type: "dust", value: 0, category: "source", layer: currentLayer, isByproduct: true });
+        edges.push({ from: prevId, to: dustSellId, itemType: "dust", isByproduct: true });
       }
     }
 
