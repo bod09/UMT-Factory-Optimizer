@@ -726,7 +726,7 @@ class ChainDiscoverer {
 
       // Build graph for visualization (from recipe tree for collapsed view with quantities)
       const graph = result.recipeTree
-        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry, result.oreCount)
+        ? GraphGenerator.fromRecipeTree(result.recipeTree, this.registry, result.oreCount, this.config)
         : GraphGenerator.fromPath(result.path, this.registry);
 
       // Build chain name with active prestige items
@@ -894,7 +894,7 @@ class ChainDiscoverer {
 
 class GraphGenerator {
   // Build from recipe tree: collapsed view with quantities
-  static fromRecipeTree(tree, registry, actualOreCount) {
+  static fromRecipeTree(tree, registry, actualOreCount, config) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
@@ -1058,73 +1058,131 @@ class GraphGenerator {
       }
     }
 
-    // Add byproduct processing chain: Ore Smelter → Stone → Prospectors → Crusher → Sifter → etc.
-    // Shows ALL machines used in the byproduct value calculation
-    const smelterKey = "ore_smelter:bar";
-    const smelterNodeId = keyToId.get(smelterKey);
-    if (smelterNodeId !== undefined) {
-      const smelterLayer = depthMap.get(smelterKey) || 0;
-      let prevId = smelterNodeId;
-      let currentLayer = smelterLayer;
+    // Add byproduct processing chain from machines with byproducts
+    // All machines found from registry, quantities from byproductRatio and config
+    for (const [key, data] of uniqueNodes) {
+      const tn = data.treeNode;
+      const machine = registry.get(tn.machine);
+      if (!machine?.byproducts) continue;
 
-      // Stone byproduct from smelter
-      const stoneId = nextId++;
-      nodes.push({ id: stoneId, name: "Stone (Byproduct)", type: "stone", value: 0, category: "stonework", layer: currentLayer, isByproduct: true });
-      edges.push({ from: smelterNodeId, to: stoneId, itemType: "stone", isByproduct: true });
-      prevId = stoneId;
-      currentLayer++;
+      const sourceId = keyToId.get(key);
+      if (sourceId === undefined) continue;
+      const sourceLayer = depthMap.get(key) || 0;
+      const sourceQty = data.quantity || 1;
+      const bpRatio = machine.byproductRatio || 0.5;
 
-      // Prospectors (if available)
-      for (const [machineId, m] of registry.machines) {
-        if (m.inputs?.includes("stone") && m.effect === "chance" && m.gemType) {
-          if (!registry.isAvailable(machineId, { budget: Infinity, prestigeItems: {} })) continue;
-          const prospId = nextId++;
-          const gemName = m.gemType || "Gem";
-          nodes.push({ id: prospId, name: m.name || machineId, type: "gem", value: 0, category: "jewelcrafting", layer: currentLayer, isByproduct: true, quantity: 1 });
-          edges.push({ from: prevId, to: prospId, itemType: "stone", isByproduct: true });
-          // Prospector output goes to sell (gem) - shown as branch
-          prevId = prospId; // Stone passes through to next prospector
+      for (const bp of machine.byproducts) {
+        const bpQty = Math.round(sourceQty * bpRatio) || 1;
+        let prevId = sourceId;
+        let currentLayer = sourceLayer;
+
+        // Byproduct source node (e.g., Stone from smelter)
+        const bpName = (ITEM_TYPES[bp.type] || bp.type) + " (Byproduct)";
+        const bpId = nextId++;
+        nodes.push({ id: bpId, name: bpName, type: bp.type, value: 0, category: "stonework", layer: currentLayer, isByproduct: true, quantity: bpQty });
+        edges.push({ from: sourceId, to: bpId, itemType: bp.type, isByproduct: true });
+        prevId = bpId;
+        currentLayer++;
+
+        // Find machines that process this byproduct type from registry
+        let remaining = bpQty;
+
+        // Chance machines (prospectors): consume input at chance rate
+        for (const [machineId, m] of registry.machines) {
+          if (!m.inputs?.includes(bp.type) || m.effect !== "chance") continue;
+          if (!registry.isAvailable(machineId, config)) continue;
+
+          const produced = Math.round(remaining * (m.value || 0.05));
+          const chanceId = nextId++;
+          nodes.push({ id: chanceId, name: m.name || machineId, type: m.gemType || "gem",
+            value: 0, category: m.category || "jewelcrafting", layer: currentLayer,
+            isByproduct: true, quantity: produced || 1 });
+          edges.push({ from: prevId, to: chanceId, itemType: bp.type, isByproduct: true });
+          remaining = Math.round(remaining * (1 - (m.value || 0.05)));
+          prevId = chanceId;
         }
-      }
 
-      // Crusher (stone → dust)
-      const crusherId = nextId++;
-      nodes.push({ id: crusherId, name: "Crusher", type: "dust", value: 1, category: "stonework", layer: currentLayer, isByproduct: true });
-      edges.push({ from: prevId, to: crusherId, itemType: "stone", isByproduct: true });
-      prevId = crusherId;
-      currentLayer++;
+        // Crusher: converts remaining to dust (find from registry)
+        for (const [machineId, m] of registry.machines) {
+          if (m.effect !== "set" || !m.outputs?.[0]) continue;
+          if (!m.inputs?.includes("any") && !m.inputs?.includes(bp.type)) continue;
+          if (m.outputs[0].type !== "dust") continue;
+          if (!registry.isAvailable(machineId, config)) continue;
 
-      // Sifter or Nano Sifter (if available)
-      const nanoSifter = registry.get("nano_sifter");
-      const sifter = registry.get("sifter");
-      if (nanoSifter && registry.isAvailable("nano_sifter", { budget: Infinity, prestigeItems: { nanoSifter: true } })) {
-        const sifterId = nextId++;
-        nodes.push({ id: sifterId, name: "Nano Sifter", type: "dust", value: 0, category: "prestige", layer: currentLayer, isByproduct: true });
-        edges.push({ from: prevId, to: sifterId, itemType: "dust", isByproduct: true });
+          const crushId = nextId++;
+          nodes.push({ id: crushId, name: m.name || machineId, type: "dust",
+            value: m.value || 1, category: m.category || "stonework", layer: currentLayer,
+            isByproduct: true, quantity: remaining });
+          edges.push({ from: prevId, to: crushId, itemType: bp.type, isByproduct: true });
+          prevId = crushId;
+          currentLayer++;
+          break;
+        }
 
-        // Ore output loops back (shown as label, not a full loop to avoid complexity)
-        const oreOutId = nextId++;
-        nodes.push({ id: oreOutId, name: "Sifted Ore → Main Chain", type: "ore", value: 0, category: "metalwork", layer: currentLayer, isByproduct: true });
-        edges.push({ from: sifterId, to: oreOutId, itemType: "ore", isByproduct: true });
+        // Sifter/Nano Sifter: converts dust to ore (find from registry)
+        let dustRemaining = remaining;
+        for (const [machineId, m] of registry.machines) {
+          if (!m.inputs?.includes("dust") || m.effect !== "chance_convert") continue;
+          // Also check for sifter-type machines by looking at outputs
+          if (!registry.isAvailable(machineId, config)) continue;
 
-        prevId = sifterId;
-        currentLayer++;
-      } else if (sifter && registry.isAvailable("sifter", { budget: Infinity, prestigeItems: {} })) {
-        const sifterId = nextId++;
-        nodes.push({ id: sifterId, name: "Sifter", type: "dust", value: 0, category: "stonework", layer: currentLayer, isByproduct: true });
-        edges.push({ from: prevId, to: sifterId, itemType: "dust", isByproduct: true });
-        prevId = sifterId;
-        currentLayer++;
-      }
+          const siftId = nextId++;
+          const oreProduced = Math.round(dustRemaining * (m.value || 0.1));
+          nodes.push({ id: siftId, name: m.name || machineId, type: "dust",
+            value: 0, category: m.category || "stonework", layer: currentLayer,
+            isByproduct: true, quantity: dustRemaining });
+          edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: true });
 
-      // Remaining dust → sell or further processing (already in recipe tree if used for ceramic)
-      // Check if crusher→dust is already connected to clay_mixer in the main graph
-      const dustInMainGraph = keyToId.has("crusher:dust") || keyToId.has("clay_mixer:clay");
-      if (!dustInMainGraph) {
-        // Add sell node for remaining dust products
-        const dustSellId = nextId++;
-        nodes.push({ id: dustSellId, name: "Sell Dust Products", type: "dust", value: 0, category: "source", layer: currentLayer, isByproduct: true });
-        edges.push({ from: prevId, to: dustSellId, itemType: "dust", isByproduct: true });
+          // Ore output branch
+          if (oreProduced > 0) {
+            const oreOutId = nextId++;
+            nodes.push({ id: oreOutId, name: "Ore → Main Chain", type: "ore",
+              value: 0, category: "metalwork", layer: currentLayer,
+              isByproduct: true, quantity: oreProduced });
+            edges.push({ from: siftId, to: oreOutId, itemType: "ore", isByproduct: true });
+          }
+
+          dustRemaining = Math.round(dustRemaining * (1 - (m.value || 0.1)));
+          prevId = siftId;
+          currentLayer++;
+          break;
+        }
+
+        // Sifter: find best available sifter from registry (prefer higher chance)
+        if (dustRemaining === remaining) {
+          let bestSifter = null;
+          for (const [machineId, m] of registry.machines) {
+            if (!m.inputs?.includes("dust")) continue;
+            if (machineId !== "sifter" && machineId !== "nano_sifter") continue;
+            if (!registry.isAvailable(machineId, config)) continue;
+            if (!bestSifter || (m.value || 0) > (bestSifter.m.value || 0)) {
+              bestSifter = { id: machineId, m };
+            }
+          }
+
+          if (bestSifter) {
+            const { id: machineId, m } = bestSifter;
+            const siftChance = m.value || 0.1;
+            const oreProduced = Math.round(dustRemaining * siftChance);
+            const siftId = nextId++;
+            nodes.push({ id: siftId, name: m.name || machineId, type: "dust",
+              value: 0, category: m.category || "prestige", layer: currentLayer,
+              isByproduct: true, quantity: dustRemaining });
+            edges.push({ from: prevId, to: siftId, itemType: "dust", isByproduct: true });
+
+            if (oreProduced > 0) {
+              const oreOutId = nextId++;
+              nodes.push({ id: oreOutId, name: "Ore → Main Chain", type: "ore",
+                value: 0, category: "metalwork", layer: currentLayer,
+                isByproduct: true, quantity: oreProduced });
+              edges.push({ from: siftId, to: oreOutId, itemType: "ore", isByproduct: true });
+            }
+
+            dustRemaining = dustRemaining - oreProduced;
+            prevId = siftId;
+            currentLayer++;
+          }
+        }
       }
     }
 

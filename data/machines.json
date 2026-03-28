@@ -405,23 +405,23 @@
       ],
       "outputs": [
         {
+          "type": "dust",
+          "chance": 0.9,
+          "desc": "Remaining dust passes through (tagged Sifted, can't sift again)"
+        }
+      ],
+      "byproducts": [
+        {
           "type": "ore",
           "chance": 0.1,
           "desc": "Random ore (10%): Tin, Iron, Cobalt, Uranium, Gold"
         }
       ],
-      "byproducts": [
-        {
-          "type": "dust",
-          "chance": 0.9,
-          "desc": "Remaining dust passes through (tagged Sifted, can't sift again)",
-          "tag": "Sifted"
-        }
-      ],
       "effect": "chance",
       "value": 0.1,
       "size": "3x3",
-      "desc": "10% dust\u00e2\u2020\u2019ore. 90% dust passes through tagged Sifted (prevents re-sifting)."
+      "desc": "10% dust\u00e2\u2020\u2019ore. 90% dust passes through tagged Sifted (prevents re-sifting).",
+      "byproductRatio": 0.1
     },
     "nano_sifter": {
       "name": "Nano Sifter",
@@ -433,23 +433,23 @@
       ],
       "outputs": [
         {
+          "type": "dust",
+          "chance": 0.834,
+          "desc": "Remaining dust passes through (tagged Sifted, can't sift again)"
+        }
+      ],
+      "byproducts": [
+        {
           "type": "ore",
           "chance": 0.166,
           "desc": "Random ore (16.6%): Tin, Iron, Lead, Cobalt, Silver, Uranium, Tungsten, Gold, Plutonium, Palladium, Iridium"
         }
       ],
-      "byproducts": [
-        {
-          "type": "dust",
-          "chance": 0.834,
-          "desc": "Remaining dust passes through (tagged Sifted, can't sift again)",
-          "tag": "Sifted"
-        }
-      ],
       "effect": "chance",
       "value": 0.166,
       "size": "3x3",
-      "desc": "16.6% dust\u00e2\u2020\u2019ore. 83.4% dust passes through tagged Sifted (prevents re-sifting)."
+      "desc": "16.6% dust\u00e2\u2020\u2019ore. 83.4% dust passes through tagged Sifted (prevents re-sifting).",
+      "byproductRatio": 0.166
     },
     "brick_mold": {
       "name": "Brick Mold",
