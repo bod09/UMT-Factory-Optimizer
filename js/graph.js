@@ -360,28 +360,13 @@ class ValueCalculator {
 
 
   resolveType(targetType, oreValue, visiting) {
-    // Byproduct types are FREE (come from smelter byproduct chain)
-    // Don't build full stone→crusher→dust chains here - that's handled by
-    // the byproduct sub-graph in fromRecipeTree. Just mark as free inputs.
-    if (targetType === "stone") {
-      const recipeTree = { machine: "byproduct_free", type: "stone", value: 0, oreCount: 0, inputs: [], _isFreeByproduct: true };
-      return { type: "stone", value: 0, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "stone", value: 0 }], recipeTree };
-    }
-
-    if (targetType === "dust") {
-      const recipeTree = { machine: "byproduct_free", type: "dust", value: 1, oreCount: 0, inputs: [], _isFreeByproduct: true };
-      return { type: "dust", value: 1, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "dust", value: 1 }], recipeTree };
-    }
-
-    // Clay and ceramic_casing also come from byproduct chain (dust→clay→ceramic)
-    if (targetType === "clay") {
-      const recipeTree = { machine: "byproduct_free", type: "clay", value: 50, oreCount: 0, inputs: [], _isFreeByproduct: true };
-      return { type: "clay", value: 50, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "clay", value: 50 }], recipeTree };
-    }
-
-    if (targetType === "ceramic_casing") {
-      const recipeTree = { machine: "byproduct_free", type: "ceramic_casing", value: 150, oreCount: 0, inputs: [], _isFreeByproduct: true };
-      return { type: "ceramic_casing", value: 150, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: "ceramic_casing", value: 150 }], recipeTree };
+    // Check if this type is a byproduct-origin type (produced from smelter byproducts,
+    // not from ore). Detect dynamically: if the type can only be reached through
+    // byproduct chains (stone/dust paths), it costs 0 ores.
+    if (this._isByproductType(targetType)) {
+      const value = this._getByproductTypeValue(targetType);
+      const recipeTree = { machine: "byproduct_free", type: targetType, value, oreCount: 0, inputs: [], _isFreeByproduct: true };
+      return { type: targetType, value, tags: new Set(), oreCount: 0, path: [{ machine: "byproduct_free", type: targetType, value }], recipeTree };
     }
 
     // Base case: ore
@@ -693,6 +678,127 @@ class ValueCalculator {
     const ore = ORES.find(o => o.value === value);
     return ore ? ore.name : null;
   }
+
+  // Check if a type originates from byproduct chains (not from ore)
+  // Traces backwards through machine inputs to see if it reaches ore or only byproducts
+  _isByproductType(type) {
+    if (this._byproductTypeCache) return this._byproductTypeCache.has(type);
+
+    // Build the cache: find all types reachable only through byproduct chains
+    // Start from known byproduct origins: types produced as byproducts by any machine
+    const byproductTypes = new Set();
+
+    // Find all types that appear as byproducts of any machine
+    for (const [, m] of this.registry.machines) {
+      for (const bp of m.byproducts || []) {
+        byproductTypes.add(bp.type);
+      }
+    }
+
+    // Expand: any type producible ONLY from byproduct types is also a byproduct type
+    let changed = true;
+    let iterations = 0;
+    while (changed && iterations < 20) {
+      changed = false;
+      iterations++;
+      for (const [machineId, m] of this.registry.machines) {
+        if (!m.outputs?.[0]?.type) continue;
+        const outType = m.outputs[0].type;
+        if (byproductTypes.has(outType)) continue;
+        // Check if ALL inputs are byproduct types or the same type (passthrough)
+        const inputs = m.inputs || [];
+        if (inputs.length === 0) continue;
+        const allInputsByproduct = inputs.every(inp => {
+          const types = inp.split("|");
+          return types.some(t => byproductTypes.has(t) || t === "any");
+        });
+        if (allInputsByproduct) {
+          byproductTypes.add(outType);
+          changed = true;
+        }
+      }
+    }
+
+    // Don't count types that are also producible from ore chains
+    // (e.g., "bar" can come from ore but stone comes from smelter byproduct)
+    // Remove types that have a production path from ore
+    const oreReachable = new Set(["ore", "bar"]);
+    changed = true;
+    iterations = 0;
+    while (changed && iterations < 20) {
+      changed = false;
+      iterations++;
+      for (const [, m] of this.registry.machines) {
+        if (!m.outputs?.[0]?.type) continue;
+        const outType = m.outputs[0].type;
+        if (oreReachable.has(outType)) continue;
+        const inputs = m.inputs || [];
+        const anyInputFromOre = inputs.some(inp => {
+          const types = inp.split("|");
+          return types.some(t => oreReachable.has(t));
+        });
+        if (anyInputFromOre) {
+          oreReachable.add(outType);
+          changed = true;
+        }
+      }
+    }
+
+    // A type is a byproduct type if it's in byproductTypes but NOT in oreReachable
+    // Exception: types that are in BOTH (like "dust" which can come from crusher(stone))
+    // are still byproduct types because their PRIMARY source is free
+    const finalByproductTypes = new Set();
+    for (const t of byproductTypes) {
+      if (!oreReachable.has(t) || t === "stone" || t === "dust") {
+        finalByproductTypes.add(t);
+      }
+    }
+
+    // Also add downstream types only reachable from these
+    changed = true;
+    iterations = 0;
+    while (changed && iterations < 20) {
+      changed = false;
+      iterations++;
+      for (const [, m] of this.registry.machines) {
+        if (!m.outputs?.[0]?.type) continue;
+        const outType = m.outputs[0].type;
+        if (finalByproductTypes.has(outType)) continue;
+        if (oreReachable.has(outType)) continue;
+        const inputs = m.inputs || [];
+        if (inputs.length === 0) continue;
+        const allInputsByproduct = inputs.every(inp => {
+          const types = inp.split("|");
+          return types.some(t => finalByproductTypes.has(t) || t === "any");
+        });
+        if (allInputsByproduct) {
+          finalByproductTypes.add(outType);
+          changed = true;
+        }
+      }
+    }
+
+    this._byproductTypeCache = finalByproductTypes;
+    return finalByproductTypes.has(type);
+  }
+
+  // Get the value for a byproduct type by tracing through machines
+  _getByproductTypeValue(type) {
+    // Find what machine produces this type and what value it sets
+    for (const [, m] of this.registry.machines) {
+      if (!m.outputs?.[0]) continue;
+      if (m.outputs[0].type === type && m.effect === "set") {
+        return m.value || 0;
+      }
+    }
+    // Check byproduct entries
+    for (const [, m] of this.registry.machines) {
+      for (const bp of m.byproducts || []) {
+        if (bp.type === type) return 0; // direct byproducts are free
+      }
+    }
+    return 0;
+  }
 }
 
 // ChainDiscoverer removed - all chain discovery now handled by FlowOptimizer in flow.js
@@ -942,8 +1048,44 @@ class GraphGenerator {
 
         // Connect remaining outputs to main chain or sell
         for (const connect of byproductChain.connections) {
-          const fromId = idMapping.get(connect.fromId);
+          let fromId = idMapping.get(connect.fromId);
           if (fromId === undefined) continue;
+
+          // Check if the node that produced this connection is a DUPLICATE of a main graph machine
+          // If so, remove the duplicate and connect from its parent instead
+          const bpNode = byproductChain.nodes.find(n => n.id === connect.fromId);
+          if (bpNode) {
+            // Find if this machine already exists in the main graph
+            for (const [nodeKey, nodeData] of uniqueNodes) {
+              const mainNodeId = keyToId.get(nodeKey);
+              if (mainNodeId === undefined) continue;
+              const mainMachine = registry.get(nodeData.treeNode.machine);
+              if (mainMachine?.name === bpNode.name) {
+                // This machine exists in main graph - connect the byproduct chain's
+                // PREVIOUS node directly to the main graph machine, skip the duplicate
+                const parentEdge = byproductChain.edges.find(e => e.to === connect.fromId);
+                if (parentEdge) {
+                  const parentGlobalId = idMapping.get(parentEdge.from);
+                  if (parentGlobalId !== undefined) {
+                    edges.push({ from: parentGlobalId, to: mainNodeId, itemType: connect.type, isByproduct: true });
+                    // Remove the duplicate node
+                    const dupGlobalId = idMapping.get(connect.fromId);
+                    const dupIdx = nodes.findIndex(n => n.id === dupGlobalId);
+                    if (dupIdx !== -1) nodes.splice(dupIdx, 1);
+                    // Remove edges to/from the duplicate
+                    for (let i = edges.length - 1; i >= 0; i--) {
+                      if (edges[i].from === dupGlobalId || edges[i].to === dupGlobalId) {
+                        edges.splice(i, 1);
+                      }
+                    }
+                  }
+                }
+                fromId = null; // skip further connection handling
+                break;
+              }
+            }
+          }
+          if (fromId === null) continue;
 
           // Find a consumer for this type in the main graph
           let connected = false;
