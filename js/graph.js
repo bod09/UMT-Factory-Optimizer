@@ -121,7 +121,193 @@ class ValueCalculator {
     // Apply double seller
     const finalVal = this.config.hasDoubleSeller ? qaResult.value * 2 : qaResult.value;
 
-    return { ...qaResult, value: finalVal };
+    let finalResult = { ...qaResult, value: finalVal };
+
+    // Duplicator optimization: test at every node in recipe tree, pick best
+    if (this.config.prestigeItems?.duplicator && finalResult.recipeTree) {
+      const bestDup = this.findBestDuplicatorPlacement(finalResult, oreValue);
+      if (bestDup && bestDup.perOre > finalVal / finalResult.oreCount) {
+        finalResult = bestDup.result;
+      }
+    }
+
+    return finalResult;
+  }
+
+  // Try duplicating at every node in the recipe tree
+  // For each placement, calculate: total value and total ores needed
+  findBestDuplicatorPlacement(baseResult, oreValue) {
+    const basePerOre = baseResult.value / baseResult.oreCount;
+    let bestPlacement = null;
+
+    // Collect UNIQUE nodes by assigning IDs
+    let nextNodeId = 0;
+    function assignIds(tree) {
+      if (!tree) return;
+      tree._dupId = nextNodeId++;
+      for (const inp of tree.inputs || []) assignIds(inp);
+    }
+    assignIds(baseResult.recipeTree);
+
+    // Collect all nodes
+    const allNodes = [];
+    function collectNodes(tree) {
+      if (!tree) return;
+      allNodes.push(tree);
+      for (const inp of tree.inputs || []) collectNodes(inp);
+    }
+    collectNodes(baseResult.recipeTree);
+
+    // Get unique machine types (dup at ore_source once = dup ALL ore_sources, which is the correct model)
+    // Instead, try unique machine+type combos but also try individual nodes
+    const tested = new Set();
+
+    for (const dupNode of allNodes) {
+      if (dupNode.machine === "byproduct_source" || dupNode.machine === "byproduct") continue;
+      if (dupNode.machine === "duplicator") continue;
+
+      // Use the unique _dupId to simulate dup at this SPECIFIC node
+      const simResult = this._simDupById(baseResult.recipeTree, dupNode._dupId);
+      if (!simResult) continue;
+
+      let simVal = simResult.value * (simResult.copies || 1);
+      if (this.config.hasDoubleSeller) simVal *= 2;
+
+      const simPerOre = simResult.oreCount > 0 ? simVal / simResult.oreCount : 0;
+
+      if (simPerOre > basePerOre && (!bestPlacement || simPerOre > bestPlacement.perOre)) {
+        bestPlacement = {
+          perOre: simPerOre,
+          machine: dupNode.machine,
+          type: dupNode.type,
+          result: { ...baseResult, value: simVal, oreCount: simResult.oreCount, dupAt: dupNode.machine + ":" + dupNode.type },
+        };
+      }
+    }
+
+    // Clean up temp IDs
+    function cleanIds(tree) { if(tree) { delete tree._dupId; for(const i of tree.inputs||[]) cleanIds(i); } }
+    cleanIds(baseResult.recipeTree);
+
+    return bestPlacement;
+  }
+
+  // Simulate dup at a specific node identified by _dupId
+  _simDupById(tree, targetId) {
+    return this._simDup(tree, null, null, targetId);
+  }
+
+  // Simulate duplicating at a specific machine in the recipe tree
+  simulateDuplicatorAt(tree, targetMachine, targetType) {
+    return this._simDup(tree, targetMachine, targetType, null);
+  }
+
+  // Walk the tree, at the target node inject dup (50% value, 2 copies)
+  _simDup(node, targetMachine, targetType, targetId) {
+    if (!node) return null;
+
+    const isTarget = targetId !== null && targetId !== undefined
+      ? node._dupId === targetId
+      : (node.machine === targetMachine && node.type === targetType);
+
+    // At the dup target: 2 copies at 50% value
+    if (isTarget) {
+      return {
+        value: node.value * 0.5,
+        oreCount: node.oreCount || 0,
+        copies: 2,
+      };
+    }
+
+    // Leaf nodes
+    if (!node.inputs || node.inputs.length === 0) {
+      return { value: node.value, oreCount: node.oreCount || 0, copies: 1 };
+    }
+
+    // Evaluate inputs
+    const inputResults = [];
+    let dupInputIdx = -1;
+    for (let i = 0; i < node.inputs.length; i++) {
+      const res = this._simDup(node.inputs[i], targetMachine, targetType, targetId);
+      if (!res) return null;
+      inputResults.push(res);
+      if (res.copies > 1) dupInputIdx = i;
+    }
+
+    // No duplicated input - normal pass-through
+    if (dupInputIdx === -1) {
+      return {
+        value: node.value,
+        oreCount: inputResults.reduce((s, r) => s + r.oreCount, 0),
+        copies: 1,
+      };
+    }
+
+    const dupInput = inputResults[dupInputIdx];
+    const dupCopies = dupInput.copies;
+    const originalInputValue = node.inputs[dupInputIdx].value; // value before dup
+
+    // Calculate this node's output with the modified input
+    // Use the ratio: how does the output change when the input changes?
+    const isSingleInput = node.inputs.length === 1;
+    const machine = this.registry.get(node.machine);
+
+    if (isSingleInput) {
+      // For single-input machines, recalculate output per copy
+      // The key: flat bonuses are added to EACH copy independently
+      const valueDiff = dupInput.value - originalInputValue; // negative (50% reduction)
+      let perCopyOutput;
+
+      if (!machine) {
+        perCopyOutput = dupInput.value;
+      } else if (machine.effect === "flat") {
+        // Each copy: (inputVal*0.5) + flat
+        perCopyOutput = dupInput.value + machine.value;
+      } else if (machine.effect === "multiply") {
+        perCopyOutput = dupInput.value * machine.value;
+      } else if (machine.effect === "percent") {
+        perCopyOutput = dupInput.value * (1 + machine.value);
+      } else {
+        // For effects we don't model (upgrade_tier, set, preserve):
+        // Use proportional scaling from original
+        const ratio = originalInputValue > 0 ? dupInput.value / originalInputValue : 0.5;
+        perCopyOutput = node.value * ratio;
+      }
+
+      return {
+        value: perCopyOutput,
+        oreCount: dupInput.oreCount,
+        copies: dupCopies,
+      };
+    }
+
+    // Multi-input (combining): each dup copy needs its own other inputs
+    let totalOres = dupInput.oreCount;
+    for (let i = 0; i < inputResults.length; i++) {
+      if (i === dupInputIdx) continue;
+      totalOres += inputResults[i].oreCount * dupCopies;
+    }
+
+    // Recalculate combine value per product
+    let perProductValue;
+    if (machine?.effect === "combine") {
+      let inputSum = dupInput.value;
+      for (let i = 0; i < inputResults.length; i++) {
+        if (i === dupInputIdx) continue;
+        inputSum += inputResults[i].value;
+      }
+      perProductValue = inputSum * machine.value;
+    } else {
+      // Proportional scaling for other effects
+      const ratio = originalInputValue > 0 ? dupInput.value / originalInputValue : 0.5;
+      perProductValue = node.value * ratio;
+    }
+
+    return {
+      value: perProductValue * dupCopies,
+      oreCount: totalOres,
+      copies: 1,
+    };
   }
 
   resolveType(targetType, oreValue, visiting) {
@@ -176,50 +362,6 @@ class ValueCalculator {
       let oreTree = { machine: "ore_source", type: "ore", value: oreValue, oreCount: 1, inputs: [] };
       for (const step of path.slice(1)) { // skip ore_source
         oreTree = { machine: step.machine, type: "ore", value: step.value, oreCount: 1, inputs: [oreTree] };
-      }
-
-      // Duplicator optimization: duplicate ore BEFORE flat bonuses
-      // This gives 2 copies at 50% base value, each gets independent +$10+$10 flat bonuses
-      // Net: 2×(val/2 + flatBonuses) vs 1×(val + flatBonuses) → extra flatBonuses value
-      if (this.config.prestigeItems?.duplicator && !tags.has("Duplicated")) {
-        // Calculate without dup: val (already calculated above)
-        const withoutDup = val;
-        const withoutDupOres = 1;
-
-        // Calculate with dup: 2 copies at 50%, each gets flat bonuses
-        let dupVal = oreValue;
-        // Apply upgrade first if applicable
-        if (this.config.prestigeItems?.oreUpgrader) {
-          const upgraded = getUpgradedOreValue(this.getOreName(oreValue));
-          if (upgraded !== null) dupVal = upgraded;
-        }
-        // Duplicate: 50% value
-        dupVal *= 0.5;
-        // Apply flat and percent bonuses to each copy
-        for (const modId of oreModifiers) {
-          const mod = this.registry.get(modId);
-          if (!mod || !this.registry.isAvailable(modId, this.config)) continue;
-          if (mod.effect === "flat") dupVal += mod.value;
-          else if (mod.effect === "percent") dupVal *= (1 + mod.value);
-        }
-        // 2 copies total
-        const withDup = dupVal * 2;
-        const withDupOres = 1; // same 1 ore, just duplicated
-
-        // Use dup if it gives better per-ore value
-        if (withDup / withDupOres > withoutDup / withoutDupOres) {
-          tags.add("Duplicated");
-          tags.add("Unduplicatable");
-
-          // Update path and tree
-          path.splice(1, 0, { machine: "duplicator", type: "ore", value: oreValue * 0.5 });
-          oreTree = { machine: "ore_source", type: "ore", value: oreValue, oreCount: 1, inputs: [] };
-          for (const step of path.slice(1)) {
-            oreTree = { machine: step.machine, type: "ore", value: step.value, oreCount: 1, inputs: [oreTree] };
-          }
-          // Represent as 2 copies: effectively double value from 1 ore
-          val = withDup;
-        }
       }
 
       return { type: "ore", value: val, tags, oreCount: 1, path, recipeTree: oreTree };
