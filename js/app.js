@@ -264,6 +264,7 @@ function runOptimizer(scrollToResults = false) {
           cost: result.cost,
           medals: result.medals || 0,
           oresNeeded: result.oresNeeded,
+          productQty: result.productQty || 1,
           graph: result.graph || null,
           usesDup: result.usesDup || false,
           oreBreakdown: [],
@@ -358,7 +359,7 @@ function renderChainResults(results, oresAtDepth) {
       <div class="chain-details">
         <div class="chain-detail">Range: <strong>${result.minValue ? formatMoney(result.minValue) + " - " + formatMoney(result.maxValue) : formatMoney(result.perOre)}</strong></div>
         <div class="chain-detail">Setup Cost: <strong>${formatMoney(result.cost)}</strong></div>
-        <div class="chain-detail">Ores/Product: <strong>${result.oresNeeded}</strong></div>
+        <div class="chain-detail">Ores/Product: <strong>${result.productQty > 1 ? (result.oresNeeded / result.productQty) + " (" + result.oresNeeded + " ores → " + result.productQty + " products)" : result.oresNeeded}</strong></div>
         ${result.usesDup ? '<div class="chain-detail" style="color:#f472b6">Duplicator active</div>' : ""}
       </div>
       ${result.graph ? `
