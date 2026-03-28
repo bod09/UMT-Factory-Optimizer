@@ -123,334 +123,238 @@ class ValueCalculator {
 
     let finalResult = { ...qaResult, value: finalVal };
 
-    // Duplicator optimization: test at every node in recipe tree, pick best
+    // Duplicator optimization: test every position, support multiple dups
     if (this.config.prestigeItems?.duplicator && finalResult.recipeTree) {
-      const bestDup = this.findBestDuplicatorPlacement(finalResult, oreValue);
-      if (bestDup && bestDup.perOre > finalVal / finalResult.oreCount) {
-        finalResult = bestDup.result;
+      const best = this.optimizeDuplicators(finalResult);
+      if (best) {
+        const displayTree = this.injectDuplicatorNodes(finalResult.recipeTree, best.positions);
+        finalResult = {
+          ...finalResult,
+          value: best.totalValue,
+          oreCount: best.totalOres,
+          recipeTree: displayTree,
+          dupAt: best.label,
+        };
       }
     }
 
     return finalResult;
   }
 
-  // Try duplicating at every node in the recipe tree
-  // For each placement, calculate: total value and total ores needed
-  findBestDuplicatorPlacement(baseResult, oreValue) {
+  // === DUPLICATOR OPTIMIZATION SYSTEM ===
+  // Tests every position in the recipe tree, supports unlimited duplicators,
+  // handles excess selling, and produces a modified tree for graph display.
+
+  optimizeDuplicators(baseResult) {
     const basePerOre = baseResult.value / baseResult.oreCount;
-    let bestPlacement = null;
+    const dsMultiplier = this.config.hasDoubleSeller ? 2 : 1;
 
-    // Collect unique nodes with their context (parent combiner info)
-    const candidates = [];
-    function collectCandidates(tree, parent, inputIdx) {
+    // Assign unique IDs to every node
+    let nextId = 0;
+    function assignIds(tree) {
       if (!tree) return;
-      // Test all items including free byproducts - the optimizer picks
-      // whichever gives the best overall profit per ore
-      if (tree.machine !== "byproduct_source" && tree.machine !== "byproduct") {
-        candidates.push({
-          node: tree,
-          parent: parent,
-          inputIdx: inputIdx,
-        });
-      }
-      for (let i = 0; i < (tree.inputs || []).length; i++) {
-        collectCandidates(tree.inputs[i], tree, i);
-      }
+      tree._dupId = nextId++;
+      for (const inp of tree.inputs || []) assignIds(inp);
     }
-    collectCandidates(baseResult.recipeTree, null, -1);
-
-    // For each candidate: calculate what happens if we dup it
-    // Dup at node X means: X produces 2 copies at 50% value from same ores
-    // If X feeds into a combiner, we get 2 products (needing 2x of other inputs)
-    // Total value and ores change based on where the 2 copies flow
-    for (const cand of candidates) {
-      const node = cand.node;
-      const nodeValue = node.value;
-      const nodeOres = node.oreCount || 0;
-
-      // Simple approach: dup this node
-      // - Save nodeOres (don't need to build a second one)
-      // - But the value at this point is halved (50% per copy)
-      // - 2 copies flow to parent
-
-      // For the simplest case (dup the final product):
-      // 2 copies at 50% = same total, same ores = no change
-      // For dup an intermediate before a combiner:
-      // 2 copies of X at 50%, need 2x other inputs, get 2 products
-      // New total ores = baseOres - nodeOres + 2*(otherInputOres)...
-      // Actually: new ores = baseOres + otherInputOres (need 1 extra set of other inputs)
-      // New value: depends on how the 50% propagates
-
-      // Direct calculation approach:
-      // Without dup: 1 product, value V, ores O
-      // With dup at node N:
-      //   If N is the final product: 2 products at V/2 each. Total V, ores O. No change.
-      //   If N feeds into combiner with other inputs worth Y using oY ores:
-      //     2 products each = (N/2 + Y) * mult
-      //     Total = 2 * (N/2 + Y) * mult = (N + 2Y) * mult
-      //     Ores = (O - oY) + 2*oY = O + oY (extra set of other inputs)
-      //     vs no dup: (N + Y) * mult, ores O
-      //     Per-ore improvement if (N + 2Y)/(O + oY) > (N + Y)/O
-
-      // Find the parent combiner and what other inputs it has
-      if (!cand.parent) continue; // root node - no benefit
-
-      const parentMachine = this.registry.get(cand.parent.machine);
-      if (!parentMachine) continue;
-
-      if (cand.parent.inputs.length === 1) {
-        // Single-input parent (linear chain): dup here gives 2 items through remaining chain
-        // Each gets independent flat bonuses. Calculate the gain from flat bonuses
-        // being applied to each copy independently
-        // Use proportional approach: val at dup point halved, trace through chain
-
-        // For flat bonus: each copy gets +flat, so total = 2*(val/2 + flat) = val + 2*flat
-        // vs no dup: val + flat. Gain = +flat per product through rest of chain
-        // This compounds through all downstream flat bonuses and multipliers
-        // Already tested correctly in the simple bar case. Skip complex recalculation.
-        // The tree simulation handles this correctly for linear chains.
-        continue; // Let the tree simulation handle linear chains
-      }
-
-      // Multi-input parent (combiner): calculate directly
-      const otherInputOres = cand.parent.inputs.reduce((sum, inp, i) => {
-        return sum + (i === cand.inputIdx ? 0 : (inp.oreCount || 0));
-      }, 0);
-
-      const otherInputValue = cand.parent.inputs.reduce((sum, inp, i) => {
-        return sum + (i === cand.inputIdx ? 0 : inp.value);
-      }, 0);
-
-      if (parentMachine.effect === "combine") {
-        // Dup this input: 2 copies at 50% value, need 2x of other inputs
-        // Per-product: (nodeValue/2 + otherValue) * mult
-        // 2 products from: nodeOres + 2*otherInputOres
-        const perProduct = (nodeValue * 0.5 + otherInputValue) * parentMachine.value;
-        const totalProducts = 2;
-        const dupOres = nodeOres + otherInputOres * totalProducts;
-
-        // The parent's value changes. Apply remaining chain multipliers
-        // by looking at how parent.value relates to the final result.
-        // For the IMMEDIATE parent of the dup: parent.value = original combiner output
-        // We need to replace parent.value with 2*perProduct in the chain
-        // Then propagate through grandparents (which may be combiners, QA, DS, etc.)
-        // Simplest correct approach: calculate ratio at the PARENT level only
-        // finalValue = baseValue * (newParentValue / oldParentValue) for multiply/QA/DS above
-        // But for grandparent combiners, the ratio approach overcounts.
-
-        // Instead, compute the ADDITIVE difference and multiply only by
-        // downstream multipliers (not combine multipliers)
-        // The downstream multipliers after the parent are: QA (1.2x) and DS (2x) and any
-        // single-input multipliers. Combine multipliers DON'T amplify the difference
-        // proportionally - they ADD the difference to a sum.
-
-        // For correctness, just directly compute:
-        // newParentValue = totalProducts * perProduct
-        // Difference in parent value = newParentValue - parent.value
-        // This difference flows to grandparent.
-        // If grandparent is also a combiner: grandparent value changes by diff * grandparent.mult
-        // But this gets complicated for deep nesting.
-
-        // Pragmatic approach: only consider dup at DIRECT inputs to the TOP-LEVEL combiner
-        // (the chain's main product). This avoids nested combiner issues.
-        // For nested combiners (dup ceramic inside superconductor inside power_core),
-        // the benefit is much smaller and harder to compute correctly.
-
-        // Check if parent is the root product (top-level combiner)
-        // Check if parent is the top-level combiner (may be wrapped by QA/modifiers)
-        const isTopLevel = cand.parent === baseResult.recipeTree ||
-          (baseResult.recipeTree.inputs || []).some(inp => inp === cand.parent) ||
-          // Check 2 levels deep (QA → combiner → inputs)
-          (baseResult.recipeTree.inputs || []).some(inp =>
-            (inp.inputs || []).some(inp2 => inp2 === cand.parent));
-
-        let dupTotalValue, totalDupOres;
-
-        if (isTopLevel || cand.parent.inputs.length > 1) {
-          // For top-level or direct combiner: calculate value change properly
-          const newParentValue = totalProducts * perProduct;
-          const oldParentValue = cand.parent.value;
-
-          // If parent IS the root, apply QA+DS to new value
-          // Apply QA and DS to the new combiner value
-          dupTotalValue = newParentValue;
-          const qa = this.registry.get("quality_assurance");
-          if (qa && this.registry.isAvailable("quality_assurance", this.config)) {
-            dupTotalValue *= (1 + qa.value);
-          }
-          if (this.config.hasDoubleSeller) dupTotalValue *= 2;
-          totalDupOres = dupOres;
-        } else {
-          continue;
-        }
-
-        const dupPerOre = totalDupOres > 0 ? dupTotalValue / totalDupOres : 0;
-
-        if (dupPerOre > basePerOre && (!bestPlacement || dupPerOre > bestPlacement.perOre)) {
-          bestPlacement = {
-            perOre: dupPerOre,
-            machine: node.machine,
-            type: node.type,
-            result: { ...baseResult, value: dupTotalValue, oreCount: totalDupOres, dupAt: node.machine + ":" + node.type },
-          };
-        }
-      }
-    }
-
-    // Also try the tree simulation for linear chains (ore dup)
-    // Test dup at ore_source using the tree simulation
-    let nextNodeId = 0;
-    function assignIds(tree) { if(tree) { tree._dupId = nextNodeId++; for(const inp of tree.inputs||[]) assignIds(inp); } }
     assignIds(baseResult.recipeTree);
 
-    // Find the first ore_source node
-    function findFirst(tree, machine) {
-      if (!tree) return null;
-      if (tree.machine === machine) return tree;
-      for (const inp of tree.inputs || []) { const f = findFirst(inp, machine); if (f) return f; }
-      return null;
+    // Collect all candidate nodes (skip byproduct sources)
+    const candidates = [];
+    function collectCandidates(tree) {
+      if (!tree) return;
+      if (tree.machine !== "byproduct_source") {
+        candidates.push(tree);
+      }
+      for (const inp of tree.inputs || []) collectCandidates(inp);
     }
-    const firstOre = findFirst(baseResult.recipeTree, "ore_source");
-    if (firstOre) {
-      const sim = this._simDupById(baseResult.recipeTree, firstOre._dupId);
-      if (sim) {
-        let simVal = sim.value * (sim.copies || 1);
-        if (this.config.hasDoubleSeller) simVal *= 2;
-        const simPerOre = sim.oreCount > 0 ? simVal / sim.oreCount : 0;
-        if (simPerOre > basePerOre && (!bestPlacement || simPerOre > bestPlacement.perOre)) {
-          bestPlacement = {
-            perOre: simPerOre,
-            machine: "ore_source",
-            type: "ore",
-            result: { ...baseResult, value: simVal, oreCount: sim.oreCount, dupAt: "ore_source:ore" },
-          };
+    collectCandidates(baseResult.recipeTree);
+
+    // Check if node A is an ancestor of node B
+    function isAncestor(tree, ancestorId, descendantId) {
+      if (!tree) return false;
+      if (tree._dupId === ancestorId) {
+        function hasDesc(n) {
+          if (!n) return false;
+          if (n._dupId === descendantId) return true;
+          return (n.inputs || []).some(hasDesc);
+        }
+        return hasDesc(tree);
+      }
+      return (tree.inputs || []).some(inp => isAncestor(inp, ancestorId, descendantId));
+    }
+
+    let bestResult = null;
+
+    // Test single duplicator placements
+    for (const cand of candidates) {
+      const result = this.evalTreeWithDups(baseResult.recipeTree, new Set([cand._dupId]), dsMultiplier);
+      if (!result || result.totalOres <= 0) continue;
+      const perOre = result.totalValue / result.totalOres;
+      if (perOre > basePerOre && (!bestResult || perOre > bestResult.perOre)) {
+        bestResult = { perOre, totalValue: result.totalValue, totalOres: result.totalOres,
+          positions: [cand._dupId], label: cand.machine + ":" + cand.type };
+      }
+    }
+
+    // Test pairs of duplicators
+    if (bestResult && candidates.length <= 30) {
+      for (let i = 0; i < candidates.length; i++) {
+        for (let j = i + 1; j < candidates.length; j++) {
+          const a = candidates[i], b = candidates[j];
+          if (isAncestor(baseResult.recipeTree, a._dupId, b._dupId)) continue;
+          if (isAncestor(baseResult.recipeTree, b._dupId, a._dupId)) continue;
+
+          const result = this.evalTreeWithDups(baseResult.recipeTree, new Set([a._dupId, b._dupId]), dsMultiplier);
+          if (!result || result.totalOres <= 0) continue;
+          const perOre = result.totalValue / result.totalOres;
+          if (perOre > bestResult.perOre) {
+            bestResult = { perOre, totalValue: result.totalValue, totalOres: result.totalOres,
+              positions: [a._dupId, b._dupId],
+              label: a.machine + ":" + a.type + " + " + b.machine + ":" + b.type };
+          }
         }
       }
     }
 
-    function cleanIds(tree) { if(tree) { delete tree._dupId; for(const i of tree.inputs||[]) cleanIds(i); } }
-    cleanIds(baseResult.recipeTree);
-
-    return bestPlacement;
+    return bestResult;
   }
 
-  // Simulate dup at a specific node identified by _dupId
-  _simDupById(tree, targetId) {
-    return this._simDup(tree, null, null, targetId);
+  // Core quantity-aware tree evaluator
+  evalTreeWithDups(tree, dupNodeIds, dsMultiplier) {
+    const result = this._evalDup(tree, dupNodeIds, 1);
+    if (!result) return null;
+    // Total = (per-item value × qty + excess) × DS
+    const totalValue = (result.value * result.qty + result.excessValue) * dsMultiplier;
+    return { totalValue, totalOres: result.oreCount };
   }
 
-  // Simulate duplicating at a specific machine in the recipe tree
-  simulateDuplicatorAt(tree, targetMachine, targetType) {
-    return this._simDup(tree, targetMachine, targetType, null);
-  }
-
-  // Walk the tree, at the target node inject dup (50% value, 2 copies)
-  _simDup(node, targetMachine, targetType, targetId) {
+  // Recursive: returns { value (per item), qty, oreCount, excessValue }
+  _evalDup(node, dupNodeIds, qtyNeeded) {
     if (!node) return null;
-
-    const isTarget = targetId !== null && targetId !== undefined
-      ? node._dupId === targetId
-      : (node.machine === targetMachine && node.type === targetType);
-
-    // At the dup target: 2 copies at 50% value
-    if (isTarget) {
-      return {
-        value: node.value * 0.5,
-        oreCount: node.oreCount || 0,
-        copies: 2,
-      };
-    }
-
-    // Leaf nodes
-    if (!node.inputs || node.inputs.length === 0) {
-      return { value: node.value, oreCount: node.oreCount || 0, copies: 1 };
-    }
-
-    // Evaluate inputs
-    const inputResults = [];
-    let dupInputIdx = -1;
-    for (let i = 0; i < node.inputs.length; i++) {
-      const res = this._simDup(node.inputs[i], targetMachine, targetType, targetId);
-      if (!res) return null;
-      inputResults.push(res);
-      if (res.copies > 1) dupInputIdx = i;
-    }
-
-    // No duplicated input - normal pass-through
-    if (dupInputIdx === -1) {
-      return {
-        value: node.value,
-        oreCount: inputResults.reduce((s, r) => s + r.oreCount, 0),
-        copies: 1,
-      };
-    }
-
-    const dupInput = inputResults[dupInputIdx];
-    const dupCopies = dupInput.copies;
-    const originalInputValue = node.inputs[dupInputIdx].value; // value before dup
-
-    // Calculate this node's output with the modified input
-    // Use the ratio: how does the output change when the input changes?
-    const isSingleInput = node.inputs.length === 1;
+    const isDuped = dupNodeIds.has(node._dupId);
     const machine = this.registry.get(node.machine);
 
-    if (isSingleInput) {
-      // For single-input machines, recalculate output per copy
-      // The key: flat bonuses are added to EACH copy independently
-      const valueDiff = dupInput.value - originalInputValue; // negative (50% reduction)
-      let perCopyOutput;
+    // Leaf nodes (ore_source, byproduct_source)
+    if (!node.inputs || node.inputs.length === 0) {
+      const qty = isDuped ? qtyNeeded * 2 : qtyNeeded;
+      const valuePerItem = isDuped ? node.value * 0.5 : node.value;
+      return { value: valuePerItem, qty, oreCount: (node.oreCount || 0) * qtyNeeded, excessValue: 0 };
+    }
 
+    const isSingleInput = node.inputs.length === 1;
+
+    if (isSingleInput) {
+      const childResult = this._evalDup(node.inputs[0], dupNodeIds, qtyNeeded);
+      if (!childResult) return null;
+
+      // Apply machine effect to each item independently
+      let perItemValue;
       if (!machine) {
-        perCopyOutput = dupInput.value;
-      } else if (machine.effect === "flat") {
-        // Each copy: (inputVal*0.5) + flat
-        perCopyOutput = dupInput.value + machine.value;
-      } else if (machine.effect === "multiply") {
-        perCopyOutput = dupInput.value * machine.value;
-      } else if (machine.effect === "percent") {
-        perCopyOutput = dupInput.value * (1 + machine.value);
+        perItemValue = childResult.value;
       } else {
-        // For effects we don't model (upgrade_tier, set, preserve):
-        // Use proportional scaling from original
-        const ratio = originalInputValue > 0 ? dupInput.value / originalInputValue : 0.5;
-        perCopyOutput = node.value * ratio;
+        switch (machine.effect) {
+          case "flat": perItemValue = childResult.value + machine.value; break;
+          case "multiply": perItemValue = childResult.value * machine.value; break;
+          case "percent": perItemValue = childResult.value * (1 + machine.value); break;
+          case "set": perItemValue = machine.value; break;
+          case "preserve": perItemValue = childResult.value; break;
+          default:
+            if (node.value > 0 && node.inputs[0].value > 0) {
+              perItemValue = node.value * (childResult.value / node.inputs[0].value);
+            } else { perItemValue = childResult.value; }
+        }
       }
 
-      return {
-        value: perCopyOutput,
-        oreCount: dupInput.oreCount,
-        copies: dupCopies,
-      };
+      let outQty = childResult.qty;
+      let outValue = perItemValue;
+      if (isDuped) { outQty *= 2; outValue *= 0.5; }
+
+      return { value: outValue, qty: outQty, oreCount: childResult.oreCount, excessValue: childResult.excessValue };
     }
 
-    // Multi-input (combining): each dup copy needs its own other inputs
-    let totalOres = dupInput.oreCount;
+    // Multi-input (combine) machine
+    // First pass: evaluate all inputs at base qty to find if any are duplicated
+    const firstPass = [];
+    for (const inp of node.inputs) {
+      const res = this._evalDup(inp, dupNodeIds, qtyNeeded);
+      if (!res) return null;
+      firstPass.push(res);
+    }
+
+    // Find max qty from any duplicated input
+    const maxQty = Math.max(...firstPass.map(r => r.qty));
+
+    // If any input produces more (was duplicated), re-evaluate other inputs
+    // at the higher qty so the combiner can run maxQty times
+    const inputResults = [];
+    for (let i = 0; i < node.inputs.length; i++) {
+      if (firstPass[i].qty >= maxQty) {
+        inputResults.push(firstPass[i]);
+      } else {
+        // Re-evaluate this input requesting maxQty items
+        const res = this._evalDup(node.inputs[i], dupNodeIds, maxQty);
+        if (!res) return null;
+        inputResults.push(res);
+      }
+    }
+
+    // Products = minQty (should now be maxQty if all inputs scaled up)
+    const products = Math.min(...inputResults.map(r => r.qty));
+
+    // Track excess from inputs that still produce more than needed
+    let totalExcess = inputResults.reduce((s, r) => s + r.excessValue, 0);
+    let totalOres = 0;
     for (let i = 0; i < inputResults.length; i++) {
-      if (i === dupInputIdx) continue;
-      totalOres += inputResults[i].oreCount * dupCopies;
+      const r = inputResults[i];
+      if (r.qty > products) {
+        const excessQty = r.qty - products;
+        totalExcess += excessQty * r.value * (this.config.hasDoubleSeller ? 2 : 1);
+      }
+      totalOres += r.oreCount;
     }
 
-    // Recalculate combine value per product
+    // Combine effect
     let perProductValue;
     if (machine?.effect === "combine") {
-      let inputSum = dupInput.value;
-      for (let i = 0; i < inputResults.length; i++) {
-        if (i === dupInputIdx) continue;
-        inputSum += inputResults[i].value;
-      }
-      perProductValue = inputSum * machine.value;
+      perProductValue = inputResults.reduce((s, r) => s + r.value, 0) * machine.value;
     } else {
-      // Proportional scaling for other effects
-      const ratio = originalInputValue > 0 ? dupInput.value / originalInputValue : 0.5;
-      perProductValue = node.value * ratio;
+      perProductValue = node.value;
     }
 
-    return {
-      value: perProductValue * dupCopies,
-      oreCount: totalOres,
-      copies: 1,
-    };
+    let outQty = products;
+    let outValue = perProductValue;
+    if (isDuped) { outQty *= 2; outValue *= 0.5; }
+
+    return { value: outValue, qty: outQty, oreCount: totalOres, excessValue: totalExcess };
   }
+
+  // Inject duplicator nodes into a cloned recipe tree for graph display
+  injectDuplicatorNodes(recipeTree, dupPositions) {
+    function cloneTree(node) {
+      if (!node) return null;
+      return { ...node, inputs: (node.inputs || []).map(cloneTree) };
+    }
+    const tree = cloneTree(recipeTree);
+    const dupSet = new Set(dupPositions);
+
+    function injectDups(node) {
+      if (!node) return node;
+      if (node.inputs) {
+        for (let i = 0; i < node.inputs.length; i++) {
+          node.inputs[i] = injectDups(node.inputs[i]);
+        }
+      }
+      if (dupSet.has(node._dupId)) {
+        return {
+          machine: "duplicator", type: node.type, value: node.value * 0.5,
+          oreCount: node.oreCount, inputs: [node], _isDuplicator: true,
+        };
+      }
+      return node;
+    }
+    return injectDups(tree);
+  }
+
 
   resolveType(targetType, oreValue, visiting) {
     // Byproduct base types: stone and dust are "free" from smelting byproduct
@@ -1074,6 +978,14 @@ class GraphGenerator {
       }
       if (tn.machine === "unknown") {
         name = ITEM_TYPES[tn.type] || tn.type;
+      }
+      if (tn.machine === "duplicator" || tn._isDuplicator) {
+        name = "Duplicator";
+        category = "prestige";
+      }
+      if (tn.machine === "excess_seller") {
+        name = "Sell Excess";
+        category = "source";
       }
 
       const id = nextId++;
