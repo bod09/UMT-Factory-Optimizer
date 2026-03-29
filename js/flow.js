@@ -149,13 +149,13 @@ class FlowOptimizer {
     if (type === "ore") {
       result = this.computeOreValue(baseOreValue);
     } else {
-      // For ALL types: find the most valuable thing this type can become
-      // Uses computeBestProduction which evaluates all machines that OUTPUT this type
-      // For secondary output types (stone, dust), also evaluate what they can be PROCESSED into
+      // Find the best way to produce this type (what machine makes it from ore-based inputs)
       result = this.computeBestProduction(type, baseOreValue);
 
-      // If no producer found, check if this type can be processed into something valuable
-      // This handles secondary output types (stone, dust, clay, etc.) and any future types
+      // If no production path exists, this type comes from secondary outputs
+      // (stone, dust, clay, etc.) - find the best processing chain for selling
+      // Note: the VALUE of these items is already included in the parent machine's
+      // byproduct bonus. This resolution is for the GRAPH to show the path.
       if (!result) {
         result = this.computeBestProcessing(type, baseOreValue);
       }
@@ -269,6 +269,9 @@ class FlowOptimizer {
           for (const inputSpec of m.inputs) {
             const types = inputSpec.split("|");
             const t = types.find(tt => tt === itemType) || types[0];
+            // Self-referential inputs (clay_mixer needs dust+dust when resolving dust)
+            // are free - they're the same item we're evaluating
+            if (t === itemType) continue;
             const ir = this.getItemValue(t, baseOreValue);
             if (!ir || ir.oreCount > 0) { allFree = false; break; }
           }
@@ -290,9 +293,46 @@ class FlowOptimizer {
           machineOutputValue = this.applyMachineEffect(m, inputResults);
         }
 
-        // Check if the output type can be processed further for more value
-        const outputResult = this.getItemValue(outputType, baseOreValue);
-        const finalValue = Math.max(machineOutputValue, outputResult?.value || 0);
+        // For free items (oreCount=0), trace the output through processing-only chains
+        // Use a limited recursive walk that ONLY follows free processing paths
+        // (no production chains that would create feedback loops)
+        let finalValue = machineOutputValue;
+        const visited = new Set([itemType, outputType]);
+        let currentType = outputType;
+        let currentValue = machineOutputValue;
+
+        // Follow simple processing chains: clay → ceramic_furnace → ceramic ($150)
+        for (let depth = 0; depth < 5; depth++) {
+          let bestNext = null;
+          for (const [nextId, nextM] of this.registry.machines) {
+            if (!this.registry.isAvailable(nextId, this.config)) continue;
+            // Follow processing machines that accept this type
+            // Allow multi-input if ALL inputs are the same type (clay_mixer: dust+dust)
+            if (!nextM.inputs || nextM.inputs.length === 0) continue;
+            const allSameType = nextM.inputs.every(inp =>
+              inp === currentType || inp.split("|").includes(currentType)
+            );
+            if (!allSameType) continue;
+            const nextOutput = nextM.outputs?.[0]?.type;
+            if (!nextOutput || nextOutput === "same" || visited.has(nextOutput)) continue;
+            const skipEffects = new Set(["chance", "transport", "split", "overflow", "filter", "gate", "duplicate", "preserve"]);
+            if (skipEffects.has(nextM.effect)) continue;
+
+            let nextValue = 0;
+            if (nextM.effect === "set") nextValue = nextM.value || 0;
+            else if (nextM.effect === "multiply") nextValue = currentValue * (nextM.value || 1);
+            else if (nextM.effect === "flat") nextValue = currentValue + (nextM.value || 0);
+
+            if (!bestNext || nextValue > bestNext.value) {
+              bestNext = { machine: nextId, type: nextOutput, value: nextValue };
+            }
+          }
+          if (!bestNext || bestNext.value <= currentValue) break;
+          currentValue = bestNext.value;
+          currentType = bestNext.type;
+          visited.add(currentType);
+          finalValue = currentValue;
+        }
 
         if (finalValue > bestValue) {
           bestValue = finalValue;
@@ -302,13 +342,13 @@ class FlowOptimizer {
           bestResult = {
             value: finalValue,
             machine: machineId,
-            inputs: [], // Free inputs - nothing feeds in from ore chain
+            inputs: [],
             resolvedType: outputType,
             oreCount: 0,
             isByproduct: true,
-            // Store downstream info for graph to look up
-            downstreamMachine: outputResult?.machine || null,
-            downstreamType: outputResult?.resolvedType || outputType,
+            // Downstream chain info for the graph
+            downstreamMachine: currentType !== outputType ? currentType : null,
+            downstreamType: currentType,
           };
         }
       }

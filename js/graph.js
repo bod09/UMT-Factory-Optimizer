@@ -265,7 +265,6 @@ class GraphGenerator {
           }
         }
         // When same node visited from multiple parents, SUM throughput
-        // (total items processed = sum from all branches)
         existing.quantity += (node.throughput || 1);
       }
 
@@ -288,6 +287,8 @@ class GraphGenerator {
       // Secondary outputs (stone from smelter, etc.) - walk them like any other output
       if (node.byproductOutputs) {
         const bpRatio = registry.get(machine)?.byproductRatio || 0.5;
+        // Per-invocation: how many secondary items THIS visit produces
+        // The node is visited multiple times; each visit adds to the total
         const bpQty = Math.max(1, Math.round(nodeThru * bpRatio));
 
         for (const bp of node.byproductOutputs) {
@@ -309,6 +310,9 @@ class GraphGenerator {
               isByproduct: true,
               dupProvided: false,
             });
+          } else {
+            // Accumulate quantity on subsequent visits
+            uniqueNodes.get(sourceKey).quantity += bpQty;
           }
           // Connect parent (smelter) → stone source
           const parentNode = uniqueNodes.get(key);
