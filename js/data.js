@@ -28,6 +28,7 @@ const CATEGORY_COLORS = {
   explosives: "#ef4444",
   multipurpose: "#10b981",
   prestige: "#f59e0b",
+  transport: "#64748b",
 };
 
 // Items the Gilder accepts as "jewelry" (confirmed)

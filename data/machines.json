@@ -400,21 +400,55 @@
       "name": "Sifter",
       "cost": 4000,
       "category": "stonework",
-      "inputs": ["dust"],
-      "outputs": [{ "type": "dust", "chance": 0.9, "desc": "Remaining dust passes through (tagged Sifted)" }],
-      "byproducts": [{ "type": "ore", "chance": 0.1, "desc": "Random ore (10%): Tin, Iron, Cobalt, Uranium, Gold" }],
+      "inputs": [
+        "dust"
+      ],
+      "outputs": [
+        {
+          "type": "dust",
+          "chance": 0.9,
+          "desc": "Remaining dust passes through (tagged Sifted)"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "ore",
+          "chance": 0.1,
+          "desc": "Random ore (10%): Tin, Iron, Cobalt, Uranium, Gold"
+        }
+      ],
       "effect": "chance",
       "value": 0.1,
       "tag": "Sifted",
       "size": "3x3",
-      "desc": "10% dust→ore. 90% dust passes through tagged Sifted (prevents re-sifting).",
+      "desc": "10% dust\u00e2\u2020\u2019ore. 90% dust passes through tagged Sifted (prevents re-sifting).",
       "byproductRatio": 0.1,
       "orePool": [
-        { "name": "Tin", "value": 10, "weight": 1 },
-        { "name": "Iron", "value": 20, "weight": 1 },
-        { "name": "Cobalt", "value": 50, "weight": 1 },
-        { "name": "Uranium", "value": 180, "weight": 1 },
-        { "name": "Gold", "value": 350, "weight": 1 }
+        {
+          "name": "Tin",
+          "value": 10,
+          "weight": 1
+        },
+        {
+          "name": "Iron",
+          "value": 20,
+          "weight": 1
+        },
+        {
+          "name": "Cobalt",
+          "value": 50,
+          "weight": 1
+        },
+        {
+          "name": "Uranium",
+          "value": 180,
+          "weight": 1
+        },
+        {
+          "name": "Gold",
+          "value": 350,
+          "weight": 1
+        }
       ],
       "_orePoolNote": "Equal weight = equal chance. Average ore value = $122."
     },
@@ -444,20 +478,64 @@
       "value": 0.166,
       "tag": "Sifted",
       "size": "3x3",
-      "desc": "16.6% dust→ore. 83.4% dust passes through tagged Sifted (prevents re-sifting).",
+      "desc": "16.6% dust\u00e2\u2020\u2019ore. 83.4% dust passes through tagged Sifted (prevents re-sifting).",
       "byproductRatio": 0.166,
       "orePool": [
-        { "name": "Tin", "value": 10, "weight": 1 },
-        { "name": "Iron", "value": 20, "weight": 1 },
-        { "name": "Lead", "value": 30, "weight": 1 },
-        { "name": "Cobalt", "value": 50, "weight": 1 },
-        { "name": "Silver", "value": 150, "weight": 1 },
-        { "name": "Uranium", "value": 180, "weight": 1 },
-        { "name": "Tungsten", "value": 300, "weight": 1 },
-        { "name": "Gold", "value": 350, "weight": 1 },
-        { "name": "Plutonium", "value": 750, "weight": 1 },
-        { "name": "Palladium", "value": 2000, "weight": 1 },
-        { "name": "Iridium", "value": 2500, "weight": 1 }
+        {
+          "name": "Tin",
+          "value": 10,
+          "weight": 1
+        },
+        {
+          "name": "Iron",
+          "value": 20,
+          "weight": 1
+        },
+        {
+          "name": "Lead",
+          "value": 30,
+          "weight": 1
+        },
+        {
+          "name": "Cobalt",
+          "value": 50,
+          "weight": 1
+        },
+        {
+          "name": "Silver",
+          "value": 150,
+          "weight": 1
+        },
+        {
+          "name": "Uranium",
+          "value": 180,
+          "weight": 1
+        },
+        {
+          "name": "Tungsten",
+          "value": 300,
+          "weight": 1
+        },
+        {
+          "name": "Gold",
+          "value": 350,
+          "weight": 1
+        },
+        {
+          "name": "Plutonium",
+          "value": 750,
+          "weight": 1
+        },
+        {
+          "name": "Palladium",
+          "value": 2000,
+          "weight": 1
+        },
+        {
+          "name": "Iridium",
+          "value": 2500,
+          "weight": 1
+        }
       ],
       "_orePoolNote": "Equal weight = equal chance. Average ore value = $576. All are upgradable via Ore Upgrader."
     },
@@ -817,9 +895,23 @@
       "name": "Topaz Prospector",
       "cost": 2000,
       "category": "jewelcrafting",
-      "inputs": ["stone"],
-      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
-      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Topaz gem ($75)" }],
+      "inputs": [
+        "stone"
+      ],
+      "outputs": [
+        {
+          "type": "stone",
+          "chance": 0.95,
+          "desc": "Stone passes through (main flow)"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "gem",
+          "chance": 0.05,
+          "desc": "Topaz gem ($75)"
+        }
+      ],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Topaz",
@@ -830,9 +922,23 @@
       "name": "Emerald Prospector",
       "cost": 5000,
       "category": "jewelcrafting",
-      "inputs": ["stone"],
-      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
-      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Emerald gem ($200)" }],
+      "inputs": [
+        "stone"
+      ],
+      "outputs": [
+        {
+          "type": "stone",
+          "chance": 0.95,
+          "desc": "Stone passes through (main flow)"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "gem",
+          "chance": 0.05,
+          "desc": "Emerald gem ($200)"
+        }
+      ],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Emerald",
@@ -843,9 +949,23 @@
       "name": "Sapphire Prospector",
       "cost": 8000,
       "category": "jewelcrafting",
-      "inputs": ["stone"],
-      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
-      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Sapphire gem ($250)" }],
+      "inputs": [
+        "stone"
+      ],
+      "outputs": [
+        {
+          "type": "stone",
+          "chance": 0.95,
+          "desc": "Stone passes through (main flow)"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "gem",
+          "chance": 0.05,
+          "desc": "Sapphire gem ($250)"
+        }
+      ],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Sapphire",
@@ -856,9 +976,23 @@
       "name": "Ruby Prospector",
       "cost": 15000,
       "category": "jewelcrafting",
-      "inputs": ["stone"],
-      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
-      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Ruby gem ($300)" }],
+      "inputs": [
+        "stone"
+      ],
+      "outputs": [
+        {
+          "type": "stone",
+          "chance": 0.95,
+          "desc": "Stone passes through (main flow)"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "gem",
+          "chance": 0.05,
+          "desc": "Ruby gem ($300)"
+        }
+      ],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Ruby",
@@ -869,9 +1003,23 @@
       "name": "Diamond Prospector",
       "cost": 30000,
       "category": "jewelcrafting",
-      "inputs": ["stone"],
-      "outputs": [{ "type": "stone", "chance": 0.95, "desc": "Stone passes through (main flow)" }],
-      "byproducts": [{ "type": "gem", "chance": 0.05, "desc": "Diamond gem ($1500)" }],
+      "inputs": [
+        "stone"
+      ],
+      "outputs": [
+        {
+          "type": "stone",
+          "chance": 0.95,
+          "desc": "Stone passes through (main flow)"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "gem",
+          "chance": 0.05,
+          "desc": "Diamond gem ($1500)"
+        }
+      ],
       "effect": "chance",
       "value": 0.05,
       "gemType": "Diamond",
@@ -1018,6 +1166,241 @@
       "tag2": "Unduplicatable",
       "size": "3x5",
       "desc": "Creates 2 copies at 50% value. Both tagged Duplicated + Unduplicatable. All products made FROM duplicated items also get Unduplicatable. Unduplicatable survives Crusher."
+    },
+    "conveyor": {
+      "name": "Conveyor",
+      "cost": 10,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Moves items from one end to the other"
+        }
+      ],
+      "effect": "transport",
+      "desc": "Basic horizontal transport belt"
+    },
+    "upwards_elevator": {
+      "name": "Upwards Elevator",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Moves items upwards"
+        }
+      ],
+      "effect": "transport",
+      "desc": "Vertical elevation of materials"
+    },
+    "downwards_elevator": {
+      "name": "Downwards Elevator",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Moves items downwards"
+        }
+      ],
+      "effect": "transport",
+      "desc": "Vertical descent of materials"
+    },
+    "splitter_right": {
+      "name": "Splitter Right",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 0.5,
+          "desc": "Items sent ahead (50%)"
+        },
+        {
+          "type": "passthrough",
+          "chance": 0.5,
+          "desc": "Items sent right (50%)"
+        }
+      ],
+      "effect": "split",
+      "desc": "Splits items equally between ahead and right"
+    },
+    "splitter_left": {
+      "name": "Splitter Left",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 0.5,
+          "desc": "Items sent ahead (50%)"
+        },
+        {
+          "type": "passthrough",
+          "chance": 0.5,
+          "desc": "Items sent left (50%)"
+        }
+      ],
+      "effect": "split",
+      "desc": "Splits items equally between ahead and left"
+    },
+    "three_way_splitter": {
+      "name": "Three-Way Splitter",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 0.33,
+          "desc": "Items sent ahead (33%)"
+        },
+        {
+          "type": "passthrough",
+          "chance": 0.33,
+          "desc": "Items sent left (33%)"
+        },
+        {
+          "type": "passthrough",
+          "chance": 0.33,
+          "desc": "Items sent right (33%)"
+        }
+      ],
+      "effect": "split",
+      "desc": "Divides items into three equal paths"
+    },
+    "overflow_splitter_right": {
+      "name": "Overflow Splitter Right",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Primary: items sent ahead"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Overflow: items sent right when ahead is full/blocked"
+        }
+      ],
+      "effect": "overflow",
+      "desc": "Sends items ahead unless blocked, then sends right"
+    },
+    "overflow_splitter_left": {
+      "name": "Overflow Splitter Left",
+      "cost": 50,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Primary: items sent ahead"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Overflow: items sent left when ahead is full/blocked"
+        }
+      ],
+      "effect": "overflow",
+      "desc": "Sends items ahead unless blocked, then sends left"
+    },
+    "filter_right": {
+      "name": "Filter Right",
+      "cost": 250,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Non-matching items pass through ahead"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "filtered",
+          "chance": 1.0,
+          "desc": "Matching items sent right (configurable ore/item type)"
+        }
+      ],
+      "effect": "filter",
+      "desc": "Routes specific ore/item types to the right. Interact to configure filter."
+    },
+    "filter_left": {
+      "name": "Filter Left",
+      "cost": 250,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Non-matching items pass through ahead"
+        }
+      ],
+      "byproducts": [
+        {
+          "type": "filtered",
+          "chance": 1.0,
+          "desc": "Matching items sent left (configurable ore/item type)"
+        }
+      ],
+      "effect": "filter",
+      "desc": "Routes specific ore/item types to the left. Interact to configure filter."
+    },
+    "gate_belt": {
+      "name": "Gate Belt",
+      "cost": 250,
+      "category": "transport",
+      "inputs": [
+        "any"
+      ],
+      "outputs": [
+        {
+          "type": "passthrough",
+          "chance": 1.0,
+          "desc": "Items pass through when gate is open"
+        }
+      ],
+      "effect": "gate",
+      "desc": "Can be opened/closed to allow or prevent items from passing through"
     }
   }
 }
