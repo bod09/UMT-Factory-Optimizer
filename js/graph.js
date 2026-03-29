@@ -861,35 +861,35 @@ class GraphGenerator {
 
     walkTree(tree, null);
 
-    // Fix quantities: walk the FULL tree counting every occurrence of each key
-    // (the collapsing above undercounts due to shared object references from memoization)
+    // Fix quantities: propagate TOP-DOWN from root instead of counting visits
+    // This handles shared references from memoization correctly.
+    // Each node's quantity = sum of quantities from all parents that need it.
     const flowCounts = new Map();
-    function countFlows(treeNode) {
+    function propagateQuantity(treeNode, parentQty) {
       if (!treeNode) return;
       const key = getNodeKey(treeNode);
-      flowCounts.set(key, (flowCounts.get(key) || 0) + 1);
+      flowCounts.set(key, (flowCounts.get(key) || 0) + parentQty);
+
+      // Determine child quantity: machines with outputQtyMultiplier (like duplicator)
+      // take FEWER inputs than they output. E.g., duplicator: 1 in → 2 out
+      // So children get parentQty / outputQtyMultiplier
+      const machine = registry.get(treeNode.machine);
+      const qtyMult = machine?.outputQtyMultiplier || 1;
+      const childQty = qtyMult > 1 ? Math.ceil(parentQty / qtyMult) : parentQty;
+
       for (const child of treeNode.inputs || []) {
-        countFlows(child);
+        propagateQuantity(child, childQty);
       }
     }
-    countFlows(tree);
+    propagateQuantity(tree, productQty || 1);
     // Apply corrected quantities
     for (const [key, data] of uniqueNodes) {
       data.quantity = flowCounts.get(key) || data.quantity;
     }
 
-    // Scale quantities if duplicator changed the actual ore count
-    // The recipe tree has the original structure, but the duplicator may need
-    // more ores (e.g., doubling combiner inputs). Scale all quantities proportionally.
-    if (actualOreCount) {
-      const treeOreCount = flowCounts.get("ore_source:ore") || 1;
-      if (actualOreCount !== treeOreCount && treeOreCount > 0) {
-        const scale = actualOreCount / treeOreCount;
-        for (const [key, data] of uniqueNodes) {
-          data.quantity = Math.round(data.quantity * scale);
-        }
-      }
-    }
+    // No additional scaling needed - propagateQuantity with productQty already
+    // accounts for duplicator output. The ore count in the tree matches the
+    // actual production needs.
 
     // Build nodes and edges from unique set
     const keyToId = new Map();

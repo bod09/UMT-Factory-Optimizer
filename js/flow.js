@@ -644,6 +644,7 @@ class FlowOptimizer {
     const siftedUsesUpgrader = bpValue.flows?.some(f => f.siftedUsesUpgrader);
 
     // Build graph using existing GraphGenerator
+    // Pass flow's totalOres and productQty (not vizCalc's) for correct quantities
     const graph = recipeTree
       ? GraphGenerator.fromRecipeTree(recipeTree, this.registry, totalOres, this.config, productQty, { siftedUsesUpgrader })
       : null;
@@ -861,17 +862,55 @@ class FlowOptimizer {
           otherInputOres += inputs[j].oreCount;
         }
       }
-      const products = 2; // 2 products from dup
-      const totalOres = dupInput.oreCount + otherInputOres * products;
+      // Check if the duplicated input type is used by OTHER inputs of the same combiner
+      // e.g., Power Core needs casing (direct) AND electromagnet (which contains casing)
+      // If so, the dup fills both needs from 1 build = 1 product, savings = dupInput ores
+      const dupType = dupInput.resolvedType || '';
+      const dupMachine = dupInput.machine || '';
+      let dupUsedElsewhere = false;
 
-      // Apply QA and DS
-      const totalValue = perProduct * products * qaMultiplier * ds;
-      const perOre = totalOres > 0 ? totalValue / totalOres : 0;
+      // Recursively check if a subtree contains the duplicated type's machine
+      function containsMachine(node, targetMachine) {
+        if (!node) return false;
+        if (node.machine === targetMachine) return true;
+        return (node.inputs || []).some(child => containsMachine(child, targetMachine));
+      }
+
+      for (let j = 0; j < inputs.length; j++) {
+        if (j === i) continue;
+        const otherInput = inputs[j];
+        // Check if the other input IS the same type
+        if ((otherInput.resolvedType || '') === dupType) {
+          dupUsedElsewhere = true;
+          break;
+        }
+        // Check if the other input's subtree contains a machine that produces the dup type
+        if (dupMachine && containsMachine(otherInput, dupMachine)) {
+          dupUsedElsewhere = true;
+          break;
+        }
+      }
+
+      let totalValue, totalOresNeeded, perOre, products;
+      if (dupUsedElsewhere) {
+        // Dup fills 2 slots in the same product = 1 product, save building 2nd copy
+        products = 1;
+        const savedOres = dupInput.oreCount;
+        totalOresNeeded = chainResult.oreCount - savedOres;
+        // Value is same as without dup (1 product at full value, but 50% on each dup copy)
+        // The dup copies are at 50% value each, so the combine result is lower
+        totalValue = perProduct * qaMultiplier * ds;
+        perOre = totalOresNeeded > 0 ? totalValue / totalOresNeeded : 0;
+      } else {
+        // Dup doubles output = 2 products
+        products = 2;
+        totalOresNeeded = dupInput.oreCount + otherInputOres * products;
+        totalValue = perProduct * products * qaMultiplier * ds;
+        perOre = totalOresNeeded > 0 ? totalValue / totalOresNeeded : 0;
+      }
 
       results.push({
-        totalValue,
-        totalOres,
-        perOre,
+        totalValue, totalOres: totalOresNeeded, perOre,
         dupAt: (dupInput.resolvedType || dupInput.machine || 'input') + " in " + terminalType,
         productQty: products,
       });

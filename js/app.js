@@ -279,6 +279,9 @@ function runOptimizer(scrollToResults = false) {
       // Earlier ores might skip machines (e.g., max tier ore skips Ore Upgrader)
       if (result.graph && (!entry.graph || result.graph.nodes.length > entry.graph.nodes.length)) {
         entry.graph = result.graph;
+        // Also update productQty and oresNeeded to match this graph's source
+        if (result.productQty) entry.productQty = result.productQty;
+        if (result.oresNeeded) entry.oresNeeded = result.oresNeeded;
       }
       entry.oreBreakdown.push({ ore: ore.name, value: result.value || result.totalValue, perOre: result.perOre, baseValue: ore.value });
       entry.totalValue += (result.value || result.totalValue || 0);
