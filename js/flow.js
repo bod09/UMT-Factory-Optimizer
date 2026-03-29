@@ -200,6 +200,14 @@ class FlowOptimizer {
       else if (mod.effect === "percent") { val *= (1 + mod.value); machines.push(mod.id); }
     }
 
+    // Track which tags the ore chain applies (for safe modifier detection on byproducts)
+    const oreTags = new Set();
+    for (const mid of machines) {
+      const m = this.registry.get(mid);
+      if (m?.tag) oreTags.add(m.tag);
+    }
+    this._oreChainTags = oreTags;
+
     return { value: val, oreCount: 1, perOre: val, machines, throughput: 1 };
   }
 
@@ -334,16 +342,39 @@ class FlowOptimizer {
           finalValue = currentValue;
         }
 
-        // DON'T apply modifiers (QA, Polisher) to byproduct items here.
-        // These items may feed into the main chain's combiners (e.g., ceramic → superconductor).
-        // Modifier tags (QA Tested, Polished) would propagate through tag inheritance and
-        // PREVENT the main chain from applying those modifiers to the final product.
-        // Example: QA on ceramic ($150 × 20% = $30 gain) would block QA on Power Core
-        // ($2.24M × 20% = $448K loss). Modifiers are applied by the main chain to the
-        // final product, or to excess items at the sell point.
-        //
-        // The flow system handles this naturally: byproduct value feeds into the main chain
-        // calculation, and the main chain applies modifiers to the combined product.
+        // Apply modifiers to byproduct items ONLY if their tag is already present
+        // on the main chain's ore processing (safe - combining items with same tag is fine).
+        // Skip modifiers whose tag would be NEW (would block final product modifier).
+        // Example: Polisher tag "Polished" is in ore chain → safe to polish ceramic (+$10)
+        // QA tag "QA Tested" is NOT in ore chain → would block Power Core QA → skip
+        const oreChainTags = this._oreChainTags || new Set();
+        for (const [modId, modM] of this.registry.machines) {
+          if (!this.registry.isAvailable(modId, this.config)) continue;
+          if (!modM.inputs || modM.inputs.length !== 1) continue;
+          if (!modM.tag) continue; // Only tagged modifiers need checking
+          // Must accept this item type
+          const accepts = modM.inputs.some(inp =>
+            inp === "any" || inp === currentType || inp.split("|").includes(currentType)
+          );
+          if (!accepts) continue;
+          const outType = modM.outputs?.[0]?.type;
+          if (outType && outType !== "same" && outType !== currentType) continue;
+          if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
+          // Already in downstream chain?
+          if (downstreamChain.some(d => d.machine === modId)) continue;
+          // SAFE CHECK: is this modifier's tag already in the ore chain?
+          // If yes, combining won't cause conflict. If no, skip it.
+          if (!oreChainTags.has(modM.tag)) continue;
+          // Apply the modifier
+          let newVal = finalValue;
+          if (modM.effect === "flat") newVal += modM.value;
+          else if (modM.effect === "percent") newVal *= (1 + modM.value);
+          else if (modM.effect === "multiply") newVal *= modM.value;
+          if (newVal > finalValue) {
+            finalValue = newVal;
+            downstreamChain.push({ machine: modId, type: currentType, value: finalValue });
+          }
+        }
 
         if (finalValue > bestValue) {
           bestValue = finalValue;
