@@ -15,6 +15,7 @@ function saveConfig() {
     depthMin: $("#depth-min").value,
     depthMax: $("#depth-max").value,
     outputBelts: $("#output-belts").value,
+    oreQuantity: $("#ore-quantity").value,
     doubleSeller: $("#double-seller").checked,
     xxlBackpack: $("#xxl-backpack").checked,
     theoreticalMax: $("#theoretical-max").checked,
@@ -40,6 +41,7 @@ function loadConfig() {
     if (config.depthMin) $("#depth-min").value = config.depthMin;
     if (config.depthMax) $("#depth-max").value = config.depthMax;
     if (config.outputBelts) $("#output-belts").value = config.outputBelts;
+    if (config.oreQuantity) $("#ore-quantity").value = config.oreQuantity;
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
     if (config.xxlBackpack) $("#xxl-backpack").checked = config.xxlBackpack;
     if (config.theoreticalMax) $("#theoretical-max").checked = config.theoreticalMax;
@@ -154,6 +156,7 @@ function attachEvents() {
     saveConfig();
   });
   $("#output-belts").addEventListener("change", saveConfig);
+  $("#ore-quantity").addEventListener("input", saveConfig);
   $("#double-seller").addEventListener("change", saveConfig);
   $("#xxl-backpack").addEventListener("change", () => {
     saveConfig();
@@ -209,6 +212,7 @@ function runOptimizer(scrollToResults = false) {
   const minDepth = parseInt($("#depth-min").value) || 0;
   let maxDepth = parseInt($("#depth-max").value) || 0;
   const outputBelts = parseInt($("#output-belts").value) || 1;
+  const oreQuantity = parseInt($("#ore-quantity")?.value) || 0;
   const hasDoubleSeller = theoreticalMax ? true : $("#double-seller").checked;
 
   // Clamp max >= min
@@ -283,15 +287,33 @@ function runOptimizer(scrollToResults = false) {
   }
 
   // Calculate averages and sort
-  const aggregated = [...chainMap.values()].map(entry => ({
-    ...entry,
-    avgValue: entry.totalValue / entry.oreBreakdown.length,
-    avgPerOre: entry.totalPerOre / entry.oreBreakdown.length,
-    minValue: Math.min(...entry.oreBreakdown.map(o => o.perOre)),
-    maxValue: Math.max(...entry.oreBreakdown.map(o => o.perOre)),
-  }));
+  const aggregated = [...chainMap.values()].map(entry => {
+    const avgPerOre = entry.totalPerOre / entry.oreBreakdown.length;
+    // If ore quantity set, calculate total profit for that many ores
+    // Total batches = floor(oreQuantity / oresNeeded), total profit = batches * value per batch
+    const batches = oreQuantity > 0 && entry.oresNeeded > 0
+      ? Math.floor(oreQuantity / entry.oresNeeded)
+      : 0;
+    const totalBatchProfit = batches * (entry.totalValue / entry.oreBreakdown.length);
 
-  aggregated.sort((a, b) => b.avgPerOre - a.avgPerOre);
+    return {
+      ...entry,
+      avgValue: entry.totalValue / entry.oreBreakdown.length,
+      avgPerOre,
+      minValue: Math.min(...entry.oreBreakdown.map(o => o.perOre)),
+      maxValue: Math.max(...entry.oreBreakdown.map(o => o.perOre)),
+      batchProfit: totalBatchProfit,
+      batches,
+      oreQuantity,
+    };
+  });
+
+  // Sort by total batch profit if ore quantity set, otherwise per-ore
+  if (oreQuantity > 0) {
+    aggregated.sort((a, b) => b.batchProfit - a.batchProfit);
+  } else {
+    aggregated.sort((a, b) => b.avgPerOre - a.avgPerOre);
+  }
 
   renderChainResults(aggregated, oresAtDepth);
   renderIncomeEstimate(aggregated, outputBelts, oresAtDepth.length);
@@ -354,16 +376,24 @@ function renderChainResults(results, oresAtDepth) {
 
     const graphId = `graph-${idx}`;
 
+    const showBatch = result.oreQuantity > 0 && result.batchProfit > 0;
+    const batchHtml = showBatch
+      ? `<div class="chain-detail" style="color:#22c55e">Batch (${result.oreQuantity} ores): <strong>${formatMoney(result.batchProfit)}</strong> (${result.batches} products)</div>`
+      : "";
+
     card.innerHTML = `
       <div class="chain-header">
         <span class="chain-name">${result.chain}</span>
-        <span class="chain-value">${formatMoney(result.avgPerOre || result.perOre)} <small>avg/ore</small></span>
+        <span class="chain-value">${showBatch ? formatMoney(result.batchProfit) + ' <small>total</small>' : formatMoney(result.avgPerOre || result.perOre) + ' <small>avg/ore</small>'}</span>
+        ${idx === 0 ? '<span class="best-badge">BEST</span>' : ''}
       </div>
       <div class="chain-details">
+        <div class="chain-detail">Per Ore: <strong>${formatMoney(result.avgPerOre || result.perOre)}</strong></div>
         <div class="chain-detail">Range: <strong>${result.minValue ? formatMoney(result.minValue) + " - " + formatMoney(result.maxValue) : formatMoney(result.perOre)}</strong></div>
         <div class="chain-detail">Setup Cost: <strong>${formatMoney(result.cost)}</strong></div>
         <div class="chain-detail">Ores/Product: <strong>${result.productQty > 1 ? (result.oresNeeded / result.productQty) + " (" + result.oresNeeded + " ores → " + result.productQty + " products)" : result.oresNeeded}</strong></div>
         ${result.usesDup ? '<div class="chain-detail" style="color:#f472b6">Duplicator active</div>' : ""}
+        ${batchHtml}
       </div>
       ${result.graph ? `
         <button class="chain-breakdown-toggle" onclick="toggleGraph('${graphId}', this)">View Graph</button>
