@@ -521,6 +521,60 @@ class GraphGenerator {
       }
     }
 
+    // Post-process: connect side chain outputs to main chain consumers
+    // e.g., Ceramic Furnace (side) → Superconductor Constructor (main)
+    // Also calculate excess and add sell nodes
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct) continue;
+      const sideType = sideData.type;
+      const sideQty = sideData.quantity;
+
+      // Find main chain nodes that need this type as input
+      for (const [mainKey, mainData] of uniqueNodes) {
+        if (mainData.isByproduct) continue;
+        const mainMachine = registry.get(mainData.machine);
+        if (!mainMachine?.inputs) continue;
+        // Check if this main machine accepts the side chain's output type
+        const acceptsType = mainMachine.inputs.some(inp =>
+          inp === sideType || inp.split("|").includes(sideType)
+        );
+        if (!acceptsType) continue;
+
+        // Connect side → main (cross-chain edge)
+        if (!sideData.downstreamKeys) sideData.downstreamKeys = [];
+        if (!sideData.downstreamKeys.includes(mainKey)) {
+          sideData.downstreamKeys.push(mainKey);
+        }
+
+        // Calculate excess: side produces sideQty, main needs mainQty
+        const mainQty = mainData.quantity || 1;
+        const excess = sideQty - mainQty;
+        if (excess > 0) {
+          // Add "Sell Excess" node
+          const excessKey = getKey("sell_excess", sideType);
+          if (!uniqueNodes.has(excessKey)) {
+            const ds = config.hasDoubleSeller ? 2 : 1;
+            uniqueNodes.set(excessKey, {
+              machine: "sell_excess",
+              type: sideType,
+              value: (sideData.value || 0) * ds,
+              name: `Sell Excess ${ITEM_TYPES[sideType] || sideType}`,
+              category: "source",
+              quantity: excess,
+              childKeys: [],
+              oreCount: 0,
+              isByproduct: true,
+              dupProvided: false,
+            });
+          }
+          if (!sideData.downstreamKeys.includes(excessKey)) {
+            sideData.downstreamKeys.push(excessKey);
+          }
+        }
+        break; // Only connect to first matching main node
+      }
+    }
+
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
     const layerVisited = new Set();
