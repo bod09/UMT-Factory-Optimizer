@@ -551,30 +551,93 @@ class GraphGenerator {
         const mainQty = mainData.quantity || 1;
         const excess = sideQty - mainQty;
         if (excess > 0) {
-          // Add "Sell Excess" node with modifiers applied
+          // Build a chain of modifier nodes for excess items
           // Excess items ARE sold directly so modifiers are safe here
-          const excessKey = getKey("sell_excess", sideType);
-          if (!uniqueNodes.has(excessKey)) {
-            let excessValue = sideData.value || 0;
-            // Apply any value-adding modifiers from registry
-            for (const [modId, modM] of registry.machines) {
-              if (!registry.isAvailable(modId, config)) continue;
-              if (!modM.inputs || modM.inputs.length !== 1) continue;
-              const accepts = modM.inputs.some(inp =>
-                inp === "any" || inp === sideType || inp.split("|").includes(sideType)
-              );
-              if (!accepts) continue;
-              const outType = modM.outputs?.[0]?.type;
-              if (outType && outType !== "same" && outType !== sideType) continue;
-              if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
-              let newVal = excessValue;
-              if (modM.effect === "flat") newVal += modM.value;
-              else if (modM.effect === "percent") newVal *= (1 + modM.value);
-              else if (modM.effect === "multiply") newVal *= modM.value;
-              if (newVal > excessValue) excessValue = newVal;
+          let excessValue = sideData.value || 0;
+          let prevKey = sideKey; // Start from the side chain producer
+
+          // Find all value-adding modifiers, sorted: flat first, then multipliers
+          const modifiers = [];
+          for (const [modId, modM] of registry.machines) {
+            if (!registry.isAvailable(modId, config)) continue;
+            if (!modM.inputs || modM.inputs.length !== 1) continue;
+            const accepts = modM.inputs.some(inp =>
+              inp === "any" || inp === sideType || inp.split("|").includes(sideType)
+            );
+            if (!accepts) continue;
+            const outType = modM.outputs?.[0]?.type;
+            if (outType && outType !== "same" && outType !== sideType) continue;
+            if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
+            // Skip if this modifier already exists in the main chain (reuse it instead)
+            modifiers.push({ id: modId, machine: modM });
+          }
+          modifiers.sort((a, b) => {
+            const order = { flat: 0, percent: 1, multiply: 1 };
+            return (order[a.machine.effect] ?? 2) - (order[b.machine.effect] ?? 2);
+          });
+
+          // Create nodes for each modifier, or connect to existing main chain modifier
+          for (const mod of modifiers) {
+            let newVal = excessValue;
+            if (mod.machine.effect === "flat") newVal += mod.machine.value;
+            else if (mod.machine.effect === "percent") newVal *= (1 + mod.machine.value);
+            else if (mod.machine.effect === "multiply") newVal *= mod.machine.value;
+            if (newVal <= excessValue) continue; // Skip if no improvement
+
+            excessValue = newVal;
+
+            // Check if this modifier already exists in the main chain
+            const existingKey = [...uniqueNodes.entries()].find(([k, d]) =>
+              d.machine === mod.id && !d.isByproduct
+            );
+
+            if (existingKey) {
+              // Connect excess flow to existing main chain modifier
+              const existNode = uniqueNodes.get(existingKey[0]);
+              if (existNode) {
+                // Add downstream from prev to this main chain node
+                const prevNode = uniqueNodes.get(prevKey);
+                if (prevNode) {
+                  if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+                  if (!prevNode.downstreamKeys.includes(existingKey[0])) {
+                    prevNode.downstreamKeys.push(existingKey[0]);
+                  }
+                }
+                prevKey = existingKey[0];
+              }
+            } else {
+              // Create new modifier node in side chain
+              const modKey = getKey("excess_" + mod.id, sideType);
+              if (!uniqueNodes.has(modKey)) {
+                uniqueNodes.set(modKey, {
+                  machine: mod.id,
+                  type: sideType,
+                  value: excessValue,
+                  name: mod.machine.name || mod.id,
+                  category: mod.machine.category || "multipurpose",
+                  quantity: excess,
+                  childKeys: [],
+                  oreCount: 0,
+                  isByproduct: true,
+                  dupProvided: false,
+                });
+              }
+              const prevNode = uniqueNodes.get(prevKey);
+              if (prevNode) {
+                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+                if (!prevNode.downstreamKeys.includes(modKey)) {
+                  prevNode.downstreamKeys.push(modKey);
+                }
+              }
+              prevKey = modKey;
             }
-            const ds = config.hasDoubleSeller ? 2 : 1;
-            uniqueNodes.set(excessKey, {
+          }
+
+          // Add final Seller node for excess
+          const ds = config.hasDoubleSeller ? 2 : 1;
+          const sellerKey = getKey("sell_excess", sideType);
+          if (!uniqueNodes.has(sellerKey)) {
+            uniqueNodes.set(sellerKey, {
               machine: "sell_excess",
               type: sideType,
               value: excessValue * ds,
@@ -587,8 +650,12 @@ class GraphGenerator {
               dupProvided: false,
             });
           }
-          if (!sideData.downstreamKeys.includes(excessKey)) {
-            sideData.downstreamKeys.push(excessKey);
+          const lastNode = uniqueNodes.get(prevKey);
+          if (lastNode && prevKey !== sellerKey) {
+            if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
+            if (!lastNode.downstreamKeys.includes(sellerKey)) {
+              lastNode.downstreamKeys.push(sellerKey);
+            }
           }
         }
         break; // Only connect to first matching main node
@@ -641,6 +708,7 @@ class GraphGenerator {
 
       nodes.push({
         id,
+        machine: data.machine,
         name: data.name,
         type: data.type,
         value: Math.round(data.value),
