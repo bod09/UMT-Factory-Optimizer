@@ -111,7 +111,7 @@ class MachineRegistry {
 class GraphGenerator {
   // Build graph directly from FlowOptimizer chain result
   // This is the PRIMARY graph builder - uses flow data as single source of truth
-  static fromFlowChain(chainResult, registry, config, dupInfo = {}, bpValue = {}) {
+  static fromFlowChain(chainResult, registry, config, dupInfo = {}, bpValue = {}, flowMemo = null) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
@@ -213,10 +213,14 @@ class GraphGenerator {
         return null;
       }
 
-      // Get output type: from node, or look up in registry
+      // Get output type: registry is ground truth, then flow data
       const m = registry.get(machine);
       const registryOutputType = m?.outputs?.[0]?.type;
-      const type = node.resolvedType || node.type || registryOutputType || "?";
+      // Use registry output type first (what this machine actually produces)
+      // Skip "same" since that means the output matches input (modifiers)
+      const type = (registryOutputType && registryOutputType !== "same")
+        ? registryOutputType
+        : (node.resolvedType || node.type || "?");
       const key = getKey(machine, type);
 
       // Byproduct-sourced nodes (oreCount=0) are now part of the unified chain
@@ -282,19 +286,96 @@ class GraphGenerator {
       }
 
       // Secondary outputs (stone from smelter, etc.) - walk them like any other output
-      // They're part of the unified chain, just visually separated as side processes
       if (node.byproductOutputs) {
+        const bpRatio = registry.get(machine)?.byproductRatio || 0.5;
+        const bpQty = Math.max(1, Math.round(nodeThru * bpRatio));
+
         for (const bp of node.byproductOutputs) {
           if (!bp.result || !bp.type) continue;
-          // Walk the byproduct result using the same walkChain function
-          // This ensures it uses the same deduplication, same key system, same everything
-          const bpKey = walkChain(bp.result, key, nodeThru);
-          if (bpKey) {
-            const n = uniqueNodes.get(key);
-            if (n) {
-              // Use downstreamKeys for byproduct connections (edges go forward)
-              if (!n.downstreamKeys) n.downstreamKeys = [];
-              if (!n.downstreamKeys.includes(bpKey)) n.downstreamKeys.push(bpKey);
+
+          // Create source node for the secondary output (e.g., "Stone")
+          const sourceKey = getKey("secondary_output", bp.type);
+          const typeName = ITEM_TYPES[bp.type] || bp.type;
+          if (!uniqueNodes.has(sourceKey)) {
+            uniqueNodes.set(sourceKey, {
+              machine: "secondary_output",
+              type: bp.type,
+              value: bp.result.value || 0,
+              name: typeName,
+              category: "stonework",
+              quantity: bpQty,
+              childKeys: [],
+              oreCount: 0,
+              isByproduct: true,
+              dupProvided: false,
+            });
+          }
+          // Connect parent (smelter) → stone source
+          const parentNode = uniqueNodes.get(key);
+          if (parentNode) {
+            if (!parentNode.downstreamKeys) parentNode.downstreamKeys = [];
+            if (!parentNode.downstreamKeys.includes(sourceKey)) parentNode.downstreamKeys.push(sourceKey);
+          }
+
+          // Build the side chain by following the flow memo forward
+          let currentResult = bp.result;
+          let prevSideKey = sourceKey;
+          const visitedMachines = new Set();
+          let currentQty = bpQty;
+
+          while (currentResult?.machine && !visitedMachines.has(currentResult.machine)) {
+            visitedMachines.add(currentResult.machine);
+            const sideMachine = registry.get(currentResult.machine);
+            // Always use registry output type for the node (what this machine PRODUCES)
+            const sideType = sideMachine?.outputs?.[0]?.type || currentResult.resolvedType || currentResult.type || "?";
+            const sideKey = getKey(currentResult.machine, sideType);
+
+            if (!uniqueNodes.has(sideKey)) {
+              uniqueNodes.set(sideKey, {
+                machine: currentResult.machine,
+                type: sideType,
+                value: currentResult.value,
+                name: sideMachine?.name || currentResult.machine,
+                category: sideMachine?.category || "stonework",
+                quantity: currentQty,
+                childKeys: [],
+                oreCount: 0,
+                isByproduct: true,
+                dupProvided: false,
+              });
+            } else {
+              uniqueNodes.get(sideKey).quantity += currentQty;
+            }
+
+            // Connect: previous → current (always has prevSideKey since source node exists)
+            if (prevSideKey) {
+              const prevNode = uniqueNodes.get(prevSideKey);
+              if (prevNode && !prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+              if (prevNode && !prevNode.downstreamKeys?.includes(sideKey)) prevNode.downstreamKeys.push(sideKey);
+            }
+
+            // If this type already exists in the main chain (e.g., ceramic_furnace),
+            // connect to it instead of creating a duplicate
+            const mainChainKey = getKey(currentResult.machine, sideType);
+            const existingMain = uniqueNodes.get(mainChainKey);
+            if (existingMain && !existingMain.isByproduct) {
+              // Already in main chain - just connect and stop
+              break;
+            }
+
+            prevSideKey = sideKey;
+
+            // Follow downstream: look up the OUTPUT type in the memo
+            if (currentResult.downstreamMachine) {
+              // Flow told us what's next
+              const nextResult = flowMemo?.get(currentResult.downstreamType || sideType);
+              currentResult = nextResult || null;
+              // Adjust qty for combining machines
+              if (sideMachine?.inputs?.length >= 2) {
+                currentQty = Math.max(1, Math.ceil(currentQty / (sideMachine.inputs.length || 1)));
+              }
+            } else {
+              break;
             }
           }
         }

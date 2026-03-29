@@ -258,79 +258,57 @@ class FlowOptimizer {
           // The total value from chaining ALL prospectors + crusher + rest
           // is computed by the multi-pass iteration. Here just record this machine.
         }
-      } else if (m.effect === "set" && m.inputs.length === 1) {
-        // Single-input set machine (crusher, kiln, brick_mold): sets value, outputs different type
-        const outputResult = this.getItemValue(outputType, baseOreValue);
-        if (outputResult) {
-          const totalValue = outputResult.value;
-          if (totalValue > bestValue) {
-            bestValue = totalValue;
-            // Wrap: this machine takes itemType, outputs outputType which chains further
-            bestResult = {
-              value: totalValue,
-              machine: machineId,
-              // The output result IS the child - it represents the downstream chain
-              inputs: [outputResult],
-              resolvedType: outputType,
-              oreCount: 0,
-              isByproduct: true,
-            };
+      } else {
+        // Any machine that accepts this type: evaluate its output value
+        // This handles crusher (set), kiln (flat), clay_mixer (combine), etc.
+        // All treated the same way - compute output value and compare
+
+        // For multi-input machines, check all inputs are free (oreCount=0)
+        if (m.inputs.length >= 2) {
+          let allFree = true;
+          for (const inputSpec of m.inputs) {
+            const types = inputSpec.split("|");
+            const t = types.find(tt => tt === itemType) || types[0];
+            const ir = this.getItemValue(t, baseOreValue);
+            if (!ir || ir.oreCount > 0) { allFree = false; break; }
           }
+          if (!allFree) continue;
         }
-      } else if (m.inputs.length >= 2) {
-        // Multi-input machine with free inputs (clay_mixer: 2 dust → clay)
-        let allFree = true;
-        const inputResults = [];
-        for (const inputSpec of m.inputs) {
-          const types = inputSpec.split("|");
-          const t = types.find(tt => tt === itemType) || types[0];
-          const ir = this.getItemValue(t, baseOreValue);
-          if (!ir || ir.oreCount > 0) { allFree = false; break; }
-          // Don't nest the full memo result (prevents cycles in chain structure)
-          // Just record the input type and value
-          inputResults.push({ value: ir.value, oreCount: 0, resolvedType: t, isByproduct: true });
-        }
-        if (!allFree) continue;
 
-        const outputValue = this.applyMachineEffect(m, inputResults);
-        // Resolve the output type further using the flow system
-        // e.g., clay ($50) → ceramic_furnace → ceramic_casing ($150)
+        // Compute this machine's output value
+        let machineOutputValue = 0;
+        if (m.effect === "set") machineOutputValue = m.value || 0;
+        else if (m.effect === "flat") machineOutputValue = m.value || 0;
+        else if (m.effect === "multiply") machineOutputValue = 0;
+        else if (m.effect === "combine") {
+          // Combine: compute from inputs
+          const inputResults = (m.inputs || []).map(inp => {
+            const t = inp.split("|").find(tt => tt === itemType) || inp.split("|")[0];
+            const ir = this.getItemValue(t, baseOreValue);
+            return ir || { value: 0 };
+          });
+          machineOutputValue = this.applyMachineEffect(m, inputResults);
+        }
+
+        // Check if the output type can be processed further for more value
         const outputResult = this.getItemValue(outputType, baseOreValue);
-        const finalValue = outputResult && outputResult.value > outputValue
-          ? outputResult.value : outputValue;
+        const finalValue = Math.max(machineOutputValue, outputResult?.value || 0);
 
         if (finalValue > bestValue) {
           bestValue = finalValue;
+          // Build result in SAME format as computeBestProduction:
+          // inputs = what feeds INTO this machine (empty for free items)
+          // The downstream chain is in the memo, NOT nested in inputs
           bestResult = {
             value: finalValue,
             machine: machineId,
-            // Chain the downstream result as a nested input for graph
-            inputs: outputResult && outputResult.value > outputValue
-              ? [outputResult] : inputResults,
+            inputs: [], // Free inputs - nothing feeds in from ore chain
             resolvedType: outputType,
             oreCount: 0,
             isByproduct: true,
-          };
-        }
-      } else if (m.inputs.length === 1) {
-        // Single-input non-chance machine (kiln: dust → glass)
-        let outputValue = 0;
-        if (m.effect === "multiply") outputValue = 0; // base value is 0
-        else if (m.effect === "flat") outputValue = m.value || 0;
-
-        // Resolve output
-        const outputResult = this.getItemValue(outputType, baseOreValue);
-        const finalValue = outputResult ? outputResult.value : outputValue;
-
-        if (finalValue > bestValue) {
-          bestValue = finalValue;
-          bestResult = {
-            value: finalValue,
-            machine: machineId,
-            inputs: [],
-            resolvedType: outputType,
-            oreCount: 0,
-            isByproduct: true,
+            // Store downstream info for graph to look up
+            downstreamMachine: outputResult?.machine || null,
+            downstreamType: outputResult?.resolvedType || outputType,
           };
         }
       }
@@ -738,7 +716,7 @@ class FlowOptimizer {
     // Build graph directly from flow chain result - single source of truth
     const graph = GraphGenerator.fromFlowChain(
       chainResult, this.registry, this.config,
-      { dupAt, productQty }
+      { dupAt, productQty }, {}, this.memo
     );
 
     return {
