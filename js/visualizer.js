@@ -47,26 +47,102 @@ class GraphVisualizer {
     svg.appendChild(defs);
 
     // Draw edges first (behind nodes)
+    const edgeElements = [];
+    const labelElements = [];
     for (const edge of graph.edges) {
       const from = layout.find(n => n.id === edge.from);
       const to = layout.find(n => n.id === edge.to);
       if (!from || !to) continue;
 
       const path = this.createEdgePath(from, to, edge);
+      path.dataset.from = edge.from;
+      path.dataset.to = edge.to;
+      path.classList.add("graph-edge");
       svg.appendChild(path);
+      edgeElements.push(path);
 
       // Edge label
       if (edge.itemType && !edge.dashed) {
         const label = this.createEdgeLabel(from, to, edge.itemType);
+        label.dataset.from = edge.from;
+        label.dataset.to = edge.to;
+        label.classList.add("graph-edge-label");
         svg.appendChild(label);
+        labelElements.push(label);
       }
     }
 
     // Draw nodes
+    const nodeElements = new Map();
     for (const node of layout) {
       const g = this.createNode(node);
+      g.dataset.nodeId = node.id;
+      g.classList.add("graph-node");
       svg.appendChild(g);
+      nodeElements.set(node.id, g);
     }
+
+    // Click-to-highlight: click a node to show its connections
+    let selectedNodeId = null;
+    const clearSelection = () => {
+      selectedNodeId = null;
+      nodeElements.forEach(el => { el.style.opacity = ""; el.style.filter = ""; });
+      edgeElements.forEach(el => { el.style.opacity = ""; el.style.strokeWidth = ""; });
+      labelElements.forEach(el => { el.style.opacity = ""; });
+    };
+
+    const selectNode = (nodeId) => {
+      if (selectedNodeId === nodeId) { clearSelection(); return; }
+      selectedNodeId = nodeId;
+
+      // Find connected edges and nodes
+      const connectedNodes = new Set([nodeId]);
+      const connectedEdges = new Set();
+      edgeElements.forEach((el, idx) => {
+        const from = parseInt(el.dataset.from);
+        const to = parseInt(el.dataset.to);
+        if (from === nodeId || to === nodeId) {
+          connectedEdges.add(idx);
+          connectedNodes.add(from);
+          connectedNodes.add(to);
+        }
+      });
+
+      // Dim everything
+      nodeElements.forEach((el, id) => {
+        if (connectedNodes.has(id)) {
+          el.style.opacity = "1";
+          el.style.filter = id === nodeId ? "brightness(1.3)" : "";
+        } else {
+          el.style.opacity = "0.15";
+        }
+      });
+      edgeElements.forEach((el, idx) => {
+        if (connectedEdges.has(idx)) {
+          el.style.opacity = "1";
+          el.style.strokeWidth = "3";
+        } else {
+          el.style.opacity = "0.08";
+        }
+      });
+      labelElements.forEach(el => {
+        const from = parseInt(el.dataset.from);
+        const to = parseInt(el.dataset.to);
+        const isConnected = from === nodeId || to === nodeId;
+        el.style.opacity = isConnected ? "1" : "0.08";
+      });
+    };
+
+    nodeElements.forEach((el, id) => {
+      el.style.cursor = "pointer";
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectNode(id);
+      });
+    });
+
+    // Click empty space to deselect
+    svg.addEventListener("click", () => { clearSelection(); });
 
     // Pan/zoom support
     container.innerHTML = "";
