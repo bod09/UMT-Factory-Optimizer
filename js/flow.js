@@ -334,23 +334,39 @@ class FlowOptimizer {
           finalValue = currentValue;
         }
 
-        // Apply universal modifiers to the final byproduct item
-        // Polisher (+$10 to any item), QA (+20% to any item)
-        const universalMods = [
-          { id: "polisher", effect: "flat", value: 10 },
-          { id: "quality_assurance", effect: "percent", value: 0.2 },
-        ];
-        for (const mod of universalMods) {
-          const m2 = this.registry.get(mod.id);
-          if (!m2 || !this.registry.isAvailable(mod.id, this.config)) continue;
-          // Only apply if the machine accepts this type (check inputs for "any" or matching type)
-          const accepts = (m2.inputs || []).some(inp =>
+        // Scan ALL machines for any that can add value to this item
+        // Sort: flat bonuses first, then multipliers (order matters for profit)
+        const valueAdders = [];
+        for (const [modId, modM] of this.registry.machines) {
+          if (!this.registry.isAvailable(modId, this.config)) continue;
+          if (!modM.inputs || modM.inputs.length !== 1) continue; // Only single-input modifiers
+          const accepts = modM.inputs.some(inp =>
             inp === "any" || inp === currentType || inp.split("|").includes(currentType)
           );
           if (!accepts) continue;
-          if (mod.effect === "flat") finalValue += mod.value;
-          else if (mod.effect === "percent") finalValue *= (1 + mod.value);
-          downstreamChain.push({ machine: mod.id, type: currentType, value: finalValue });
+          // Must output same type or "same" (modifier, not transformer)
+          const outType = modM.outputs?.[0]?.type;
+          if (outType && outType !== "same" && outType !== currentType) continue;
+          // Must add value
+          if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
+          // Skip machines already in the downstream chain
+          if (downstreamChain.some(d => d.machine === modId)) continue;
+          valueAdders.push({ id: modId, effect: modM.effect, value: modM.value || 0 });
+        }
+        // Apply flat first, then percent/multiply (maximizes profit)
+        valueAdders.sort((a, b) => {
+          const order = { flat: 0, percent: 1, multiply: 1 };
+          return (order[a.effect] ?? 2) - (order[b.effect] ?? 2);
+        });
+        for (const mod of valueAdders) {
+          let newValue = finalValue;
+          if (mod.effect === "flat") newValue += mod.value;
+          else if (mod.effect === "percent") newValue *= (1 + mod.value);
+          else if (mod.effect === "multiply") newValue *= mod.value;
+          if (newValue > finalValue) {
+            finalValue = newValue;
+            downstreamChain.push({ machine: mod.id, type: currentType, value: finalValue });
+          }
         }
 
         if (finalValue > bestValue) {
