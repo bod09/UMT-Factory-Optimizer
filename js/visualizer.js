@@ -82,23 +82,54 @@ class GraphVisualizer {
   computeLayout(graph) {
     const nodes = graph.nodes.map(n => ({ ...n }));
 
-    // Group by layer
-    const layers = {};
-    for (const n of nodes) {
+    // Split into main chain and byproduct chain
+    const mainNodes = nodes.filter(n => !n.isByproduct);
+    const bpNodes = nodes.filter(n => n.isByproduct);
+
+    // Layout main chain: group by layer, stack vertically within each layer
+    const mainLayers = {};
+    for (const n of mainNodes) {
       const layer = n.layer || 0;
-      if (!layers[layer]) layers[layer] = [];
-      layers[layer].push(n);
+      if (!mainLayers[layer]) mainLayers[layer] = [];
+      mainLayers[layer].push(n);
     }
 
-    // Assign positions
-    const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
-    for (const layerIdx of layerKeys) {
-      const layerNodes = layers[layerIdx];
-      const x = this.padding + layerIdx * this.layerGap;
-
+    const mainLayerKeys = Object.keys(mainLayers).map(Number).sort((a, b) => a - b);
+    let mainMaxY = 0;
+    for (const layerIdx of mainLayerKeys) {
+      const layerNodes = mainLayers[layerIdx];
+      const col = mainLayerKeys.indexOf(layerIdx);
+      const x = this.padding + col * this.layerGap;
       for (let i = 0; i < layerNodes.length; i++) {
         layerNodes[i].x = x;
         layerNodes[i].y = this.padding + i * this.nodeGap;
+        mainMaxY = Math.max(mainMaxY, layerNodes[i].y + this.nodeHeight);
+      }
+    }
+
+    // Layout byproduct chain independently below main chain
+    if (bpNodes.length > 0) {
+      const rowGap = 60; // gap between main and byproduct rows
+      const bpStartY = mainMaxY + rowGap;
+
+      // Assign independent layers for byproduct nodes
+      const bpLayers = {};
+      for (const n of bpNodes) {
+        const layer = n.layer || 0;
+        if (!bpLayers[layer]) bpLayers[layer] = [];
+        bpLayers[layer].push(n);
+      }
+
+      // Re-index byproduct layers starting from 0
+      const bpLayerKeys = Object.keys(bpLayers).map(Number).sort((a, b) => a - b);
+      for (const layerIdx of bpLayerKeys) {
+        const layerNodes = bpLayers[layerIdx];
+        const col = bpLayerKeys.indexOf(layerIdx);
+        const x = this.padding + col * this.layerGap;
+        for (let i = 0; i < layerNodes.length; i++) {
+          layerNodes[i].x = x;
+          layerNodes[i].y = bpStartY + i * this.nodeGap;
+        }
       }
     }
 
