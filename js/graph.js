@@ -975,9 +975,12 @@ class GraphGenerator {
         }
       }
 
-      // Add secondary output chain as side nodes
-      // Walk the flow memo to build the chain: stone → crusher → dust → clay_mixer → ceramic
+      // Record byproduct outputs for post-processing (after all quantities are final)
       if (node.byproductOutputs) {
+        if (!uniqueNodes._pendingByproducts) uniqueNodes._pendingByproducts = [];
+        uniqueNodes._pendingByproducts.push({ parentKey: key, outputs: node.byproductOutputs });
+      }
+      if (false && node.byproductOutputs) { // DISABLED - moved to post-processing
         for (const bp of node.byproductOutputs) {
           if (!bp.result || !bp.type) continue;
           const bpRatio = bp.ratio || 0.5;
@@ -1188,6 +1191,83 @@ class GraphGenerator {
       childKeys: [lastMainKey],
       oreCount: 0,
     });
+
+    // Post-process: build secondary output side chains now that all quantities are final
+    for (const pending of (uniqueNodes._pendingByproducts || [])) {
+      const parentNode = uniqueNodes.get(pending.parentKey);
+      if (!parentNode) continue;
+      const nodeActualQty = parentNode.quantity || 1;
+
+      for (const bp of pending.outputs) {
+        if (!bp.result || !bp.type) continue;
+        const bpRatio = bp.ratio || 0.5;
+        const bpQty = Math.max(1, Math.round(nodeActualQty * bpRatio));
+
+        let currentType = bp.type;
+        let prevBpKey = null;
+        const visitedTypes = new Set();
+        let chainDepth = 0;
+
+        while (currentType && !visitedTypes.has(currentType) && chainDepth < 8) {
+          visitedTypes.add(currentType);
+          chainDepth++;
+
+          let machineId = null, machineName = null, nextType = null, nodeValue = 0;
+
+          if (chainDepth === 1 && bp.result.machine) {
+            machineId = bp.result.machine;
+            const mach = registry.get(machineId);
+            machineName = mach?.name || machineId;
+            nextType = mach?.outputs?.[0]?.type;
+            nodeValue = bp.result.value;
+          } else {
+            for (const [mid, mm] of registry.machines) {
+              if (!registry.isAvailable(mid, config)) continue;
+              const accepts = (mm.inputs || []).some(inp => inp === currentType || inp.split("|").includes(currentType));
+              if (!accepts) continue;
+              const skipEffects = new Set(["transport", "split", "overflow", "filter", "gate", "duplicate", "chance"]);
+              if (skipEffects.has(mm.effect)) continue;
+              const ot = mm.outputs?.[0]?.type;
+              if (!ot || ot === "same" || ot === "passthrough" || ot === currentType) continue;
+              machineId = mid;
+              machineName = mm.name || mid;
+              nextType = ot;
+              nodeValue = mm.value || 0;
+              break;
+            }
+          }
+
+          if (!machineId) break;
+
+          const bpNodeKey = getKey(machineId, nextType || currentType);
+          if (!uniqueNodes.has(bpNodeKey)) {
+            const mach = registry.get(machineId);
+            uniqueNodes.set(bpNodeKey, {
+              machine: machineId, type: nextType || currentType,
+              value: nodeValue, name: machineName,
+              category: mach?.category || "stonework",
+              quantity: bpQty, childKeys: [], oreCount: 0,
+              isByproduct: true, dupProvided: false,
+            });
+          }
+
+          if (prevBpKey) {
+            const prevNode = uniqueNodes.get(prevBpKey);
+            if (prevNode) {
+              if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+              if (!prevNode.downstreamKeys.includes(bpNodeKey)) prevNode.downstreamKeys.push(bpNodeKey);
+            }
+          } else {
+            if (!parentNode.downstreamKeys) parentNode.downstreamKeys = [];
+            if (!parentNode.downstreamKeys.includes(bpNodeKey)) parentNode.downstreamKeys.push(bpNodeKey);
+          }
+
+          prevBpKey = bpNodeKey;
+          currentType = nextType;
+        }
+      }
+    }
+    delete uniqueNodes._pendingByproducts;
 
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
