@@ -11,7 +11,8 @@
       "Bash(python3 -c \":*)",
       "Bash(node -c js/graph.js)",
       "Bash(node -c js/flow.js)",
-      "Bash(node -c js/app.js)"
+      "Bash(node -c js/app.js)",
+      "Bash(grep -n \"^  [a-zA-Z_].*{$\\\\|^  }\" js/flow.js)"
     ]
   }
 }
