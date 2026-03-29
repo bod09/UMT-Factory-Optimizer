@@ -853,8 +853,9 @@ class GraphGenerator {
         const qty = parentQty;
         const machineKeys = [];
 
-        // Create all nodes first
+        // Create all nodes first (skip byproduct placeholders)
         for (const machineId of node.machines) {
+          if (machineId === "smelter_byproduct" || machineId === "byproduct_free" || machineId === "byproduct_source") continue;
           const m = registry.get(machineId);
           const type = "ore";
           const key = getKey(machineId, type);
@@ -896,6 +897,16 @@ class GraphGenerator {
       }
 
       const machine = node.machine || "unknown";
+
+      // Skip byproduct placeholder nodes - these represent items that come
+      // from the byproduct chain (stone/dust) for free. Don't create graph nodes
+      // for them; the byproduct sub-graph handles the actual chain.
+      if (machine === "smelter_byproduct" || machine === "byproduct_free" || machine === "byproduct_source") {
+        // Don't create a node, just skip. The parent will have a dangling
+        // childKey that gets connected to the byproduct chain later.
+        return null;
+      }
+
       // Get output type: from node, or look up in registry
       const m = registry.get(machine);
       const registryOutputType = m?.outputs?.[0]?.type;
