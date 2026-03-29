@@ -130,11 +130,11 @@ class FlowOptimizer {
         const prevVal = this.prevPassValues.get(type);
         if (prevVal > 0) {
           // Check if this type is free (produced from secondary outputs, not from ores)
-          // Types that were seeded with initial values are free byproduct types
-          const isFreeType = this.prevPassValues?.has(type) &&
-            (this.registry.isByproduct(type) || this.registry.getProducers(type).length === 0 ||
-             // Types produced by machines that only take free inputs (crusher takes "any" including stone)
-             type === "dust" || type === "clay" || type === "glass" || type === "ceramic_casing" || type === "stone");
+          // A type is free if: it's a known secondary output, OR no machine produces it from ores,
+          // OR all its producers only use free inputs (detected from registry data)
+          const isFreeType = this.registry.isByproduct(type) ||
+            this.registry.getProducers(type).length === 0 ||
+            this._isProducedFromFreeInputs(type);
           return { value: prevVal, oreCount: isFreeType ? 0 : 1, perOre: prevVal, machines: ["cycle_ref"], isCycleRef: true };
         }
       }
@@ -154,8 +154,9 @@ class FlowOptimizer {
       // For secondary output types (stone, dust), also evaluate what they can be PROCESSED into
       result = this.computeBestProduction(type, baseOreValue);
 
-      // If no producer found but this is a secondary output type, evaluate processing destinations
-      if (!result && (this.registry.isByproduct(type) || type === "dust" || type === "clay" || type === "glass")) {
+      // If no producer found, check if this type can be processed into something valuable
+      // This handles secondary output types (stone, dust, clay, etc.) and any future types
+      if (!result) {
         result = this.computeBestProcessing(type, baseOreValue);
       }
     }
@@ -505,6 +506,34 @@ class FlowOptimizer {
   }
 
   // Discover enhancement paths: convert type → process → convert back
+  // Check if a type is only produced from free (0-ore) inputs
+  // e.g., dust comes from crusher which takes stone (free), clay comes from clay_mixer which takes dust (free)
+  _isProducedFromFreeInputs(type) {
+    // Check all machines that accept this type as input and produce something
+    for (const [machineId, machine] of this.registry.machines) {
+      if (!this.registry.isAvailable(machineId, this.config)) continue;
+      const outputs = machine.outputs || [];
+      for (const out of outputs) {
+        if (out.type === type) {
+          // This machine produces this type - check if ALL its inputs are free
+          const inputs = machine.inputs || [];
+          const allInputsFree = inputs.every(inp => {
+            const types = inp.split("|");
+            return types.some(t => {
+              if (t === "any") return true; // "any" input = accepts free items
+              const result = this.memo.get(t);
+              return result && result.oreCount === 0;
+            });
+          });
+          if (allInputsFree && inputs.length > 0) return true;
+        }
+      }
+    }
+    // Also check: if this type is a secondary output of any machine
+    if (this.registry.isByproduct(type)) return true;
+    return false;
+  }
+
   // Searches registry for machines that convert type A → B (preserve) and B → A (preserve)
   // with processing machines in between that multiply value
   _findEnhancementPath(sourceType, sourceValue, sourceOres) {
