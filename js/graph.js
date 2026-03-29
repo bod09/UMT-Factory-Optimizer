@@ -204,19 +204,13 @@ class GraphGenerator {
 
       const machine = node.machine || "unknown";
 
-      // Skip nodes provided by the secondary output chain:
-      // - Placeholder nodes (byproduct_free, cycle_ref)
-      // - oreCount=0 nodes that aren't the ore chain (ceramic, clay, dust, crusher)
-      //   These come from secondary outputs and are created by the side chain walker.
-      if (node.oreCount === 0 && machine !== "ore_source" && !node.machines && machine !== "unknown") {
-        // This subtree is provided by the secondary output chain - don't create nodes
-        return null;
-      }
+      // Skip placeholder nodes only (not real machines)
       if (machine === "smelter_byproduct" || machine === "byproduct_free" || machine === "byproduct_source" || machine === "cycle_ref") {
-        // Don't create a node, just skip. The parent will have a dangling
-        // childKey that gets connected to the byproduct chain later.
         return null;
       }
+      // oreCount=0 nodes (glass, ceramic, etc.) are real items from secondary outputs.
+      // Show them in the graph as side chain nodes - they're legitimate inputs.
+      // Mark them as side chain for visual separation.
 
       // Get output type: registry is ground truth, then flow data
       const m = registry.get(machine);
@@ -234,9 +228,11 @@ class GraphGenerator {
       // Check if this node should have a duplicator inserted
       let insertDup = false;
       if (dupTargetType && type === dupTargetType && parentKey) {
-        // Check if parent matches dupParentType
+        // Check if parent matches dupParentType (by output type OR machine ID)
         const parentNode = uniqueNodes.get(parentKey);
-        if (!dupParentType || parentNode?.machine === dupParentType) {
+        if (!dupParentType ||
+            parentNode?.machine === dupParentType ||
+            parentNode?.type === dupParentType) {
           insertDup = true;
         }
       }
@@ -245,8 +241,10 @@ class GraphGenerator {
       }
 
       // Create or update node
-      // Nodes with oreCount=0 are byproduct-sourced (stone, dust, clay, ceramic)
-      const nodeIsByproduct = (node.oreCount === 0 && machine !== "ore_source") || node.isByproduct;
+      // Side chain = secondary output processing (stone, dust, clay, ceramic, glass)
+      // These come from machine secondary outputs, not directly from mined ores
+      const nodeIsSideChain = node.isByproduct ||
+        (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance");
       if (!uniqueNodes.has(key)) {
         uniqueNodes.set(key, {
           machine,
@@ -258,7 +256,7 @@ class GraphGenerator {
           quantity: node.throughput || node.oreCount || 1,
           childKeys: [],
           oreCount: node.oreCount,
-          isByproduct: nodeIsByproduct,
+          isByproduct: nodeIsSideChain,
           dupProvided: false,
         });
       } else {
@@ -590,26 +588,23 @@ class GraphGenerator {
 
             excessValue = newVal;
 
-            // Check if this modifier exists in the main chain AND is near the seller
-            // (QA is right before Seller - share it. Polisher is in ore chain - don't share)
+            // Check if this modifier exists in the main chain and is shared (QA, Seller)
+            // The Seller's childKeys chain tells us what feeds it (QA → Combiner → ...)
             const existingMain = [...uniqueNodes.entries()].find(([k, d]) =>
               d.machine === mod.id && !d.isByproduct
             );
-            const isNearSeller = existingMain && (() => {
-              // Check if this main node connects to the Seller (directly or 1 step away)
-              const mainNode = uniqueNodes.get(existingMain[0]);
-              const allKeys = [...(mainNode?.downstreamKeys || []), ...(mainNode?.childKeys || [])];
-              // Direct connection to seller
-              for (const dk of allKeys) {
-                const d = uniqueNodes.get(dk);
-                if (d?.machine === "seller") return true;
-              }
-              // The seller key format: look for any node with machine="seller"
-              const sellerKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "seller");
-              if (!sellerKey) return false;
-              // Check if this node is a PARENT of the seller (seller's childKeys includes this)
-              const sellerData = uniqueNodes.get(sellerKey[0]);
+            // Share if this machine is between the final product and the Seller
+            // (QA is right before Seller - share it. Polisher is in ore chain - don't share)
+            const sellerEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "seller");
+            const isNearSeller = existingMain && sellerEntry && (() => {
+              const sellerData = uniqueNodes.get(sellerEntry[0]);
+              // Check if seller's child chain includes this modifier
               if (sellerData?.childKeys?.includes(existingMain[0])) return true;
+              // Also check 2 levels deep (Seller → QA → Combiner)
+              for (const ck of sellerData?.childKeys || []) {
+                const child = uniqueNodes.get(ck);
+                if (child?.childKeys?.includes(existingMain[0])) return true;
+              }
               return false;
             })();
 
