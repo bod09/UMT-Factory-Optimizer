@@ -159,7 +159,8 @@
       "effect": "multiply",
       "value": 0.9,
       "size": "2x3",
-      "desc": "Smelts ore into bar at 0.9x value. More stone output than Ore Smelter."
+      "desc": "Smelts ore to bar at 0.9x BUT produces 1:1 stone ratio (vs Ore Smelter 0.5:1). Preferred for gambling/recycling setups where more stone = more sifting chances.",
+      "gamblingAdvantage": true
     },
     "tempering_forge": {
       "name": "Tempering Forge",
@@ -394,7 +395,24 @@
       "effect": "set",
       "value": 1,
       "size": "1x1",
-      "desc": "Crushes anything into dust worth $1. Removes MOST tags (Cleaned, Polished, Tempered, etc.) but does NOT remove Unduplicatable."
+      "desc": "Crushes ANY item (ores, bars, gems, etc.) into dust worth $1. Cannot crush dust. Removes MOST tags but NOT Unduplicatable. Key for gambling/recycling: crush low-value items to dust for re-sifting.",
+      "cannotCrush": [
+        "dust"
+      ],
+      "removedTags": [
+        "Cleaned",
+        "Polished",
+        "Tempered",
+        "Gold_Infused",
+        "Upgraded",
+        "Sifted",
+        "QA_Tested",
+        "Tuned",
+        "Duplicated"
+      ],
+      "preservedTags": [
+        "Unduplicatable"
+      ]
     },
     "sifter": {
       "name": "Sifter",
@@ -421,33 +439,28 @@
       "value": 0.1,
       "tag": "Sifted",
       "size": "3x3",
-      "desc": "10% dust\u00e2\u2020\u2019ore. 90% dust passes through tagged Sifted (prevents re-sifting).",
+      "desc": "Sifts dust for 10% chance of ore (smaller pool than Nano). Dust passes through tagged Sifted. Ore output inherits tags from dust input.",
       "byproductRatio": 0.1,
       "orePool": [
         {
           "name": "Tin",
-          "value": 10,
-          "weight": 1
+          "value": 10
         },
         {
           "name": "Iron",
-          "value": 20,
-          "weight": 1
+          "value": 20
         },
         {
           "name": "Cobalt",
-          "value": 50,
-          "weight": 1
+          "value": 50
         },
         {
           "name": "Uranium",
-          "value": 180,
-          "weight": 1
+          "value": 180
         },
         {
           "name": "Gold",
-          "value": 350,
-          "weight": 1
+          "value": 350
         }
       ],
       "_orePoolNote": "Equal weight = equal chance. Average ore value = $122."
@@ -478,63 +491,52 @@
       "value": 0.166,
       "tag": "Sifted",
       "size": "3x3",
-      "desc": "16.6% dust\u00e2\u2020\u2019ore. 83.4% dust passes through tagged Sifted (prevents re-sifting).",
+      "desc": "Sifts dust for 16.6% chance of random ore. Dust passes through tagged Sifted (blocks ALL sifters). Ore output inherits tags from dust input (including Unduplicatable). Depth-independent ore pool.",
       "byproductRatio": 0.166,
       "orePool": [
         {
           "name": "Tin",
-          "value": 10,
-          "weight": 1
+          "value": 10
         },
         {
           "name": "Iron",
-          "value": 20,
-          "weight": 1
+          "value": 20
         },
         {
           "name": "Lead",
-          "value": 30,
-          "weight": 1
+          "value": 30
         },
         {
           "name": "Cobalt",
-          "value": 50,
-          "weight": 1
+          "value": 50
         },
         {
           "name": "Silver",
-          "value": 150,
-          "weight": 1
+          "value": 150
         },
         {
           "name": "Uranium",
-          "value": 180,
-          "weight": 1
+          "value": 180
         },
         {
           "name": "Tungsten",
-          "value": 300,
-          "weight": 1
+          "value": 300
         },
         {
           "name": "Gold",
-          "value": 350,
-          "weight": 1
+          "value": 350
         },
         {
           "name": "Plutonium",
-          "value": 750,
-          "weight": 1
+          "value": 2000
         },
         {
           "name": "Palladium",
-          "value": 2000,
-          "weight": 1
+          "value": 5000
         },
         {
           "name": "Iridium",
-          "value": 2500,
-          "weight": 1
+          "value": 3700
         }
       ],
       "_orePoolNote": "Equal weight = equal chance. Average ore value = $576. All are upgradable via Ore Upgrader."
@@ -1402,5 +1404,12 @@
       "effect": "gate",
       "desc": "Can be opened/closed to allow or prevent items from passing through"
     }
+  },
+  "_tagRules": {
+    "inheritance": "Items crafted from multiple inputs inherit ALL tags from ALL ingredients",
+    "sifterInheritance": "Sifted ore byproduct inherits tags from dust input (including Unduplicatable)",
+    "crusherResets": "Crusher removes most tags except Unduplicatable",
+    "cannotCrushDust": "Dust cannot be put through the crusher",
+    "siftedBlocksAll": "Sifted tag blocks ALL sifter types (regular and nano)"
   }
 }

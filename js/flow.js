@@ -56,29 +56,108 @@ class FlowOptimizer {
   }
 
   // Phase 1: Compute the best value per unit for every producible item type
-  // This is a forward propagation: ore → bar → plate → casing → engine...
-  // Each type gets its best value considering ALL possible processing paths
+  // Uses MULTI-PASS iterative resolution to discover convergent feedback loops:
+  //   ore → furnace → stone → crush → dust → sift → ore (gambling/recycling)
+  // Each pass uses previous pass values for cycle resolution.
+  // Stops when values converge (< 1% change) or after maxPasses.
   computeAllValues(oreValue) {
-    this.getItemValue("ore", oreValue);
+    const maxPasses = 5;
+
+    for (let pass = 0; pass < maxPasses; pass++) {
+      const prevValues = new Map(
+        [...this.memo.entries()].map(([k, v]) => [k, v?.value || 0])
+      );
+
+      // Clear memo for fresh computation, but keep previous values for cycle breaking
+      this.prevPassValues = prevValues;
+      this.memo.clear();
+      this.currentPass = pass;
+
+      // Compute all values starting from ore
+      this.getItemValue("ore", oreValue);
+
+      // Also compute the crush→sift reroll expected value
+      this.crushRerollEV = this.computeCrushRerollEV(oreValue);
+
+      // Check convergence: did any value change significantly?
+      let maxChange = 0;
+      for (const [type, result] of this.memo) {
+        if (!result) continue;
+        const prev = prevValues.get(type) || 0;
+        if (prev > 0) {
+          const change = Math.abs(result.value - prev) / prev;
+          maxChange = Math.max(maxChange, change);
+        }
+      }
+
+      if (pass > 0 && maxChange < 0.01) break; // Converged
+    }
+  }
+
+  // Compute expected value of crushing an item and re-sifting the dust
+  // This is the "gambling" strategy: crush → dust → nano sifter → random ore → process
+  computeCrushRerollEV(baseOreValue) {
+    const nanoSifter = this.registry.get("nano_sifter");
+    if (!nanoSifter || !this.registry.isAvailable("nano_sifter", this.config)) return 0;
+
+    // Get nano sifter ore pool from machines.json
+    const orePool = nanoSifter.orePool || [];
+    if (orePool.length === 0) return 0;
+
+    // Sift chance
+    const siftChance = 0.166;
+
+    // Average value of a sifted ore after full processing
+    let totalOreValue = 0;
+    for (const poolOre of orePool) {
+      // Each sifted ore goes through the full processing chain
+      // Use previous pass value if available to break cycles
+      const processedValue = this.prevPassValues?.get("bar") || 0;
+      if (processedValue > 0) {
+        // Scale by the ratio of this ore to the base ore used for bar calculation
+        const baseOre = ORES.find(o => this.prevPassValues?.has("ore"))?.value || baseOreValue;
+        const ratio = poolOre.value / (baseOre || 1);
+        totalOreValue += processedValue * ratio;
+      } else {
+        totalOreValue += poolOre.value; // Fallback to raw value
+      }
+    }
+    const avgSiftedOreValue = totalOreValue / orePool.length;
+
+    // Expected value per dust through sifter
+    // siftChance * avgOreValue + (1 - siftChance) * dustResidualValue
+    // Dust residual: goes to clay mixer or kiln (best destination)
+    const dustResidualValue = this.memo.get("clay")?.value || this.memo.get("glass")?.value || 30;
+
+    return siftChance * avgSiftedOreValue + (1 - siftChance) * (dustResidualValue / 2);
   }
 
   // Get the best value per unit for an item type
   // Memoized to avoid recomputation
+  // On cycle detection: returns previous pass value instead of null (enables convergent loops)
   getItemValue(type, baseOreValue) {
-    if (this.memo.has(type)) return this.memo.get(type);
+    if (this.memo.has(type)) {
+      const cached = this.memo.get(type);
+      // If null, we're in a cycle - return previous pass value to break it
+      if (cached === null && this.prevPassValues?.has(type)) {
+        const prevVal = this.prevPassValues.get(type);
+        if (prevVal > 0) {
+          return { value: prevVal, oreCount: 1, perOre: prevVal, machines: ["cycle_ref"], isCycleRef: true };
+        }
+      }
+      return cached;
+    }
 
-    // Prevent infinite recursion
-    this.memo.set(type, null); // placeholder
+    // Prevent infinite recursion - mark as in-progress
+    this.memo.set(type, null);
 
     let result;
 
     if (type === "ore") {
       result = this.computeOreValue(baseOreValue);
     } else if (type === "stone") {
-      // Stone is free (byproduct of smelting)
       result = { value: 0, oreCount: 0, perOre: 0, machines: ["smelter_byproduct"], isByproduct: true };
     } else if (type === "dust") {
-      // Dust comes from crushing stone (free)
       result = { value: 1, oreCount: 0, perOre: 0, machines: ["smelter_byproduct", "crusher"], isByproduct: true };
     } else {
       result = this.computeBestProduction(type, baseOreValue);
@@ -758,8 +837,21 @@ class FlowOptimizer {
 
   // Compute byproduct flow value
   // mainChainPerOre = opportunity cost of spending ores on the main chain
-  computeByproductFlow(oreCount, oreValue, mainChainPerOre) {
-    const smelter = this.registry.get("ore_smelter");
+  computeByproductFlow(oreCount, oreValue, mainChainPerOre, smelterOverride) {
+    // Try both smelters if no override, pick whichever gives best total including byproducts
+    if (!smelterOverride) {
+      const smelters = ["ore_smelter", "blast_furnace"].filter(id => this.registry.get(id));
+      let bestResult = { totalValue: 0, flows: [], smelterId: null };
+      for (const id of smelters) {
+        const result = this.computeByproductFlow(oreCount, oreValue, mainChainPerOre, id);
+        if (result.totalValue > bestResult.totalValue) {
+          bestResult = { ...result, smelterId: id };
+        }
+      }
+      return bestResult;
+    }
+
+    const smelter = this.registry.get(smelterOverride);
     if (!smelter) return { totalValue: 0, flows: [] };
 
     const ds = this.config.hasDoubleSeller ? 2 : 1;
@@ -915,6 +1007,16 @@ class FlowOptimizer {
       if (netValue > bestValue) {
         bestValue = netValue;
         bestDest = machineId;
+      }
+    }
+
+    // Also consider: crush this item → dust → sift → reroll
+    // Only for items that CAN be crushed (not dust itself)
+    if (itemType !== "dust" && this.crushRerollEV > 0) {
+      const crushRerollValue = this.crushRerollEV;
+      if (crushRerollValue > bestValue) {
+        bestValue = crushRerollValue;
+        bestDest = "crush_reroll";
       }
     }
 
