@@ -852,6 +852,8 @@ class GraphGenerator {
       // In the graph, each machine is a CHILD of the next (reversed for layer assignment)
       // so ore_source gets the highest layer (leftmost) and last machine connects to parent
       if (node.machines && !node.inputs) {
+        // Ore chain: each machine processes all ores from the parent
+        // parentQty carries the parent machine's throughput
         const qty = parentQty;
         const machineKeys = [];
 
@@ -941,10 +943,8 @@ class GraphGenerator {
           value: node.value,
           name: m?.name || machine,
           category: m?.category || "source",
-          // Quantity from flow's oreCount (how many ores feed this branch)
-          // For single-input: oreCount = items processed
-          // For multi-input: oreCount = total ores, items = oreCount/inputOres
-          quantity: node.oreCount || 1,
+          // Throughput from flow: how many items this machine outputs
+          quantity: node.throughput || node.oreCount || 1,
           childKeys: [],
           oreCount: node.oreCount,
           isByproduct: nodeIsByproduct,
@@ -958,16 +958,15 @@ class GraphGenerator {
             return dupKey;
           }
         }
-        // When same node visited from multiple parents, take the MAX oreCount
-        // (the largest flow through this machine)
-        if ((node.oreCount || 0) > existing.quantity) {
-          existing.quantity = node.oreCount;
-        }
+        // When same node visited from multiple parents, SUM throughput
+        // (total items processed = sum from all branches)
+        existing.quantity += (node.throughput || 1);
       }
 
-      // Determine child quantity (m already defined above)
+      // Pass this node's throughput to children so they know how many items flow through
+      const nodeThru = node.throughput || 1;
       const qtyMult = m?.outputQtyMultiplier || 1;
-      const childQty = qtyMult > 1 ? Math.ceil(parentQty / qtyMult) : parentQty;
+      const childQty = qtyMult > 1 ? Math.ceil(nodeThru / qtyMult) : nodeThru;
 
       // Recurse into inputs
       if (node.inputs) {

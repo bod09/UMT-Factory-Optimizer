@@ -199,7 +199,7 @@ class FlowOptimizer {
       else if (mod.effect === "percent") { val *= (1 + mod.value); machines.push(mod.id); }
     }
 
-    return { value: val, oreCount: 1, perOre: val, machines };
+    return { value: val, oreCount: 1, perOre: val, machines, throughput: 1 };
   }
 
   // Find the most valuable processing chain for a free item type (stone, dust, clay, etc.)
@@ -435,6 +435,11 @@ class FlowOptimizer {
 
       const perOre = totalOres > 0 ? outputValue / totalOres : outputValue;
 
+      // Throughput: how many items this machine outputs per final product
+      // = totalOres / ores needed for ONE invocation of this machine
+      const oresPerInvocation = inputResults.reduce((sum, ir) => sum + (ir.oreCount || 0), 0) || 1;
+      const throughput = Math.max(1, Math.round(totalOres / oresPerInvocation));
+
       if (!bestResult || perOre > bestResult.perOre) {
         bestResult = {
           value: outputValue,
@@ -442,6 +447,7 @@ class FlowOptimizer {
           perOre,
           machine: machineId,
           inputs: inputResults,
+          throughput,
           byproductOutputs: byproductNodes.length > 0 ? byproductNodes : undefined,
         };
       }
