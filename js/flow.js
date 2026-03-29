@@ -334,6 +334,25 @@ class FlowOptimizer {
           finalValue = currentValue;
         }
 
+        // Apply universal modifiers to the final byproduct item
+        // Polisher (+$10 to any item), QA (+20% to any item)
+        const universalMods = [
+          { id: "polisher", effect: "flat", value: 10 },
+          { id: "quality_assurance", effect: "percent", value: 0.2 },
+        ];
+        for (const mod of universalMods) {
+          const m2 = this.registry.get(mod.id);
+          if (!m2 || !this.registry.isAvailable(mod.id, this.config)) continue;
+          // Only apply if the machine accepts this type (check inputs for "any" or matching type)
+          const accepts = (m2.inputs || []).some(inp =>
+            inp === "any" || inp === currentType || inp.split("|").includes(currentType)
+          );
+          if (!accepts) continue;
+          if (mod.effect === "flat") finalValue += mod.value;
+          else if (mod.effect === "percent") finalValue *= (1 + mod.value);
+          downstreamChain.push({ machine: mod.id, type: currentType, value: finalValue });
+        }
+
         if (finalValue > bestValue) {
           bestValue = finalValue;
           bestResult = {
@@ -343,7 +362,6 @@ class FlowOptimizer {
             resolvedType: outputType,
             oreCount: 0,
             isByproduct: true,
-            // Full downstream chain for the graph to render
             downstreamChain,
           };
         }

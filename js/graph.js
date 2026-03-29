@@ -589,17 +589,24 @@ class GraphGenerator {
       }
       const depth = maxChildDepth + 1;
       depthMap.set(key, depth);
-      // Also assign layers to downstream (byproduct) nodes
-      // They get layers AFTER this node (to the right)
-      for (const dk of (data.downstreamKeys || [])) {
-        if (!layerVisited.has(dk)) {
-          assignLayer(dk);
-          // Downstream nodes should be at same or higher layer than parent
-          const dkDepth = depthMap.get(dk) || 0;
-          if (dkDepth <= depth) {
-            depthMap.set(dk, depth); // Same layer as source
+      // Assign layers to downstream (side chain) nodes sequentially
+      // Each downstream node goes 1 layer further right
+      function assignDownstreamLayers(keys, startLayer) {
+        let layer = startLayer;
+        for (const dk of keys) {
+          if (layerVisited.has(dk)) continue;
+          layerVisited.add(dk);
+          layer++;
+          depthMap.set(dk, layer);
+          const dkData = uniqueNodes.get(dk);
+          if (dkData?.downstreamKeys) {
+            layer = assignDownstreamLayers(dkData.downstreamKeys, layer);
           }
         }
+        return layer;
+      }
+      if (data.downstreamKeys?.length) {
+        assignDownstreamLayers(data.downstreamKeys, depth);
       }
       return depth;
     }
