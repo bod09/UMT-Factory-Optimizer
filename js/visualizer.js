@@ -95,14 +95,26 @@ class GraphVisualizer {
     }
 
     const mainLayerKeys = Object.keys(mainLayers).map(Number).sort((a, b) => a - b);
+
+    // Find the tallest layer to use as reference for centering
+    let maxLayerHeight = 0;
+    for (const layerIdx of mainLayerKeys) {
+      const count = mainLayers[layerIdx].length;
+      const height = (count - 1) * this.nodeGap + this.nodeHeight;
+      maxLayerHeight = Math.max(maxLayerHeight, height);
+    }
+
+    // Position each layer centered relative to the tallest layer
     let mainMaxY = 0;
     for (const layerIdx of mainLayerKeys) {
       const layerNodes = mainLayers[layerIdx];
       const col = mainLayerKeys.indexOf(layerIdx);
       const x = this.padding + col * this.layerGap;
+      const layerHeight = (layerNodes.length - 1) * this.nodeGap + this.nodeHeight;
+      const yOffset = this.padding + (maxLayerHeight - layerHeight) / 2;
       for (let i = 0; i < layerNodes.length; i++) {
         layerNodes[i].x = x;
-        layerNodes[i].y = this.padding + i * this.nodeGap;
+        layerNodes[i].y = yOffset + i * this.nodeGap;
         mainMaxY = Math.max(mainMaxY, layerNodes[i].y + this.nodeHeight);
       }
     }
@@ -120,15 +132,23 @@ class GraphVisualizer {
         bpLayers[layer].push(n);
       }
 
-      // Re-index byproduct layers starting from 0
+      // Re-index byproduct layers starting from 0, centered like main flow
       const bpLayerKeys = Object.keys(bpLayers).map(Number).sort((a, b) => a - b);
+      let maxBpLayerHeight = 0;
+      for (const layerIdx of bpLayerKeys) {
+        const count = bpLayers[layerIdx].length;
+        const height = (count - 1) * this.nodeGap + this.nodeHeight;
+        maxBpLayerHeight = Math.max(maxBpLayerHeight, height);
+      }
       for (const layerIdx of bpLayerKeys) {
         const layerNodes = bpLayers[layerIdx];
         const col = bpLayerKeys.indexOf(layerIdx);
         const x = this.padding + col * this.layerGap;
+        const layerHeight = (layerNodes.length - 1) * this.nodeGap + this.nodeHeight;
+        const yOffset = bpStartY + (maxBpLayerHeight - layerHeight) / 2;
         for (let i = 0; i < layerNodes.length; i++) {
           layerNodes[i].x = x;
-          layerNodes[i].y = bpStartY + i * this.nodeGap;
+          layerNodes[i].y = yOffset + i * this.nodeGap;
         }
       }
     }
