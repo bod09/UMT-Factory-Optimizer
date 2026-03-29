@@ -16,6 +16,7 @@ function saveConfig() {
     depthMax: $("#depth-max").value,
     outputBelts: $("#output-belts").value,
     oreQuantity: $("#ore-quantity").value,
+    oreSelect: $("#ore-select").value,
     doubleSeller: $("#double-seller").checked,
     xxlBackpack: $("#xxl-backpack").checked,
     theoreticalMax: $("#theoretical-max").checked,
@@ -42,6 +43,15 @@ function loadConfig() {
     if (config.depthMax) $("#depth-max").value = config.depthMax;
     if (config.outputBelts) $("#output-belts").value = config.outputBelts;
     if (config.oreQuantity) $("#ore-quantity").value = config.oreQuantity;
+    if (config.oreSelect) {
+      $("#ore-select").value = config.oreSelect;
+      // Trigger the change handler to update UI state
+      const depthDisabled = config.oreSelect !== "all";
+      $("#depth-min").disabled = depthDisabled;
+      $("#depth-max").disabled = depthDisabled;
+      $("#zone-select").disabled = depthDisabled;
+      $("#ore-select-hint").textContent = depthDisabled ? "Overrides depth" : "Uses depth range";
+    }
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
     if (config.xxlBackpack) $("#xxl-backpack").checked = config.xxlBackpack;
     if (config.theoreticalMax) $("#theoretical-max").checked = config.theoreticalMax;
@@ -124,9 +134,34 @@ function initZoneSelect() {
     opt.textContent = `${layer.name} (${layer.depthMin}-${layer.depthMax}m)`;
     select.appendChild(opt);
   });
-  // Default to Bedrock
   select.value = "550-849";
   applyZone("550-849");
+
+  // Populate ore selector
+  const oreSelect = $("#ore-select");
+  ORES.forEach(ore => {
+    const opt = document.createElement("option");
+    opt.value = `ore:${ore.name}`;
+    opt.textContent = `${ore.name} ($${ore.value.toLocaleString()})`;
+    oreSelect.appendChild(opt);
+  });
+  if (typeof GEMS !== "undefined") {
+    GEMS.forEach(gem => {
+      const opt = document.createElement("option");
+      opt.value = `gem:${gem.name}`;
+      opt.textContent = `${gem.name} ($${gem.value.toLocaleString()})`;
+      oreSelect.appendChild(opt);
+    });
+  }
+  oreSelect.addEventListener("change", () => {
+    const val = oreSelect.value;
+    const depthDisabled = val !== "all";
+    $("#depth-min").disabled = depthDisabled;
+    $("#depth-max").disabled = depthDisabled;
+    $("#zone-select").disabled = depthDisabled;
+    $("#ore-select-hint").textContent = depthDisabled ? "Overrides depth" : "Uses depth range";
+    saveConfig();
+  });
 }
 
 function applyZone(value) {
@@ -239,9 +274,25 @@ function runOptimizer(scrollToResults = false) {
 
   optimizer.configure({ prestigeLevel: 0, budget, hasDoubleSeller, prestigeItems });
 
-  // Get all ores and gems at this depth
-  const oresAtDepth = getOresAtDepth(minDepth, maxDepth);
-  const gemsAtDepth = getGemsAtDepth(minDepth, maxDepth);
+  // Check if specific ore is selected
+  const oreSelectVal = $("#ore-select")?.value || "all";
+  let oresAtDepth, gemsAtDepth;
+
+  if (oreSelectVal !== "all") {
+    const [type, name] = oreSelectVal.split(":");
+    if (type === "ore") {
+      const ore = ORES.find(o => o.name === name);
+      oresAtDepth = ore ? [ore] : [];
+      gemsAtDepth = [];
+    } else {
+      const gem = GEMS?.find(g => g.name === name);
+      oresAtDepth = gem ? [gem] : [];
+      gemsAtDepth = [];
+    }
+  } else {
+    oresAtDepth = getOresAtDepth(minDepth, maxDepth);
+    gemsAtDepth = getGemsAtDepth(minDepth, maxDepth);
+  }
 
   // Render depth summary
   renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth);
