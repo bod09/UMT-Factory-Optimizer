@@ -242,81 +242,55 @@ class GraphVisualizer {
   }
 
   // Create SVG path for an edge (bezier curve)
+  // Two simple rules:
+  //   1. Within same flow (same row): left→right using right/left ports
+  //   2. Between flows (different rows): top/bottom ports
   createEdgePath(from, to, edge) {
-    const dx = to.x - from.x;
     const dy = to.y - from.y;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const sameRow = absDy < this.nodeHeight * 0.5;
-    const differentRow = absDy > this.nodeHeight * 0.5;
-    const targetRight = dx > this.nodeWidth * 0.5;
-    const targetLeft = dx < -this.nodeWidth * 0.5;
-    const sameColumn = absDx < this.nodeWidth * 1.5;
+    const sameFlow = Math.abs(dy) < this.nodeHeight;
 
     let x1, y1, x2, y2;
-    let connectionType; // 'horizontal', 'vertical-down', 'vertical-up', 'cross-row', 'back-edge'
+    let connectionType;
 
-    if (sameRow && targetRight) {
-      // Same row, target to the right: right → left (normal flow)
-      connectionType = 'horizontal';
-      x1 = from.x + this.nodeWidth; y1 = from.y + this.nodeHeight / 2;
-      x2 = to.x; y2 = to.y + this.nodeHeight / 2;
-    } else if (sameColumn && dy > 0) {
-      // Same column, target below: bottom → top
-      connectionType = 'vertical-down';
-      x1 = from.x + this.nodeWidth / 2; y1 = from.y + this.nodeHeight;
-      x2 = to.x + this.nodeWidth / 2; y2 = to.y;
-    } else if (sameColumn && dy < 0) {
-      // Same column, target above: top → bottom
-      connectionType = 'vertical-up';
-      x1 = from.x + this.nodeWidth / 2; y1 = from.y;
-      x2 = to.x + this.nodeWidth / 2; y2 = to.y + this.nodeHeight;
-    } else if (differentRow && targetRight && dy < 0) {
-      // Different row, target above-right: top → bottom
-      connectionType = 'cross-row-up';
-      x1 = from.x + this.nodeWidth / 2; y1 = from.y;
-      x2 = to.x + this.nodeWidth / 2; y2 = to.y + this.nodeHeight;
-    } else if (differentRow && targetRight && dy > 0) {
-      // Different row, target below-right: bottom → top
-      connectionType = 'cross-row-down';
-      x1 = from.x + this.nodeWidth / 2; y1 = from.y + this.nodeHeight;
-      x2 = to.x + this.nodeWidth / 2; y2 = to.y;
-    } else if (differentRow && targetLeft && dy < 0) {
-      // Different row, target above-left: top → bottom (back-edge going up)
-      connectionType = 'back-edge-up';
-      x1 = from.x + this.nodeWidth / 2; y1 = from.y;
-      x2 = to.x + this.nodeWidth / 2; y2 = to.y + this.nodeHeight;
-    } else if (targetLeft || (sameRow && dx <= 0)) {
-      // Same row or target to the left: back-edge
-      connectionType = 'back-edge';
-      x1 = from.x + this.nodeWidth; y1 = from.y + this.nodeHeight / 2;
-      x2 = to.x; y2 = to.y + this.nodeHeight / 2;
+    if (sameFlow) {
+      // WITHIN a flow: always right side → left side
+      connectionType = to.x > from.x ? 'horizontal' : 'back-edge';
+      x1 = from.x + this.nodeWidth;
+      y1 = from.y + this.nodeHeight / 2;
+      x2 = to.x;
+      y2 = to.y + this.nodeHeight / 2;
     } else {
-      // Fallback: horizontal
-      connectionType = 'horizontal';
-      x1 = from.x + this.nodeWidth; y1 = from.y + this.nodeHeight / 2;
-      x2 = to.x; y2 = to.y + this.nodeHeight / 2;
+      // BETWEEN flows: always top/bottom ports
+      connectionType = 'vertical';
+      if (dy > 0) {
+        // Target is below: bottom of source → top of target
+        x1 = from.x + this.nodeWidth / 2;
+        y1 = from.y + this.nodeHeight;
+        x2 = to.x + this.nodeWidth / 2;
+        y2 = to.y;
+      } else {
+        // Target is above: top of source → bottom of target
+        x1 = from.x + this.nodeWidth / 2;
+        y1 = from.y;
+        x2 = to.x + this.nodeWidth / 2;
+        y2 = to.y + this.nodeHeight;
+      }
     }
 
     let d;
     if (connectionType === 'horizontal') {
       const cx = (x1 + x2) / 2;
       d = `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`;
-    } else if (connectionType.startsWith('vertical') || connectionType.startsWith('cross-row')) {
-      // Smooth S-curve for vertical and cross-row connections
+    } else if (connectionType === 'vertical') {
       const cy = (y1 + y2) / 2;
       d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
-    } else if (connectionType === 'back-edge-up') {
-      // Route: go up from source, curve left to target
-      const midY = Math.min(y1, y2) - 30;
-      d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
     } else {
       // back-edge: curve above both nodes
       const midY = Math.min(from.y, to.y) - 40;
       d = `M ${x1} ${y1} C ${x1 + 50} ${midY}, ${x2 - 50} ${midY}, ${x2} ${y2}`;
     }
 
-    const isBackEdge = connectionType.startsWith('back-edge');
+    const isBackEdge = connectionType === 'back-edge';
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
