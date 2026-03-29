@@ -93,16 +93,16 @@ class FlowOptimizer {
     let val = baseValue;
     const machines = ["ore_source"];
 
-    // Ore upgrader
+    // Ore upgrader (always in factory when owned, max tier ores pass through)
     if (this.config.prestigeItems?.oreUpgrader) {
       const oreName = ORES.find(o => o.value === baseValue)?.name;
       if (oreName) {
         const upgraded = getUpgradedOreValue(oreName);
         if (upgraded !== null) {
           val = upgraded;
-          machines.push("ore_upgrader");
         }
       }
+      machines.push("ore_upgrader");
     }
 
     // Apply ore modifiers in order: flat bonuses first, then percent
