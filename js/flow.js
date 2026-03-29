@@ -300,14 +300,13 @@ class FlowOptimizer {
         const visited = new Set([itemType, outputType]);
         let currentType = outputType;
         let currentValue = machineOutputValue;
+        const downstreamChain = []; // Full chain for graph: [{machine, type, value}, ...]
 
-        // Follow simple processing chains: clay → ceramic_furnace → ceramic ($150)
+        // Follow processing chains: dust → clay_mixer → clay → ceramic_furnace → ceramic
         for (let depth = 0; depth < 5; depth++) {
           let bestNext = null;
           for (const [nextId, nextM] of this.registry.machines) {
             if (!this.registry.isAvailable(nextId, this.config)) continue;
-            // Follow processing machines that accept this type
-            // Allow multi-input if ALL inputs are the same type (clay_mixer: dust+dust)
             if (!nextM.inputs || nextM.inputs.length === 0) continue;
             const allSameType = nextM.inputs.every(inp =>
               inp === currentType || inp.split("|").includes(currentType)
@@ -328,6 +327,7 @@ class FlowOptimizer {
             }
           }
           if (!bestNext || bestNext.value <= currentValue) break;
+          downstreamChain.push(bestNext);
           currentValue = bestNext.value;
           currentType = bestNext.type;
           visited.add(currentType);
@@ -336,9 +336,6 @@ class FlowOptimizer {
 
         if (finalValue > bestValue) {
           bestValue = finalValue;
-          // Build result in SAME format as computeBestProduction:
-          // inputs = what feeds INTO this machine (empty for free items)
-          // The downstream chain is in the memo, NOT nested in inputs
           bestResult = {
             value: finalValue,
             machine: machineId,
@@ -346,9 +343,8 @@ class FlowOptimizer {
             resolvedType: outputType,
             oreCount: 0,
             isByproduct: true,
-            // Downstream chain info for the graph
-            downstreamMachine: currentType !== outputType ? currentType : null,
-            downstreamType: currentType,
+            // Full downstream chain for the graph to render
+            downstreamChain,
           };
         }
       }

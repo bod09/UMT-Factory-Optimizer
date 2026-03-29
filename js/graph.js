@@ -204,9 +204,14 @@ class GraphGenerator {
 
       const machine = node.machine || "unknown";
 
-      // Skip byproduct placeholder nodes - these represent items that come
-      // from the byproduct chain (stone/dust) for free. Don't create graph nodes
-      // for them; the byproduct sub-graph handles the actual chain.
+      // Skip nodes provided by the secondary output chain:
+      // - Placeholder nodes (byproduct_free, cycle_ref)
+      // - oreCount=0 nodes that aren't the ore chain (ceramic, clay, dust, crusher)
+      //   These come from secondary outputs and are created by the side chain walker.
+      if (node.oreCount === 0 && machine !== "ore_source" && !node.machines && machine !== "unknown") {
+        // This subtree is provided by the secondary output chain - don't create nodes
+        return null;
+      }
       if (machine === "smelter_byproduct" || machine === "byproduct_free" || machine === "byproduct_source" || machine === "cycle_ref") {
         // Don't create a node, just skip. The parent will have a dangling
         // childKey that gets connected to the byproduct chain later.
@@ -297,7 +302,8 @@ class GraphGenerator {
           // Create source node for the secondary output (e.g., "Stone")
           const sourceKey = getKey("secondary_output", bp.type);
           const typeName = ITEM_TYPES[bp.type] || bp.type;
-          if (!uniqueNodes.has(sourceKey)) {
+          const isFirstVisit = !uniqueNodes.has(sourceKey);
+          if (isFirstVisit) {
             uniqueNodes.set(sourceKey, {
               machine: "secondary_output",
               type: bp.type,
@@ -311,7 +317,6 @@ class GraphGenerator {
               dupProvided: false,
             });
           } else {
-            // Accumulate quantity on subsequent visits
             uniqueNodes.get(sourceKey).quantity += bpQty;
           }
           // Connect parent (smelter) → stone source
@@ -321,25 +326,32 @@ class GraphGenerator {
             if (!parentNode.downstreamKeys.includes(sourceKey)) parentNode.downstreamKeys.push(sourceKey);
           }
 
-          // Build the side chain by following the flow memo forward
-          let currentResult = bp.result;
+          // Only walk the downstream chain on FIRST visit
+          // Subsequent visits just accumulate the source quantity
+          // Downstream quantities will be scaled in post-processing
+          if (!isFirstVisit) continue;
+
+          // Build side chain: first machine (from result) then downstream chain
+          const sideChainSteps = [
+            { machine: bp.result.machine, type: bp.result.resolvedType, value: bp.result.value },
+            ...(bp.result.downstreamChain || [])
+          ];
+
           let prevSideKey = sourceKey;
-          const visitedMachines = new Set();
           let currentQty = bpQty;
 
-          while (currentResult?.machine && !visitedMachines.has(currentResult.machine)) {
-            visitedMachines.add(currentResult.machine);
-            const sideMachine = registry.get(currentResult.machine);
-            // Always use registry output type for the node (what this machine PRODUCES)
-            const sideType = sideMachine?.outputs?.[0]?.type || currentResult.resolvedType || currentResult.type || "?";
-            const sideKey = getKey(currentResult.machine, sideType);
+          for (const step of sideChainSteps) {
+            if (!step.machine) continue;
+            const sideMachine = registry.get(step.machine);
+            const sideType = sideMachine?.outputs?.[0]?.type || step.type || "?";
+            const sideKey = getKey(step.machine, sideType);
 
             if (!uniqueNodes.has(sideKey)) {
               uniqueNodes.set(sideKey, {
-                machine: currentResult.machine,
+                machine: step.machine,
                 type: sideType,
-                value: currentResult.value,
-                name: sideMachine?.name || currentResult.machine,
+                value: step.value || 0,
+                name: sideMachine?.name || step.machine,
                 category: sideMachine?.category || "stonework",
                 quantity: currentQty,
                 childKeys: [],
@@ -351,36 +363,16 @@ class GraphGenerator {
               uniqueNodes.get(sideKey).quantity += currentQty;
             }
 
-            // Connect: previous → current (always has prevSideKey since source node exists)
+            // Connect previous → current
             if (prevSideKey) {
               const prevNode = uniqueNodes.get(prevSideKey);
-              if (prevNode && !prevNode.downstreamKeys) prevNode.downstreamKeys = [];
-              if (prevNode && !prevNode.downstreamKeys?.includes(sideKey)) prevNode.downstreamKeys.push(sideKey);
-            }
-
-            // If this type already exists in the main chain (e.g., ceramic_furnace),
-            // connect to it instead of creating a duplicate
-            const mainChainKey = getKey(currentResult.machine, sideType);
-            const existingMain = uniqueNodes.get(mainChainKey);
-            if (existingMain && !existingMain.isByproduct) {
-              // Already in main chain - just connect and stop
-              break;
+              if (prevNode) {
+                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+                if (!prevNode.downstreamKeys.includes(sideKey)) prevNode.downstreamKeys.push(sideKey);
+              }
             }
 
             prevSideKey = sideKey;
-
-            // Follow downstream: look up the OUTPUT type in the memo
-            if (currentResult.downstreamMachine) {
-              // Flow told us what's next
-              const nextResult = flowMemo?.get(currentResult.downstreamType || sideType);
-              currentResult = nextResult || null;
-              // Adjust qty for combining machines
-              if (sideMachine?.inputs?.length >= 2) {
-                currentQty = Math.max(1, Math.ceil(currentQty / (sideMachine.inputs.length || 1)));
-              }
-            } else {
-              break;
-            }
           }
         }
       }
@@ -501,9 +493,33 @@ class GraphGenerator {
       oreCount: 0,
     });
 
-    // Post-process: build secondary output side chains now that all quantities are final
-    // No separate byproduct post-processing needed - byproduct outputs are walked
-    // by the same walkChain function as everything else (unified chain)
+    // Post-process: scale side chain quantities based on final source quantities
+    // The downstream chain was walked once with qty=1. Scale based on actual source qty.
+    for (const [key, data] of uniqueNodes) {
+      if (data.machine === "secondary_output" && data.downstreamKeys) {
+        const sourceQty = data.quantity; // Final accumulated quantity (e.g., 12 stone)
+        // Walk downstream and scale quantities
+        let currentQty = sourceQty;
+        const visited = new Set([key]);
+        let currentKey = key;
+        while (true) {
+          const node = uniqueNodes.get(currentKey);
+          if (!node?.downstreamKeys?.length) break;
+          const nextKey = node.downstreamKeys[0]; // Follow first downstream
+          if (visited.has(nextKey)) break;
+          visited.add(nextKey);
+          const nextNode = uniqueNodes.get(nextKey);
+          if (!nextNode) break;
+          // Adjust qty for multi-input machines
+          const nextMachine = registry.get(nextNode.machine);
+          if (nextMachine?.inputs?.length >= 2) {
+            currentQty = Math.max(1, Math.ceil(currentQty / nextMachine.inputs.length));
+          }
+          nextNode.quantity = currentQty;
+          currentKey = nextKey;
+        }
+      }
+    }
 
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
