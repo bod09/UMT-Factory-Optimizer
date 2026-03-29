@@ -981,7 +981,9 @@ class GraphGenerator {
         for (const bp of node.byproductOutputs) {
           if (!bp.result || !bp.type) continue;
           const bpRatio = bp.ratio || 0.5;
-          const bpQty = Math.max(1, Math.round(parentQty * bpRatio));
+          // Use the node's actual quantity (from uniqueNodes), not parentQty
+          const nodeActualQty = uniqueNodes.get(key)?.quantity || parentQty;
+          const bpQty = Math.max(1, Math.round(nodeActualQty * bpRatio));
 
           // Build the side chain by following the memo
           // Start with the secondary output type and trace through machines
