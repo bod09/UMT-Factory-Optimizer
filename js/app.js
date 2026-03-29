@@ -280,8 +280,8 @@ function runOptimizer(scrollToResults = false) {
       if (result.graph && (!entry.graph || result.graph.nodes.length > entry.graph.nodes.length)) {
         entry.graph = result.graph;
       }
-      entry.oreBreakdown.push({ ore: ore.name, value: result.value, perOre: result.perOre, baseValue: ore.value });
-      entry.totalValue += result.value;
+      entry.oreBreakdown.push({ ore: ore.name, value: result.value || result.totalValue, perOre: result.perOre, baseValue: ore.value });
+      entry.totalValue += (result.value || result.totalValue || 0);
       entry.totalPerOre += result.perOre;
     }
   }

@@ -108,6 +108,7 @@ class FlowOptimizer {
           totalCost: gamblingCost,
           cost: gamblingCost,
           oresNeeded: 1,
+          value: gamblingPerOre,
           isGambling: true,
         });
       }
