@@ -941,23 +941,28 @@ class GraphGenerator {
           value: node.value,
           name: m?.name || machine,
           category: m?.category || "source",
-          quantity: parentQty,
+          // Quantity from flow's oreCount (how many ores feed this branch)
+          // For single-input: oreCount = items processed
+          // For multi-input: oreCount = total ores, items = oreCount/inputOres
+          quantity: node.oreCount || 1,
           childKeys: [],
           oreCount: node.oreCount,
           isByproduct: nodeIsByproduct,
-          dupProvided: false, // set true when dup fills this slot
+          dupProvided: false,
         });
       } else {
         const existing = uniqueNodes.get(key);
-        // If this node is provided by a duplicator, return the dup key
-        // so the parent connects to the duplicator output, not directly here
         if (existing.dupProvided) {
           const dupKey = getKey("duplicator", type);
           if (uniqueNodes.has(dupKey)) {
             return dupKey;
           }
         }
-        existing.quantity += parentQty;
+        // When same node visited from multiple parents, take the MAX oreCount
+        // (the largest flow through this machine)
+        if ((node.oreCount || 0) > existing.quantity) {
+          existing.quantity = node.oreCount;
+        }
       }
 
       // Determine child quantity (m already defined above)
