@@ -408,7 +408,14 @@ function renderChainResults(results, oresAtDepth) {
       card.querySelector(".chain-breakdown-toggle").addEventListener("click", function handler() {
         const graphEl = document.getElementById(graphId);
         if (graphEl && !graphEl.dataset.rendered) {
-          graphVisualizer.render(result.graph, graphEl);
+          // Scale quantities by batch count if ore batch size is set
+          const graphToRender = result.graph;
+          if (result.batches > 1 && graphToRender.nodes) {
+            for (const node of graphToRender.nodes) {
+              if (node.quantity) node.quantity *= result.batches;
+            }
+          }
+          graphVisualizer.render(graphToRender, graphEl);
           graphEl.dataset.rendered = "true";
         }
       }, { once: true });

@@ -951,6 +951,12 @@ class GraphGenerator {
       const id = nextId++;
       keyToId.set(key, id);
 
+      // Duplicator doubles output quantity
+      let qty = data.quantity;
+      if (tn.machine === "duplicator" || tn._isDuplicator) {
+        qty = qty * 2;
+      }
+
       nodes.push({
         id,
         name,
@@ -958,7 +964,8 @@ class GraphGenerator {
         value: tn.value,
         category,
         layer: depthMap.get(key),
-        quantity: data.quantity,
+        quantity: qty,
+        isDuplicator: tn.machine === "duplicator" || tn._isDuplicator,
       });
     }
 
