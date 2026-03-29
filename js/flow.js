@@ -98,13 +98,17 @@ class FlowOptimizer {
         if (this.config.prestigeItems?.philosophersStone) tags.push("Infused");
         const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
 
+        // Build gambling graph
+        const gamblingGraph = this.buildGamblingGraph(oreValue, barSellVal, bpValue);
+
         results.push({
           chain: "Gambling Setup" + suffix,
           totalValue: gamblingPerOre,
           totalOres: 1,
           perOre: gamblingPerOre,
           endType: "gambling",
-          flowGraph: null,
+          flowGraph: gamblingGraph,
+          graph: gamblingGraph,
           totalCost: gamblingCost,
           cost: gamblingCost,
           oresNeeded: 1,
@@ -1094,6 +1098,96 @@ class FlowOptimizer {
     }
 
     return { valuePerUnit: bestValue, dest: bestDest };
+  }
+
+  // Build a graph for the gambling setup
+  buildGamblingGraph(oreValue, barSellVal, bpValue) {
+    const nodes = [];
+    const edges = [];
+    let id = 0;
+    const ds = this.config.hasDoubleSeller ? 2 : 1;
+
+    // Main flow (top row): Ore → Blast Furnace → Bar → Sell
+    const oreNode = { id: id++, name: "Ore Input", type: "ore", value: oreValue, category: "source", layer: 0, quantity: 1 };
+    nodes.push(oreNode);
+
+    // Ore processing (upgrader, cleaner, polisher, philo)
+    let prevId = oreNode.id;
+    let layerIdx = 1;
+    const oreResult = this.memo.get("ore");
+    if (this.config.prestigeItems?.oreUpgrader) {
+      const n = { id: id++, name: "Ore Upgrader", type: "ore", value: 0, category: "prestige", layer: layerIdx++, quantity: 1 };
+      nodes.push(n); edges.push({ from: prevId, to: n.id, itemType: "ore" }); prevId = n.id;
+    }
+    const oreModifiers = ["ore_cleaner", "polisher", "philosophers_stone"].filter(mid => this.registry.isAvailable(mid, this.config));
+    for (const modId of oreModifiers) {
+      const m = this.registry.get(modId);
+      if (!m) continue;
+      const n = { id: id++, name: m.name, type: "ore", value: 0, category: m.category || "multipurpose", layer: layerIdx++, quantity: 1 };
+      nodes.push(n); edges.push({ from: prevId, to: n.id, itemType: "ore" }); prevId = n.id;
+    }
+
+    const bfNode = { id: id++, name: "Blast Furnace", type: "bar", value: Math.round(barSellVal / ds), category: "metalwork", layer: layerIdx++, quantity: 1 };
+    nodes.push(bfNode); edges.push({ from: prevId, to: bfNode.id, itemType: "ore" });
+
+    const sellBarNode = { id: id++, name: "Sell Bar", type: "bar", value: Math.round(barSellVal), category: "source", layer: layerIdx++, quantity: 1 };
+    nodes.push(sellBarNode); edges.push({ from: bfNode.id, to: sellBarNode.id, itemType: "bar" });
+
+    // Byproduct flow (bottom row): Stone → Prospectors → Crusher → Sifter → Clay/Ceramic
+    let bpLayer = 0;
+    const stoneNode = { id: id++, name: "Stone (Byproduct)", type: "stone", value: 0, category: "stonework", layer: bpLayer++, quantity: 1, isByproduct: true };
+    nodes.push(stoneNode);
+    edges.push({ from: bfNode.id, to: stoneNode.id, itemType: "stone", isByproduct: true });
+
+    let bpPrevId = stoneNode.id;
+
+    // Prospectors
+    const prospectors = [...this.registry.machines.entries()]
+      .filter(([mid, m]) => m.gemType && this.registry.isAvailable(mid, this.config))
+      .sort((a, b) => {
+        const va = GEMS.find(g => g.name === a[1].gemType)?.value || 0;
+        const vb = GEMS.find(g => g.name === b[1].gemType)?.value || 0;
+        return vb - va;
+      });
+
+    for (const [mid, m] of prospectors) {
+      const gemVal = GEMS.find(g => g.name === m.gemType)?.value || 0;
+      const n = { id: id++, name: m.name, type: "stone", value: gemVal, category: "stonework", layer: bpLayer++, quantity: 1, isByproduct: true };
+      nodes.push(n); edges.push({ from: bpPrevId, to: n.id, itemType: "stone" }); bpPrevId = n.id;
+    }
+
+    // Crusher
+    const crusherNode = { id: id++, name: "Crusher", type: "dust", value: 1, category: "stonework", layer: bpLayer++, quantity: 1, isByproduct: true };
+    nodes.push(crusherNode); edges.push({ from: bpPrevId, to: crusherNode.id, itemType: "stone" }); bpPrevId = crusherNode.id;
+
+    // Sifter
+    const sifterId = this.registry.isAvailable("nano_sifter", this.config) ? "nano_sifter" : "sifter";
+    const sifterM = this.registry.get(sifterId);
+    if (sifterM) {
+      const sifterNode = { id: id++, name: sifterM.name, type: "dust", value: 0, category: "prestige", layer: bpLayer++, quantity: 1, isByproduct: true };
+      nodes.push(sifterNode); edges.push({ from: crusherNode.id, to: sifterNode.id, itemType: "dust" });
+
+      // Sifted ore loops back to ore processing
+      const loopNode = { id: id++, name: "Sifted Ore → Recycle", type: "ore", value: 0, category: "prestige", layer: bpLayer++, quantity: 1, isByproduct: true };
+      nodes.push(loopNode);
+      edges.push({ from: sifterNode.id, to: loopNode.id, itemType: "ore", isByproduct: true });
+      // Loop back edge to ore input
+      edges.push({ from: loopNode.id, to: oreNode.id, itemType: "ore", isBackEdge: true });
+
+      // Remaining dust → best destination
+      if (bpValue.flows) {
+        const dustFlow = bpValue.flows.find(f => f.type === "dust");
+        if (dustFlow && dustFlow.machine) {
+          const dustM = this.registry.get(dustFlow.machine);
+          if (dustM) {
+            const dustDestNode = { id: id++, name: dustM.name, type: dustFlow.type, value: Math.round(dustFlow.value), category: dustM.category || "stonework", layer: bpLayer++, quantity: 1, isByproduct: true };
+            nodes.push(dustDestNode); edges.push({ from: sifterNode.id, to: dustDestNode.id, itemType: "dust" });
+          }
+        }
+      }
+    }
+
+    return { nodes, edges };
   }
 
   // Sum machine costs for a chain result
