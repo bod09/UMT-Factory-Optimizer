@@ -133,16 +133,35 @@ class GraphVisualizer {
       });
     };
 
+    // Track drag vs click (don't deselect on drag)
+    let mouseDownPos = null;
+    let wasDrag = false;
+    svg.addEventListener("mousedown", (e) => {
+      mouseDownPos = { x: e.clientX, y: e.clientY };
+      wasDrag = false;
+    });
+    svg.addEventListener("mousemove", (e) => {
+      if (mouseDownPos) {
+        const dist = Math.abs(e.clientX - mouseDownPos.x) + Math.abs(e.clientY - mouseDownPos.y);
+        if (dist > 5) wasDrag = true;
+      }
+    });
+
     nodeElements.forEach((el, id) => {
       el.style.cursor = "pointer";
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        selectNode(id);
+      el.addEventListener("mouseup", (e) => {
+        if (!wasDrag) {
+          e.stopPropagation();
+          selectNode(id);
+        }
       });
     });
 
-    // Click empty space to deselect
-    svg.addEventListener("click", () => { clearSelection(); });
+    // Click empty space to deselect (only if not dragging)
+    svg.addEventListener("mouseup", () => {
+      if (!wasDrag && selectedNodeId !== null) clearSelection();
+      mouseDownPos = null;
+    });
 
     // Pan/zoom support
     container.innerHTML = "";
@@ -439,12 +458,27 @@ class GraphVisualizer {
     let isPanning = false;
     let startPoint = { x: 0, y: 0 };
 
+    // Store original bounds for clamping
+    const origX = viewBox.x;
+    const origY = viewBox.y;
+    const origW = viewBox.width;
+    const origH = viewBox.height;
+    // Allow panning with some margin but can't go fully off-screen
+    const margin = 100;
+
+    const clampViewBox = () => {
+      const minX = origX - margin;
+      const minY = origY - margin;
+      const maxX = origX + origW - viewBox.width + margin;
+      const maxY = origY + origH - viewBox.height + margin;
+      viewBox.x = Math.max(minX, Math.min(maxX, viewBox.x));
+      viewBox.y = Math.max(minY, Math.min(maxY, viewBox.y));
+    };
+
     wrapper.addEventListener("mousedown", (e) => {
-      if (e.target === svg || e.target === wrapper) {
-        isPanning = true;
-        startPoint = { x: e.clientX, y: e.clientY };
-        wrapper.style.cursor = "grabbing";
-      }
+      isPanning = true;
+      startPoint = { x: e.clientX, y: e.clientY };
+      wrapper.style.cursor = "grabbing";
     });
 
     window.addEventListener("mousemove", (e) => {
@@ -453,6 +487,7 @@ class GraphVisualizer {
       const dy = (e.clientY - startPoint.y) * (viewBox.height / wrapper.offsetHeight);
       viewBox.x -= dx;
       viewBox.y -= dy;
+      clampViewBox();
       startPoint = { x: e.clientX, y: e.clientY };
     });
 
@@ -469,10 +504,15 @@ class GraphVisualizer {
 
       const newWidth = viewBox.width * scale;
       const newHeight = viewBox.height * scale;
+
+      // Limit zoom range
+      if (newWidth < origW * 0.3 || newWidth > origW * 3) return;
+
       viewBox.x += (viewBox.width - newWidth) * mx;
       viewBox.y += (viewBox.height - newHeight) * my;
       viewBox.width = newWidth;
       viewBox.height = newHeight;
+      clampViewBox();
     });
 
     wrapper.style.cursor = "grab";
