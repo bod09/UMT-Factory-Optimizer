@@ -913,6 +913,13 @@ class GraphGenerator {
       const type = node.resolvedType || node.type || registryOutputType || "?";
       const key = getKey(machine, type);
 
+      // Skip byproduct-sourced nodes in the main chain (oreCount === 0)
+      // These come from stone byproducts (ceramic, clay, dust, glass, etc.)
+      // The byproduct sub-graph handles them and connects up to main chain
+      if (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance") {
+        return null; // Skip - byproduct graph handles this
+      }
+
       // Check if this node should have a duplicator inserted
       let insertDup = false;
       if (dupTargetType && type === dupTargetType && parentKey) {
@@ -1202,16 +1209,38 @@ class GraphGenerator {
           }
         }
 
-        // Connections (gems, excess items connecting to main graph or selling)
+        // Connections: link byproduct outputs to main chain nodes if they consume that type
+        // Otherwise sell the output
         for (const conn of byproductChain.connections || []) {
           const fromId = conn.fromId !== null ? idMapping.get(conn.fromId) : bpId;
           if (fromId === undefined) continue;
-          // Sell node for this connection
-          const sellId = nextId++;
-          nodes.push({ id: sellId, name: "Sell " + (ITEM_TYPES[conn.type] || conn.type),
-            type: conn.type, value: Math.round(conn.value || 0), category: "source",
-            layer: currentLayer + 1, isByproduct: true, quantity: conn.qty });
-          edges.push({ from: fromId, to: sellId, itemType: conn.type, isByproduct: true });
+
+          // Check if any main chain node accepts this type as input
+          let mainTarget = null;
+          for (const [mk, md] of uniqueNodes) {
+            if (md.machine === "seller" || md.machine === "quality_assurance") continue;
+            const mainMachine = registry.get(md.machine);
+            if (!mainMachine?.inputs) continue;
+            const acceptsType = mainMachine.inputs.some(inp =>
+              inp === conn.type || inp.split("|").includes(conn.type)
+            );
+            if (acceptsType) {
+              mainTarget = keyToId.get(mk);
+              break;
+            }
+          }
+
+          if (mainTarget !== undefined) {
+            // Connect byproduct output to main chain consumer
+            edges.push({ from: fromId, to: mainTarget, itemType: conn.type, isByproduct: true });
+          } else {
+            // No main chain consumer - sell it
+            const sellId = nextId++;
+            nodes.push({ id: sellId, name: "Sell " + (ITEM_TYPES[conn.type] || conn.type),
+              type: conn.type, value: Math.round(conn.value || 0), category: "source",
+              layer: currentLayer + 1, isByproduct: true, quantity: conn.qty });
+            edges.push({ from: fromId, to: sellId, itemType: conn.type, isByproduct: true });
+          }
         }
       }
     }
