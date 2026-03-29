@@ -526,6 +526,7 @@ class GraphGenerator {
     // Also calculate excess and add sell nodes
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
+      if (sideData.machine === "sell_excess") continue; // Don't connect sell nodes to main chain
       const sideType = sideData.type;
       const sideQty = sideData.quantity;
 
@@ -550,14 +551,33 @@ class GraphGenerator {
         const mainQty = mainData.quantity || 1;
         const excess = sideQty - mainQty;
         if (excess > 0) {
-          // Add "Sell Excess" node
+          // Add "Sell Excess" node with modifiers applied
+          // Excess items ARE sold directly so modifiers are safe here
           const excessKey = getKey("sell_excess", sideType);
           if (!uniqueNodes.has(excessKey)) {
+            let excessValue = sideData.value || 0;
+            // Apply any value-adding modifiers from registry
+            for (const [modId, modM] of registry.machines) {
+              if (!registry.isAvailable(modId, config)) continue;
+              if (!modM.inputs || modM.inputs.length !== 1) continue;
+              const accepts = modM.inputs.some(inp =>
+                inp === "any" || inp === sideType || inp.split("|").includes(sideType)
+              );
+              if (!accepts) continue;
+              const outType = modM.outputs?.[0]?.type;
+              if (outType && outType !== "same" && outType !== sideType) continue;
+              if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
+              let newVal = excessValue;
+              if (modM.effect === "flat") newVal += modM.value;
+              else if (modM.effect === "percent") newVal *= (1 + modM.value);
+              else if (modM.effect === "multiply") newVal *= modM.value;
+              if (newVal > excessValue) excessValue = newVal;
+            }
             const ds = config.hasDoubleSeller ? 2 : 1;
             uniqueNodes.set(excessKey, {
               machine: "sell_excess",
               type: sideType,
-              value: (sideData.value || 0) * ds,
+              value: excessValue * ds,
               name: `Sell Excess ${ITEM_TYPES[sideType] || sideType}`,
               category: "source",
               quantity: excess,

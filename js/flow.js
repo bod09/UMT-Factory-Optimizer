@@ -334,40 +334,16 @@ class FlowOptimizer {
           finalValue = currentValue;
         }
 
-        // Scan ALL machines for any that can add value to this item
-        // Sort: flat bonuses first, then multipliers (order matters for profit)
-        const valueAdders = [];
-        for (const [modId, modM] of this.registry.machines) {
-          if (!this.registry.isAvailable(modId, this.config)) continue;
-          if (!modM.inputs || modM.inputs.length !== 1) continue; // Only single-input modifiers
-          const accepts = modM.inputs.some(inp =>
-            inp === "any" || inp === currentType || inp.split("|").includes(currentType)
-          );
-          if (!accepts) continue;
-          // Must output same type or "same" (modifier, not transformer)
-          const outType = modM.outputs?.[0]?.type;
-          if (outType && outType !== "same" && outType !== currentType) continue;
-          // Must add value
-          if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
-          // Skip machines already in the downstream chain
-          if (downstreamChain.some(d => d.machine === modId)) continue;
-          valueAdders.push({ id: modId, effect: modM.effect, value: modM.value || 0 });
-        }
-        // Apply flat first, then percent/multiply (maximizes profit)
-        valueAdders.sort((a, b) => {
-          const order = { flat: 0, percent: 1, multiply: 1 };
-          return (order[a.effect] ?? 2) - (order[b.effect] ?? 2);
-        });
-        for (const mod of valueAdders) {
-          let newValue = finalValue;
-          if (mod.effect === "flat") newValue += mod.value;
-          else if (mod.effect === "percent") newValue *= (1 + mod.value);
-          else if (mod.effect === "multiply") newValue *= mod.value;
-          if (newValue > finalValue) {
-            finalValue = newValue;
-            downstreamChain.push({ machine: mod.id, type: currentType, value: finalValue });
-          }
-        }
+        // DON'T apply modifiers (QA, Polisher) to byproduct items here.
+        // These items may feed into the main chain's combiners (e.g., ceramic → superconductor).
+        // Modifier tags (QA Tested, Polished) would propagate through tag inheritance and
+        // PREVENT the main chain from applying those modifiers to the final product.
+        // Example: QA on ceramic ($150 × 20% = $30 gain) would block QA on Power Core
+        // ($2.24M × 20% = $448K loss). Modifiers are applied by the main chain to the
+        // final product, or to excess items at the sell point.
+        //
+        // The flow system handles this naturally: byproduct value feeds into the main chain
+        // calculation, and the main chain applies modifiers to the combined product.
 
         if (finalValue > bestValue) {
           bestValue = finalValue;
