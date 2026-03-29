@@ -1048,17 +1048,20 @@ class GraphGenerator {
               });
             }
 
-            // Connect to parent (smelter) or previous side chain node
+            // Connect: byproduct flows DOWNSTREAM (parent → child), not upstream
+            // Use downstreamKeys instead of childKeys so edges go the right direction
             if (prevBpKey) {
               const prevNode = uniqueNodes.get(prevBpKey);
-              if (prevNode && !prevNode.childKeys.includes(bpNodeKey)) {
-                prevNode.childKeys.push(bpNodeKey);
+              if (prevNode) {
+                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+                if (!prevNode.downstreamKeys.includes(bpNodeKey)) prevNode.downstreamKeys.push(bpNodeKey);
               }
             } else {
               // Connect to the machine that produces this byproduct
               const parentNode = uniqueNodes.get(key);
-              if (parentNode && !parentNode.childKeys.includes(bpNodeKey)) {
-                parentNode.childKeys.push(bpNodeKey);
+              if (parentNode) {
+                if (!parentNode.downstreamKeys) parentNode.downstreamKeys = [];
+                if (!parentNode.downstreamKeys.includes(bpNodeKey)) parentNode.downstreamKeys.push(bpNodeKey);
               }
             }
 
@@ -1198,6 +1201,18 @@ class GraphGenerator {
       }
       const depth = maxChildDepth + 1;
       depthMap.set(key, depth);
+      // Also assign layers to downstream (byproduct) nodes
+      // They get layers AFTER this node (to the right)
+      for (const dk of (data.downstreamKeys || [])) {
+        if (!layerVisited.has(dk)) {
+          assignLayer(dk);
+          // Downstream nodes should be at same or higher layer than parent
+          const dkDepth = depthMap.get(dk) || 0;
+          if (dkDepth <= depth) {
+            depthMap.set(dk, depth); // Same layer as source
+          }
+        }
+      }
       return depth;
     }
     // Start from seller (root)
@@ -1224,6 +1239,7 @@ class GraphGenerator {
 
     for (const [key, data] of uniqueNodes) {
       const fromId = keyToId.get(key);
+      // Input edges: child → this node (left to right flow)
       for (const childKey of data.childKeys) {
         const toId = keyToId.get(childKey);
         if (toId !== undefined) {
@@ -1232,6 +1248,19 @@ class GraphGenerator {
             from: toId,
             to: fromId,
             itemType: childData?.type || "?",
+          });
+        }
+      }
+      // Downstream edges: this node → downstream (byproduct/secondary output flow)
+      for (const dsKey of (data.downstreamKeys || [])) {
+        const toId = keyToId.get(dsKey);
+        if (toId !== undefined) {
+          const dsData = uniqueNodes.get(dsKey);
+          edges.push({
+            from: fromId,
+            to: toId,
+            itemType: dsData?.type || "?",
+            isByproduct: true,
           });
         }
       }
