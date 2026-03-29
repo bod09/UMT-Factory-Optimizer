@@ -285,38 +285,27 @@ class FlowOptimizer {
           const t = types.find(tt => tt === itemType) || types[0];
           const ir = this.getItemValue(t, baseOreValue);
           if (!ir || ir.oreCount > 0) { allFree = false; break; }
-          inputResults.push({ ...ir, resolvedType: t });
+          // Don't nest the full memo result (prevents cycles in chain structure)
+          // Just record the input type and value
+          inputResults.push({ value: ir.value, oreCount: 0, resolvedType: t, isByproduct: true });
         }
         if (!allFree) continue;
 
         const outputValue = this.applyMachineEffect(m, inputResults);
-        // Resolve the output type further - check what it can BECOME
+        // Resolve the output type further using the flow system
         // e.g., clay ($50) → ceramic_furnace → ceramic_casing ($150)
-        let finalValue = outputValue;
-        // Find machines that take the output type as input and produce something more valuable
-        for (const [nextId, nextM] of this.registry.machines) {
-          if (!this.registry.isAvailable(nextId, this.config)) continue;
-          if (nextM.effect === "chance") continue;
-          const acceptsOutput = (nextM.inputs || []).some(inp =>
-            inp === outputType || inp.split("|").includes(outputType)
-          );
-          if (!acceptsOutput) continue;
-          const nextOutput = nextM.outputs?.[0]?.type;
-          if (!nextOutput || nextOutput === outputType) continue;
-          // Compute this next machine's output value
-          let nextValue = 0;
-          if (nextM.effect === "set") nextValue = nextM.value || 0;
-          else if (nextM.effect === "multiply") nextValue = outputValue * (nextM.value || 1);
-          else if (nextM.effect === "flat") nextValue = outputValue + (nextM.value || 0);
-          if (nextValue > finalValue) finalValue = nextValue;
-        }
+        const outputResult = this.getItemValue(outputType, baseOreValue);
+        const finalValue = outputResult && outputResult.value > outputValue
+          ? outputResult.value : outputValue;
 
         if (finalValue > bestValue) {
           bestValue = finalValue;
           bestResult = {
             value: finalValue,
             machine: machineId,
-            inputs: inputResults,
+            // Chain the downstream result as a nested input for graph
+            inputs: outputResult && outputResult.value > outputValue
+              ? [outputResult] : inputResults,
             resolvedType: outputType,
             oreCount: 0,
             isByproduct: true,

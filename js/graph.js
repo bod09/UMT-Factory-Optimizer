@@ -979,103 +979,21 @@ class GraphGenerator {
         }
       }
 
-      // Record byproduct outputs for post-processing (after all quantities are final)
+      // Secondary outputs (stone from smelter, etc.) - walk them like any other output
+      // They're part of the unified chain, just visually separated as side processes
       if (node.byproductOutputs) {
-        if (!uniqueNodes._pendingByproducts) uniqueNodes._pendingByproducts = [];
-        uniqueNodes._pendingByproducts.push({ parentKey: key, outputs: node.byproductOutputs });
-      }
-      if (false && node.byproductOutputs) { // DISABLED - moved to post-processing
         for (const bp of node.byproductOutputs) {
           if (!bp.result || !bp.type) continue;
-          const bpRatio = bp.ratio || 0.5;
-          // Use the node's actual quantity (from uniqueNodes), not parentQty
-          const nodeActualQty = uniqueNodes.get(key)?.quantity || parentQty;
-          const bpQty = Math.max(1, Math.round(nodeActualQty * bpRatio));
-
-          // Build the side chain by following the memo
-          // Start with the secondary output type and trace through machines
-          let currentType = bp.type;
-          let prevBpKey = null;
-          const visitedTypes = new Set();
-          let chainDepth = 0;
-
-          while (currentType && !visitedTypes.has(currentType) && chainDepth < 8) {
-            visitedTypes.add(currentType);
-            chainDepth++;
-
-            // Find the machine that processes this type (from the flow result)
-            const typeResult = bp.result.machine && chainDepth === 1
-              ? bp.result  // First step uses the byproduct result directly
-              : null;
-
-            // For subsequent steps, check what machine produces the NEXT type
-            let machineName = null;
-            let machineId = null;
-            let nextType = null;
-            let nodeValue = 0;
-
-            if (typeResult) {
-              machineId = typeResult.machine;
-              const mach = registry.get(machineId);
-              machineName = mach?.name || machineId;
-              nextType = mach?.outputs?.[0]?.type;
-              nodeValue = typeResult.value;
-            } else {
-              // Find machine that accepts this type
-              for (const [mid, mm] of registry.machines) {
-                if (!registry.isAvailable(mid, config)) continue;
-                const accepts = (mm.inputs || []).some(inp => inp === currentType || inp.split("|").includes(currentType));
-                if (!accepts) continue;
-                const skipEffects = new Set(["transport", "split", "overflow", "filter", "gate", "duplicate", "chance"]);
-                if (skipEffects.has(mm.effect)) continue;
-                const ot = mm.outputs?.[0]?.type;
-                if (!ot || ot === "same" || ot === "passthrough" || ot === currentType) continue;
-                machineId = mid;
-                machineName = mm.name || mid;
-                nextType = ot;
-                nodeValue = mm.value || 0;
-                break;
-              }
+          // Walk the byproduct result using the same walkChain function
+          // This ensures it uses the same deduplication, same key system, same everything
+          const bpKey = walkChain(bp.result, key, nodeThru);
+          if (bpKey) {
+            const n = uniqueNodes.get(key);
+            if (n) {
+              // Use downstreamKeys for byproduct connections (edges go forward)
+              if (!n.downstreamKeys) n.downstreamKeys = [];
+              if (!n.downstreamKeys.includes(bpKey)) n.downstreamKeys.push(bpKey);
             }
-
-            if (!machineId) break;
-
-            const bpNodeKey = getKey(machineId, nextType || currentType);
-            if (!uniqueNodes.has(bpNodeKey)) {
-              const mach = registry.get(machineId);
-              uniqueNodes.set(bpNodeKey, {
-                machine: machineId,
-                type: nextType || currentType,
-                value: nodeValue,
-                name: machineName,
-                category: mach?.category || "stonework",
-                quantity: bpQty,
-                childKeys: [],
-                oreCount: 0,
-                isByproduct: true,
-                dupProvided: false,
-              });
-            }
-
-            // Connect: byproduct flows DOWNSTREAM (parent → child), not upstream
-            // Use downstreamKeys instead of childKeys so edges go the right direction
-            if (prevBpKey) {
-              const prevNode = uniqueNodes.get(prevBpKey);
-              if (prevNode) {
-                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
-                if (!prevNode.downstreamKeys.includes(bpNodeKey)) prevNode.downstreamKeys.push(bpNodeKey);
-              }
-            } else {
-              // Connect to the machine that produces this byproduct
-              const parentNode = uniqueNodes.get(key);
-              if (parentNode) {
-                if (!parentNode.downstreamKeys) parentNode.downstreamKeys = [];
-                if (!parentNode.downstreamKeys.includes(bpNodeKey)) parentNode.downstreamKeys.push(bpNodeKey);
-              }
-            }
-
-            prevBpKey = bpNodeKey;
-            currentType = nextType;
           }
         }
       }
@@ -1197,81 +1115,8 @@ class GraphGenerator {
     });
 
     // Post-process: build secondary output side chains now that all quantities are final
-    for (const pending of (uniqueNodes._pendingByproducts || [])) {
-      const parentNode = uniqueNodes.get(pending.parentKey);
-      if (!parentNode) continue;
-      const nodeActualQty = parentNode.quantity || 1;
-
-      for (const bp of pending.outputs) {
-        if (!bp.result || !bp.type) continue;
-        const bpRatio = bp.ratio || 0.5;
-        const bpQty = Math.max(1, Math.round(nodeActualQty * bpRatio));
-
-        let currentType = bp.type;
-        let prevBpKey = null;
-        const visitedTypes = new Set();
-        let chainDepth = 0;
-
-        while (currentType && !visitedTypes.has(currentType) && chainDepth < 8) {
-          visitedTypes.add(currentType);
-          chainDepth++;
-
-          let machineId = null, machineName = null, nextType = null, nodeValue = 0;
-
-          if (chainDepth === 1 && bp.result.machine) {
-            machineId = bp.result.machine;
-            const mach = registry.get(machineId);
-            machineName = mach?.name || machineId;
-            nextType = mach?.outputs?.[0]?.type;
-            nodeValue = bp.result.value;
-          } else {
-            for (const [mid, mm] of registry.machines) {
-              if (!registry.isAvailable(mid, config)) continue;
-              const accepts = (mm.inputs || []).some(inp => inp === currentType || inp.split("|").includes(currentType));
-              if (!accepts) continue;
-              const skipEffects = new Set(["transport", "split", "overflow", "filter", "gate", "duplicate", "chance"]);
-              if (skipEffects.has(mm.effect)) continue;
-              const ot = mm.outputs?.[0]?.type;
-              if (!ot || ot === "same" || ot === "passthrough" || ot === currentType) continue;
-              machineId = mid;
-              machineName = mm.name || mid;
-              nextType = ot;
-              nodeValue = mm.value || 0;
-              break;
-            }
-          }
-
-          if (!machineId) break;
-
-          const bpNodeKey = getKey(machineId, nextType || currentType);
-          if (!uniqueNodes.has(bpNodeKey)) {
-            const mach = registry.get(machineId);
-            uniqueNodes.set(bpNodeKey, {
-              machine: machineId, type: nextType || currentType,
-              value: nodeValue, name: machineName,
-              category: mach?.category || "stonework",
-              quantity: bpQty, childKeys: [], oreCount: 0,
-              isByproduct: true, dupProvided: false,
-            });
-          }
-
-          if (prevBpKey) {
-            const prevNode = uniqueNodes.get(prevBpKey);
-            if (prevNode) {
-              if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
-              if (!prevNode.downstreamKeys.includes(bpNodeKey)) prevNode.downstreamKeys.push(bpNodeKey);
-            }
-          } else {
-            if (!parentNode.downstreamKeys) parentNode.downstreamKeys = [];
-            if (!parentNode.downstreamKeys.includes(bpNodeKey)) parentNode.downstreamKeys.push(bpNodeKey);
-          }
-
-          prevBpKey = bpNodeKey;
-          currentType = nextType;
-        }
-      }
-    }
-    delete uniqueNodes._pendingByproducts;
+    // No separate byproduct post-processing needed - byproduct outputs are walked
+    // by the same walkChain function as everything else (unified chain)
 
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
