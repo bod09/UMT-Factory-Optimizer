@@ -876,6 +876,10 @@ class FlowOptimizer {
         return (node.inputs || []).some(child => containsMachine(child, targetMachine));
       }
 
+      // Only check OTHER top-level inputs of the SAME combiner
+      // The dup input itself (inputs[i]) and its parent subtree don't count
+      // e.g., Power Core: casing(i=0) is dup'd, check if electromagnet(i=2) contains casing_machine
+      // But NOT: Tablet: bolts dup'd within casing - bolts appearing twice in casing's own subtree doesn't count
       for (let j = 0; j < inputs.length; j++) {
         if (j === i) continue;
         const otherInput = inputs[j];
@@ -884,7 +888,8 @@ class FlowOptimizer {
           dupUsedElsewhere = true;
           break;
         }
-        // Check if the other input's subtree contains a machine that produces the dup type
+        // Check if the other input's subtree contains the dup type's machine
+        // This means the combiner genuinely needs the dup type from 2 independent sources
         if (dupMachine && containsMachine(otherInput, dupMachine)) {
           dupUsedElsewhere = true;
           break;
