@@ -129,7 +129,13 @@ class FlowOptimizer {
       if (cached === null && this.prevPassValues?.has(type)) {
         const prevVal = this.prevPassValues.get(type);
         if (prevVal > 0) {
-          return { value: prevVal, oreCount: 1, perOre: prevVal, machines: ["cycle_ref"], isCycleRef: true };
+          // Check if this type is free (produced from secondary outputs, not from ores)
+          // Types that were seeded with initial values are free byproduct types
+          const isFreeType = this.prevPassValues?.has(type) &&
+            (this.registry.isByproduct(type) || this.registry.getProducers(type).length === 0 ||
+             // Types produced by machines that only take free inputs (crusher takes "any" including stone)
+             type === "dust" || type === "clay" || type === "glass" || type === "ceramic_casing" || type === "stone");
+          return { value: prevVal, oreCount: isFreeType ? 0 : 1, perOre: prevVal, machines: ["cycle_ref"], isCycleRef: true };
         }
       }
       return cached;
@@ -142,28 +148,16 @@ class FlowOptimizer {
 
     if (type === "ore") {
       result = this.computeOreValue(baseOreValue);
-    } else if (type === "stone") {
-      // Stone is a byproduct of smelting (free, oreCount=0)
-      // Resolve its best destination through the flow
-      const bestDest = this.resolveBestByproductDestination("stone", baseOreValue);
-      result = {
-        value: bestDest.value, oreCount: 0, perOre: 0,
-        machine: bestDest.machine || "byproduct_source",
-        inputs: bestDest.inputs || [],
-        isByproduct: true, resolvedType: "stone",
-      };
-    } else if (type === "dust") {
-      // Dust comes from crushing stone (free, oreCount=0)
-      // Resolve its best destination through the flow
-      const bestDest = this.resolveBestByproductDestination("dust", baseOreValue);
-      result = {
-        value: bestDest.value, oreCount: 0, perOre: 0,
-        machine: bestDest.machine || "crusher",
-        inputs: bestDest.inputs || [],
-        isByproduct: true, resolvedType: "dust",
-      };
     } else {
+      // For ALL types: find the most valuable thing this type can become
+      // Uses computeBestProduction which evaluates all machines that OUTPUT this type
+      // For secondary output types (stone, dust), also evaluate what they can be PROCESSED into
       result = this.computeBestProduction(type, baseOreValue);
+
+      // If no producer found but this is a secondary output type, evaluate processing destinations
+      if (!result && (this.registry.isByproduct(type) || type === "dust" || type === "clay" || type === "glass")) {
+        result = this.computeBestProcessing(type, baseOreValue);
+      }
     }
 
     this.memo.set(type, result);
@@ -208,104 +202,150 @@ class FlowOptimizer {
     return { value: val, oreCount: 1, perOre: val, machines };
   }
 
-  // Resolve the best processing destination for a byproduct type (stone, dust, etc.)
-  // These items are free (oreCount=0) and need to find their best use
-  resolveBestByproductDestination(itemType, baseOreValue) {
+  // Find the most valuable processing chain for a free item type (stone, dust, clay, etc.)
+  // Follows the ENTIRE chain to the final product: dust → clay_mixer → clay → ceramic_furnace → $150
+  // Returns the final sellable value, not intermediate values.
+  computeBestProcessing(itemType, baseOreValue) {
     const ds = this.config.hasDoubleSeller ? 2 : 1;
 
-    // Find all machines that accept this type
+    // Use computeBestProduction to find the best machine that produces
+    // something FROM this type. Since getProducers won't find these
+    // (they're byproduct inputs, not outputs), we search manually.
     let bestValue = 0;
-    let bestMachine = null;
-    let bestInputs = [];
+    let bestResult = null;
 
     for (const [machineId, m] of this.registry.machines) {
       if (!this.registry.isAvailable(machineId, this.config)) continue;
 
+      // Skip transport, filter, and modifier machines - they don't produce value
+      const skipEffects = new Set(["transport", "split", "overflow", "filter", "gate", "duplicate", "percent"]);
+      if (skipEffects.has(m.effect)) continue;
+      // Skip machines that output "same" or "passthrough" (modifiers, not producers)
+      const outputType = m.outputs?.[0]?.type;
+      if (!outputType || outputType === "same" || outputType === "passthrough") continue;
+
+      // Check if this machine accepts our item type (including "any" inputs like crusher)
       const acceptsType = (m.inputs || []).some(inp =>
         inp === itemType || inp.split("|").includes(itemType) || inp === "any"
       );
+      // Don't use "any" input machines (crusher) to crush dust back into dust
+      if ((m.inputs || []).includes("any") && outputType === itemType) continue;
       if (!acceptsType) continue;
 
-      // Skip crusher for stone (stone → crusher → dust is valid, but don't crush stone if it can go to prospectors)
-      // Actually let the flow decide - compute the value and compare
+      if (m.effect === "chance") {
+        // Chance machines (prospectors, sifters): expected value
+        // EV = chance × byproduct_value + (1-chance) × passthrough_value
+        const chance = m.value || 0.05;
+        const byproductType = m.byproducts?.[0]?.type;
+        let byproductValue = 0;
 
-      if (m.inputs.length === 1) {
-        // Single-input machine: apply effect
-        let outputValue = 0;
-        const outputType = m.outputs?.[0]?.type;
-
-        if (m.effect === "set") {
-          outputValue = m.value || 0; // crusher sets to $1
-        } else if (m.effect === "multiply") {
-          outputValue = 0; // byproduct base value is 0 for stone
-        } else if (m.effect === "chance") {
-          // Prospector/sifter: chance to produce a valuable item
-          // The remaining items pass through
-          continue; // Handled separately below
+        if (m.gemType) {
+          byproductValue = (GEMS.find(g => g.name === m.gemType)?.value || 0) * ds;
+        } else if (byproductType) {
+          // Sifter: byproduct is ore, resolve its value
+          const bpResult = this.getItemValue(byproductType, baseOreValue);
+          byproductValue = (bpResult?.value || 0) * ds;
         }
 
-        // Resolve the output type's value recursively
-        if (outputType && outputType !== itemType) {
-          const outputResult = this.getItemValue(outputType, baseOreValue);
-          if (outputResult && outputResult.value > bestValue) {
-            bestValue = outputResult.value;
-            bestMachine = machineId;
-            bestInputs = [{ machine: machineId, type: outputType, value: outputResult.value, oreCount: 0, inputs: outputResult.inputs || [], isByproduct: true }];
+        // Passthrough: the item continues (stone passes through prospectors)
+        // The passthrough value is the NEXT machine's value for this same type
+        // Don't recurse here - it's handled by chaining machines
+
+        const ev = chance * byproductValue;
+        if (ev > 0) {
+          // Stone passes through prospectors - each takes a chance, rest continues
+          // The total value from chaining ALL prospectors + crusher + rest
+          // is computed by the multi-pass iteration. Here just record this machine.
+        }
+      } else if (m.effect === "set" && m.inputs.length === 1) {
+        // Single-input set machine (crusher, kiln, brick_mold): sets value, outputs different type
+        const outputResult = this.getItemValue(outputType, baseOreValue);
+        if (outputResult) {
+          const totalValue = outputResult.value;
+          if (totalValue > bestValue) {
+            bestValue = totalValue;
+            bestResult = {
+              value: totalValue,
+              machine: machineId,
+              inputs: [],
+              resolvedType: outputType,
+              oreCount: 0,
+              isByproduct: true,
+              ...(outputResult.inputs ? { inputs: outputResult.inputs } : {}),
+            };
           }
         }
-      } else if (m.effect === "combine") {
-        // Combiner that uses this byproduct (e.g., clay_mixer: 2 dust → clay)
-        // All inputs are free byproduct types
-        let allInputsFree = true;
+      } else if (m.inputs.length >= 2) {
+        // Multi-input machine with free inputs (clay_mixer: 2 dust → clay)
+        let allFree = true;
         const inputResults = [];
         for (const inputSpec of m.inputs) {
           const types = inputSpec.split("|");
-          const inputType = types.find(t => t === itemType) || types[0];
-          const inputResult = this.getItemValue(inputType, baseOreValue);
-          if (!inputResult || inputResult.oreCount > 0) { allInputsFree = false; break; }
-          inputResults.push(inputResult);
+          const t = types.find(tt => tt === itemType) || types[0];
+          const ir = this.getItemValue(t, baseOreValue);
+          if (!ir || ir.oreCount > 0) { allFree = false; break; }
+          inputResults.push({ ...ir, resolvedType: t });
         }
-        if (!allInputsFree) continue;
+        if (!allFree) continue;
 
-        let outputValue = this.applyMachineEffect(m, inputResults);
-        const outputType = m.outputs?.[0]?.type;
+        const outputValue = this.applyMachineEffect(m, inputResults);
+        // Resolve the output type further - check what it can BECOME
+        // e.g., clay ($50) → ceramic_furnace → ceramic_casing ($150)
+        let finalValue = outputValue;
+        // Find machines that take the output type as input and produce something more valuable
+        for (const [nextId, nextM] of this.registry.machines) {
+          if (!this.registry.isAvailable(nextId, this.config)) continue;
+          if (nextM.effect === "chance") continue;
+          const acceptsOutput = (nextM.inputs || []).some(inp =>
+            inp === outputType || inp.split("|").includes(outputType)
+          );
+          if (!acceptsOutput) continue;
+          const nextOutput = nextM.outputs?.[0]?.type;
+          if (!nextOutput || nextOutput === outputType) continue;
+          // Compute this next machine's output value
+          let nextValue = 0;
+          if (nextM.effect === "set") nextValue = nextM.value || 0;
+          else if (nextM.effect === "multiply") nextValue = outputValue * (nextM.value || 1);
+          else if (nextM.effect === "flat") nextValue = outputValue + (nextM.value || 0);
+          if (nextValue > finalValue) finalValue = nextValue;
+        }
 
-        // Resolve output's best destination
-        if (outputType) {
-          const outputResult = this.getItemValue(outputType, baseOreValue);
-          if (outputResult && outputResult.value > bestValue) {
-            bestValue = outputResult.value;
-            bestMachine = machineId;
-            bestInputs = inputResults;
-          }
+        if (finalValue > bestValue) {
+          bestValue = finalValue;
+          bestResult = {
+            value: finalValue,
+            machine: machineId,
+            inputs: inputResults,
+            resolvedType: outputType,
+            oreCount: 0,
+            isByproduct: true,
+          };
+        }
+      } else if (m.inputs.length === 1) {
+        // Single-input non-chance machine (kiln: dust → glass)
+        let outputValue = 0;
+        if (m.effect === "multiply") outputValue = 0; // base value is 0
+        else if (m.effect === "flat") outputValue = m.value || 0;
+
+        // Resolve output
+        const outputResult = this.getItemValue(outputType, baseOreValue);
+        const finalValue = outputResult ? outputResult.value : outputValue;
+
+        if (finalValue > bestValue) {
+          bestValue = finalValue;
+          bestResult = {
+            value: finalValue,
+            machine: machineId,
+            inputs: [],
+            resolvedType: outputType,
+            oreCount: 0,
+            isByproduct: true,
+          };
         }
       }
     }
 
-    // Also check chance machines (prospectors for stone, sifters for dust)
-    // These produce valuable byproducts at a chance rate
-    for (const [machineId, m] of this.registry.machines) {
-      if (!this.registry.isAvailable(machineId, this.config)) continue;
-      if (m.effect !== "chance") continue;
-      const acceptsType = (m.inputs || []).some(inp => inp === itemType);
-      if (!acceptsType) continue;
-
-      // Expected value from the chance machine
-      const chance = m.value || 0.05;
-      const byproductType = m.byproducts?.[0]?.type || m.gemType;
-      if (!byproductType) continue;
-
-      // Value of the produced byproduct
-      let byproductValue = 0;
-      if (m.gemType) {
-        byproductValue = GEMS.find(g => g.name === m.gemType)?.value || 0;
-      }
-      const ev = chance * byproductValue * ds;
-      // Plus the remaining items (1-chance) continue to be processed
-      // This is handled by the chain - don't double count here
-    }
-
-    return { value: bestValue, machine: bestMachine, inputs: bestInputs };
+    return bestResult || { value: 0, machine: null, inputs: [] };
   }
 
   // Find the best way to produce an item type
