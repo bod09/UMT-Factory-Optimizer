@@ -93,16 +93,16 @@ class FlowOptimizer {
     let val = baseValue;
     const machines = ["ore_source"];
 
-    // Ore upgrader (always in factory when owned, max tier ores pass through)
+    // Ore upgrader (only when it actually increases value)
     if (this.config.prestigeItems?.oreUpgrader) {
       const oreName = ORES.find(o => o.value === baseValue)?.name;
       if (oreName) {
         const upgraded = getUpgradedOreValue(oreName);
         if (upgraded !== null) {
           val = upgraded;
+          machines.push("ore_upgrader");
         }
       }
-      machines.push("ore_upgrader");
     }
 
     // Apply ore modifiers in order: flat bonuses first, then percent
@@ -802,22 +802,31 @@ class FlowOptimizer {
       const oresProduced = dustAmount * chance;
       dustRemaining = dustAmount * (1 - chance);
 
-      // Sifted ores → find best terminal product (not just bar)
+      // Sifted ores → compute value through FULL pipeline independently
+      // Each sifted ore is a fresh ore going through Upgrader → Clean → Polish → etc
+      // Use computeOreValue for each ore (handles all ore modifiers including Upgrader)
+      // Then apply the same bar/processing multipliers from the main chain
       const sifterOrePool = bestSifter.id === "nano_sifter" ? NANO_SIFTER_ORES : ["Tin", "Iron", "Lead", "Silver", "Gold"];
       let avgOreValue = 0;
       for (const oreName of sifterOrePool) {
         const ore = ORES.find(o => o.name === oreName);
         if (!ore) continue;
-        // Find the best chain for this ore - use the main chain per-ore value
-        // but cap at bar value to avoid recursive amplification
-        const barResult = this.getItemValue("bar", ore.value);
-        if (barResult) {
-          let barVal = barResult.value;
+        // Compute full ore processing value independently for THIS ore
+        const siftedOreResult = this.computeOreValue(ore.value);
+        // Apply the same bar processing chain (smelt, temper, transmute etc)
+        // Use ratio: main chain bar value / main chain ore value = processing multiplier
+        const mainOre = this.memo.get("ore");
+        const mainBar = this.memo.get("bar");
+        if (mainOre && mainBar && mainOre.value > 0) {
+          // The multiplier from ore → bar (smelting, tempering, transmuters etc)
+          const barMultiplier = mainBar.value / mainOre.value;
+          let siftedBarVal = siftedOreResult.value * barMultiplier;
+          // QA
           const qa = this.registry.get("quality_assurance");
-          if (qa && this.registry.isAvailable("quality_assurance", this.config)) barVal *= (1 + qa.value);
-          avgOreValue += barVal * ds;
+          if (qa && this.registry.isAvailable("quality_assurance", this.config)) siftedBarVal *= (1 + qa.value);
+          avgOreValue += siftedBarVal * ds;
         } else {
-          avgOreValue += ore.value * ds;
+          avgOreValue += siftedOreResult.value * ds;
         }
       }
       avgOreValue /= sifterOrePool.length;

@@ -389,10 +389,9 @@ class ValueCalculator {
           const upgraded = getUpgradedOreValue(this.getOreName(oreValue));
           if (upgraded !== null) {
             val = upgraded;
+            if (mod.tag) tags.add(mod.tag);
+            path.push({ machine: modId, type: "ore", value: val });
           }
-          // Always include in path when available (max tier ores pass through unchanged)
-          if (mod.tag) tags.add(mod.tag);
-          path.push({ machine: modId, type: "ore", value: val });
         } else if (mod.effect === "flat") {
           val += mod.value;
           if (mod.tag) tags.add(mod.tag);
