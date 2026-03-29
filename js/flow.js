@@ -130,10 +130,21 @@ class FlowOptimizer {
   computeAllValues(oreValue) {
     const maxPasses = 5;
 
+    // Seed initial values for byproduct types so first pass can bootstrap
+    // These are rough estimates - subsequent passes will refine them
+    this.prevPassValues = new Map([
+      ["stone", 0],
+      ["dust", 1],
+      ["clay", 50],
+      ["ceramic_casing", 150],
+      ["glass", 30],
+    ]);
+
     for (let pass = 0; pass < maxPasses; pass++) {
-      const prevValues = new Map(
-        [...this.memo.entries()].map(([k, v]) => [k, v?.value || 0])
-      );
+      const prevValues = new Map([
+        ...this.prevPassValues,
+        ...[...this.memo.entries()].map(([k, v]) => [k, v?.value || 0])
+      ]);
 
       // Clear memo for fresh computation, but keep previous values for cycle breaking
       this.prevPassValues = prevValues;
@@ -231,9 +242,25 @@ class FlowOptimizer {
     if (type === "ore") {
       result = this.computeOreValue(baseOreValue);
     } else if (type === "stone") {
-      result = { value: 0, oreCount: 0, perOre: 0, machines: ["smelter_byproduct"], isByproduct: true };
+      // Stone is a byproduct of smelting (free, oreCount=0)
+      // Resolve its best destination through the flow
+      const bestDest = this.resolveBestByproductDestination("stone", baseOreValue);
+      result = {
+        value: bestDest.value, oreCount: 0, perOre: 0,
+        machine: bestDest.machine || "byproduct_source",
+        inputs: bestDest.inputs || [],
+        isByproduct: true, resolvedType: "stone",
+      };
     } else if (type === "dust") {
-      result = { value: 1, oreCount: 0, perOre: 0, machines: ["smelter_byproduct", "crusher"], isByproduct: true };
+      // Dust comes from crushing stone (free, oreCount=0)
+      // Resolve its best destination through the flow
+      const bestDest = this.resolveBestByproductDestination("dust", baseOreValue);
+      result = {
+        value: bestDest.value, oreCount: 0, perOre: 0,
+        machine: bestDest.machine || "crusher",
+        inputs: bestDest.inputs || [],
+        isByproduct: true, resolvedType: "dust",
+      };
     } else {
       result = this.computeBestProduction(type, baseOreValue);
     }
@@ -278,6 +305,106 @@ class FlowOptimizer {
     }
 
     return { value: val, oreCount: 1, perOre: val, machines };
+  }
+
+  // Resolve the best processing destination for a byproduct type (stone, dust, etc.)
+  // These items are free (oreCount=0) and need to find their best use
+  resolveBestByproductDestination(itemType, baseOreValue) {
+    const ds = this.config.hasDoubleSeller ? 2 : 1;
+
+    // Find all machines that accept this type
+    let bestValue = 0;
+    let bestMachine = null;
+    let bestInputs = [];
+
+    for (const [machineId, m] of this.registry.machines) {
+      if (!this.registry.isAvailable(machineId, this.config)) continue;
+
+      const acceptsType = (m.inputs || []).some(inp =>
+        inp === itemType || inp.split("|").includes(itemType) || inp === "any"
+      );
+      if (!acceptsType) continue;
+
+      // Skip crusher for stone (stone → crusher → dust is valid, but don't crush stone if it can go to prospectors)
+      // Actually let the flow decide - compute the value and compare
+
+      if (m.inputs.length === 1) {
+        // Single-input machine: apply effect
+        let outputValue = 0;
+        const outputType = m.outputs?.[0]?.type;
+
+        if (m.effect === "set") {
+          outputValue = m.value || 0; // crusher sets to $1
+        } else if (m.effect === "multiply") {
+          outputValue = 0; // byproduct base value is 0 for stone
+        } else if (m.effect === "chance") {
+          // Prospector/sifter: chance to produce a valuable item
+          // The remaining items pass through
+          continue; // Handled separately below
+        }
+
+        // Resolve the output type's value recursively
+        if (outputType && outputType !== itemType) {
+          const outputResult = this.getItemValue(outputType, baseOreValue);
+          if (outputResult && outputResult.value > bestValue) {
+            bestValue = outputResult.value;
+            bestMachine = machineId;
+            bestInputs = [{ machine: machineId, type: outputType, value: outputResult.value, oreCount: 0, inputs: outputResult.inputs || [], isByproduct: true }];
+          }
+        }
+      } else if (m.effect === "combine") {
+        // Combiner that uses this byproduct (e.g., clay_mixer: 2 dust → clay)
+        // All inputs are free byproduct types
+        let allInputsFree = true;
+        const inputResults = [];
+        for (const inputSpec of m.inputs) {
+          const types = inputSpec.split("|");
+          const inputType = types.find(t => t === itemType) || types[0];
+          const inputResult = this.getItemValue(inputType, baseOreValue);
+          if (!inputResult || inputResult.oreCount > 0) { allInputsFree = false; break; }
+          inputResults.push(inputResult);
+        }
+        if (!allInputsFree) continue;
+
+        let outputValue = this.applyMachineEffect(m, inputResults);
+        const outputType = m.outputs?.[0]?.type;
+
+        // Resolve output's best destination
+        if (outputType) {
+          const outputResult = this.getItemValue(outputType, baseOreValue);
+          if (outputResult && outputResult.value > bestValue) {
+            bestValue = outputResult.value;
+            bestMachine = machineId;
+            bestInputs = inputResults;
+          }
+        }
+      }
+    }
+
+    // Also check chance machines (prospectors for stone, sifters for dust)
+    // These produce valuable byproducts at a chance rate
+    for (const [machineId, m] of this.registry.machines) {
+      if (!this.registry.isAvailable(machineId, this.config)) continue;
+      if (m.effect !== "chance") continue;
+      const acceptsType = (m.inputs || []).some(inp => inp === itemType);
+      if (!acceptsType) continue;
+
+      // Expected value from the chance machine
+      const chance = m.value || 0.05;
+      const byproductType = m.byproducts?.[0]?.type || m.gemType;
+      if (!byproductType) continue;
+
+      // Value of the produced byproduct
+      let byproductValue = 0;
+      if (m.gemType) {
+        byproductValue = GEMS.find(g => g.name === m.gemType)?.value || 0;
+      }
+      const ev = chance * byproductValue * ds;
+      // Plus the remaining items (1-chance) continue to be processed
+      // This is handled by the chain - don't double count here
+    }
+
+    return { value: bestValue, machine: bestMachine, inputs: bestInputs };
   }
 
   // Find the best way to produce an item type
@@ -328,6 +455,25 @@ class FlowOptimizer {
       // Apply machine effect
       let outputValue = this.applyMachineEffect(machine, inputResults);
 
+      // Add byproduct value: if this machine produces byproducts,
+      // resolve their best destination and add to the output value
+      let byproductNodes = [];
+      if (machine.byproducts) {
+        const bpRatio = machine.byproductRatio || 0.5;
+        for (const bp of machine.byproducts) {
+          const bpResult = this.getItemValue(bp.type, baseOreValue);
+          if (bpResult && bpResult.value > 0) {
+            // Byproduct value per input = bpResult.value × ratio
+            outputValue += bpResult.value * bpRatio;
+            byproductNodes.push({
+              type: bp.type,
+              ratio: bpRatio,
+              result: bpResult,
+            });
+          }
+        }
+      }
+
       // Apply type-specific modifiers for the OUTPUT type
       // Skip modifiers that accept any INPUT type that was already in the inputs
       // (prevents re-applying tempering_forge to alloy_bar when bars were already tempered)
@@ -354,6 +500,7 @@ class FlowOptimizer {
           perOre,
           machine: machineId,
           inputs: inputResults,
+          byproductOutputs: byproductNodes.length > 0 ? byproductNodes : undefined,
         };
       }
     }
@@ -604,11 +751,9 @@ class FlowOptimizer {
       }
     }
 
-    // Add byproduct value
-    const mainPerOre = totalOres > 0 ? finalValue / totalOres : 0;
-    const bpValue = this.computeByproductFlow(totalOres, oreValue, mainPerOre);
-
-    const totalValue = finalValue + bpValue.totalValue;
+    // Byproduct value is now included in the chain result (unified flow)
+    // No separate computeByproductFlow needed
+    const totalValue = finalValue;
     const perOre = totalOres > 0 ? totalValue / totalOres : 0;
 
     // Build chain name
@@ -627,7 +772,7 @@ class FlowOptimizer {
     // Build graph directly from flow chain result - single source of truth
     const graph = GraphGenerator.fromFlowChain(
       chainResult, this.registry, this.config,
-      { dupAt, productQty }, bpValue
+      { dupAt, productQty }
     );
 
     return {

@@ -70,6 +70,8 @@ class MachineRegistry {
   get(id) { return this.machines.get(id); }
 
   getProducers(type) { return this.producerOf.get(type) || []; }
+  getByproducers(type) { return this.byproducerOf.get(type) || []; }
+  isByproduct(type) { return this.byproducerOf.has(type); }
   getModifiers(type) {
     const specific = this.modifiersOf.get(type) || [];
     const any = this.modifiersOf.get("__any__") || [];
@@ -913,12 +915,8 @@ class GraphGenerator {
       const type = node.resolvedType || node.type || registryOutputType || "?";
       const key = getKey(machine, type);
 
-      // Skip byproduct-sourced nodes in the main chain (oreCount === 0)
-      // These come from stone byproducts (ceramic, clay, dust, glass, etc.)
-      // The byproduct sub-graph handles them and connects up to main chain
-      if (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance") {
-        return null; // Skip - byproduct graph handles this
-      }
+      // Byproduct-sourced nodes (oreCount=0) are now part of the unified chain
+      // They get isByproduct flag for visual placement in the bottom row
 
       // Check if this node should have a duplicator inserted
       let insertDup = false;
@@ -934,6 +932,8 @@ class GraphGenerator {
       }
 
       // Create or update node
+      // Nodes with oreCount=0 are byproduct-sourced (stone, dust, clay, ceramic)
+      const nodeIsByproduct = (node.oreCount === 0 && machine !== "ore_source") || node.isByproduct;
       if (!uniqueNodes.has(key)) {
         uniqueNodes.set(key, {
           machine,
@@ -944,6 +944,7 @@ class GraphGenerator {
           quantity: parentQty,
           childKeys: [],
           oreCount: node.oreCount,
+          isByproduct: nodeIsByproduct,
           dupProvided: false, // set true when dup fills this slot
         });
       } else {
@@ -970,6 +971,23 @@ class GraphGenerator {
           if (childKey) {
             const n = uniqueNodes.get(key);
             if (n && !n.childKeys.includes(childKey)) n.childKeys.push(childKey);
+          }
+        }
+      }
+
+      // Add byproduct outputs as byproduct child nodes
+      if (node.byproductOutputs) {
+        for (const bp of node.byproductOutputs) {
+          // Walk the byproduct result as a sub-chain
+          if (bp.result) {
+            const bpKey = walkChain(bp.result, key, parentQty);
+            if (bpKey) {
+              const n = uniqueNodes.get(key);
+              if (n && !n.childKeys.includes(bpKey)) n.childKeys.push(bpKey);
+              // Mark the byproduct node
+              const bpNode = uniqueNodes.get(bpKey);
+              if (bpNode) bpNode.isByproduct = true;
+            }
           }
         }
       }
@@ -1124,6 +1142,7 @@ class GraphGenerator {
         layer: depthMap.get(key) || 0,
         quantity: data.quantity,
         outputQtyMultiplier: registry.get(data.machine)?.outputQtyMultiplier || 1,
+        isByproduct: data.isByproduct || false,
       });
     }
 
@@ -1142,108 +1161,8 @@ class GraphGenerator {
       }
     }
 
-    // Step 4: Add byproduct sub-graph
-    // Find smelter nodes and add stone byproduct chain
-    for (const [key, data] of uniqueNodes) {
-      if (!data.machine) continue;
-      const machine = registry.get(data.machine);
-      if (!machine?.byproducts) continue;
-
-      const sourceId = keyToId.get(key);
-      if (sourceId === undefined) continue;
-      const sourceLayer = depthMap.get(key) || 0;
-      const bpRatio = machine.byproductRatio || 0.5;
-      const bpQty = Math.round(data.quantity * bpRatio) || 1;
-
-      for (const bp of machine.byproducts) {
-        // Byproduct source node
-        const bpName = (ITEM_TYPES[bp.type] || bp.type) + " (Byproduct)";
-        const bpId = nextId++;
-        nodes.push({ id: bpId, name: bpName, type: bp.type, value: 0, category: "stonework",
-          layer: sourceLayer, isByproduct: true, quantity: bpQty });
-        edges.push({ from: sourceId, to: bpId, itemType: bp.type, isByproduct: true });
-
-        // Resolve byproduct chain using existing method
-        let currentLayer = sourceLayer + 1;
-        const byproductChain = GraphGenerator._resolveByproductChain(bp.type, bpQty, registry, config, currentLayer);
-
-        // Add chain nodes and edges
-        const idMapping = new Map();
-        for (const chainNode of byproductChain.nodes) {
-          const globalId = nextId++;
-          idMapping.set(chainNode.id, globalId);
-          nodes.push({ ...chainNode, id: globalId, isByproduct: true });
-        }
-        // First chain node connects to byproduct source
-        if (byproductChain.nodes.length > 0) {
-          const firstChainId = idMapping.get(byproductChain.nodes[0].id);
-          if (firstChainId !== undefined) {
-            edges.push({ from: bpId, to: firstChainId, itemType: bp.type, isByproduct: true });
-          }
-        }
-        for (const chainEdge of byproductChain.edges) {
-          const from = idMapping.get(chainEdge.from);
-          const to = idMapping.get(chainEdge.to);
-          if (from !== undefined && to !== undefined) {
-            edges.push({ ...chainEdge, from, to, isByproduct: true });
-          }
-        }
-
-        // Loop-backs (sifted ore → main chain)
-        for (const lb of byproductChain.loopBacks || []) {
-          const fromId = idMapping.get(lb.fromId);
-          if (fromId === undefined) continue;
-          // Find first ore processor in main chain
-          const oreProcessors = ["ore_upgrader", "ore_cleaner", "polisher"];
-          let target = null;
-          for (const procId of oreProcessors) {
-            const procKey = getKey(procId, "ore");
-            if (keyToId.has(procKey)) { target = keyToId.get(procKey); break; }
-          }
-          if (target === null) {
-            const oreKey = getKey("ore_source", "ore");
-            target = keyToId.get(oreKey);
-          }
-          if (target !== undefined) {
-            edges.push({ from: fromId, to: target, itemType: "ore", isByproduct: true, isLoopBack: true });
-          }
-        }
-
-        // Connections: link byproduct outputs to main chain nodes if they consume that type
-        // Otherwise sell the output
-        for (const conn of byproductChain.connections || []) {
-          const fromId = conn.fromId !== null ? idMapping.get(conn.fromId) : bpId;
-          if (fromId === undefined) continue;
-
-          // Check if any main chain node accepts this type as input
-          let mainTarget = null;
-          for (const [mk, md] of uniqueNodes) {
-            if (md.machine === "seller" || md.machine === "quality_assurance") continue;
-            const mainMachine = registry.get(md.machine);
-            if (!mainMachine?.inputs) continue;
-            const acceptsType = mainMachine.inputs.some(inp =>
-              inp === conn.type || inp.split("|").includes(conn.type)
-            );
-            if (acceptsType) {
-              mainTarget = keyToId.get(mk);
-              break;
-            }
-          }
-
-          if (mainTarget !== undefined) {
-            // Connect byproduct output to main chain consumer
-            edges.push({ from: fromId, to: mainTarget, itemType: conn.type, isByproduct: true });
-          } else {
-            // No main chain consumer - sell it
-            const sellId = nextId++;
-            nodes.push({ id: sellId, name: "Sell " + (ITEM_TYPES[conn.type] || conn.type),
-              type: conn.type, value: Math.round(conn.value || 0), category: "source",
-              layer: currentLayer + 1, isByproduct: true, quantity: conn.qty });
-            edges.push({ from: fromId, to: sellId, itemType: conn.type, isByproduct: true });
-          }
-        }
-      }
-    }
+    // Byproduct sub-graph is now part of the unified chain result
+    // Nodes with isByproduct flag are placed in the bottom row by the visualizer
 
     return { nodes, edges };
   }
