@@ -846,9 +846,14 @@ class GraphGenerator {
       if (!node) return null;
 
       // Handle ore processing chain (flat machines[] array)
+      // Chain goes: ore_source → ore_upgrader → ore_cleaner → polisher → philosophers_stone
+      // In the graph, each machine is a CHILD of the next (reversed for layer assignment)
+      // so ore_source gets the highest layer (leftmost) and last machine connects to parent
       if (node.machines && !node.inputs) {
-        let prevKey = null;
         const qty = parentQty;
+        const machineKeys = [];
+
+        // Create all nodes first
         for (const machineId of node.machines) {
           const m = registry.get(machineId);
           const type = "ore";
@@ -868,19 +873,26 @@ class GraphGenerator {
           } else {
             uniqueNodes.get(key).quantity += qty;
           }
-
-          if (prevKey) {
-            const pn = uniqueNodes.get(prevKey);
-            if (pn && !pn.childKeys.includes(key)) pn.childKeys.push(key);
-          }
-          if (parentKey && !prevKey) {
-            // Connect first ore machine to parent
-            const pn = uniqueNodes.get(parentKey);
-            if (pn && !pn.childKeys.includes(key)) pn.childKeys.push(key);
-          }
-          prevKey = key;
+          machineKeys.push(key);
         }
-        return prevKey; // Return last key in ore chain
+
+        // Link in REVERSE: each machine's child is the PREVIOUS one
+        // This makes ore_source the deepest leaf = highest layer = leftmost
+        for (let i = 1; i < machineKeys.length; i++) {
+          const currentNode = uniqueNodes.get(machineKeys[i]);
+          if (currentNode && !currentNode.childKeys.includes(machineKeys[i - 1])) {
+            currentNode.childKeys.push(machineKeys[i - 1]);
+          }
+        }
+
+        // Connect LAST machine (philosophers_stone) to parent (smelter)
+        const lastKey = machineKeys[machineKeys.length - 1];
+        if (parentKey && lastKey) {
+          const pn = uniqueNodes.get(parentKey);
+          if (pn && !pn.childKeys.includes(lastKey)) pn.childKeys.push(lastKey);
+        }
+
+        return lastKey; // Return last key so parent connects to it
       }
 
       const machine = node.machine || "unknown";
