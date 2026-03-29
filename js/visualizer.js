@@ -6,7 +6,7 @@ class GraphVisualizer {
     this.nodeWidth = 170;
     this.nodeHeight = 52;
     this.layerGap = 230;
-    this.nodeGap = 65;
+    this.nodeGap = 90;
     this.padding = 40;
   }
 
