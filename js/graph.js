@@ -884,7 +884,10 @@ class GraphGenerator {
       }
 
       const machine = node.machine || "unknown";
-      const type = node.resolvedType || node.type || "?";
+      // Get output type: from node, or look up in registry
+      const m = registry.get(machine);
+      const registryOutputType = m?.outputs?.[0]?.type;
+      const type = node.resolvedType || node.type || registryOutputType || "?";
       const key = getKey(machine, type);
 
       // Check if this node should have a duplicator inserted
@@ -902,7 +905,6 @@ class GraphGenerator {
 
       // Create or update node
       if (!uniqueNodes.has(key)) {
-        const m = registry.get(machine);
         uniqueNodes.set(key, {
           machine,
           type,
@@ -927,8 +929,7 @@ class GraphGenerator {
         existing.quantity += parentQty;
       }
 
-      // Determine child quantity
-      const m = registry.get(machine);
+      // Determine child quantity (m already defined above)
       const qtyMult = m?.outputQtyMultiplier || 1;
       const childQty = qtyMult > 1 ? Math.ceil(parentQty / qtyMult) : parentQty;
 
@@ -1025,13 +1026,15 @@ class GraphGenerator {
 
     // Add QA node if available
     const qa = registry.get("quality_assurance");
+    const rootMachine = registry.get(chainResult.machine);
+    const terminalType = chainResult.resolvedType || chainResult.type || rootMachine?.outputs?.[0]?.type || "product";
     if (qa && registry.isAvailable("quality_assurance", config)) {
-      const rootKey = getKey(chainResult.machine, chainResult.resolvedType || chainResult.type || "?");
-      const qaKey = getKey("quality_assurance", chainResult.resolvedType || chainResult.type || "?");
+      const rootKey = getKey(chainResult.machine, terminalType);
+      const qaKey = getKey("quality_assurance", terminalType);
       if (!uniqueNodes.has(qaKey)) {
         uniqueNodes.set(qaKey, {
           machine: "quality_assurance",
-          type: chainResult.resolvedType || chainResult.type || "?",
+          type: terminalType,
           value: chainResult.value * (1 + qa.value),
           name: qa.name,
           category: qa.category || "multipurpose",
@@ -1044,8 +1047,8 @@ class GraphGenerator {
 
     // Add Seller node
     const sellerKey = getKey("seller", "sell");
-    const qaKey = getKey("quality_assurance", chainResult.resolvedType || chainResult.type || "?");
-    const lastMainKey = uniqueNodes.has(qaKey) ? qaKey : getKey(chainResult.machine, chainResult.resolvedType || chainResult.type || "?");
+    const qaKeyCheck = getKey("quality_assurance", terminalType);
+    const lastMainKey = uniqueNodes.has(qaKeyCheck) ? qaKeyCheck : getKey(chainResult.machine, terminalType);
     uniqueNodes.set(sellerKey, {
       machine: "seller",
       type: "sell",
@@ -1872,7 +1875,7 @@ let machineRegistry = null;
 
 async function loadMachineRegistry() {
   try {
-    const response = await fetch("data/machines.json?v=79");
+    const response = await fetch("data/machines.json?v=" + Date.now());
     const data = await response.json();
     machineRegistry = new MachineRegistry(data.machines);
     return machineRegistry;

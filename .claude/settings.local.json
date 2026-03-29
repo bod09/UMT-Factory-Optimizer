@@ -8,7 +8,10 @@
       "Bash(python -c \"import json; json.load\\(open\\(''data/machines.json''\\)\\); print\\(''JSON valid''\\)\")",
       "Bash(python -c \"import json; d=json.load\\(open\\(''data/machines.json''\\)\\); [print\\(k,v.get\\(''inputs''\\),v.get\\(''outputs''\\)\\) for k,v in d[''machines''].items\\(\\) if k in [''alloy_furnace'',''bolt_machine'',''plate_stamper'',''frame_maker'']]\")",
       "Bash(python -c \":*)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Bash(node -c js/graph.js)",
+      "Bash(node -c js/flow.js)",
+      "Bash(node -c js/app.js)"
     ]
   }
 }
