@@ -527,6 +527,7 @@ class GraphGenerator {
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
       if (sideData.machine === "sell_excess") continue; // Don't connect sell nodes to main chain
+      if (sideKey.startsWith("excess_")) continue; // Don't connect excess modifier nodes to main chain
       const sideType = sideData.type;
       const sideQty = sideData.quantity;
 
@@ -576,35 +577,53 @@ class GraphGenerator {
             return (order[a.machine.effect] ?? 2) - (order[b.machine.effect] ?? 2);
           });
 
-          // Create nodes for each modifier, or connect to existing main chain modifier
+          // Create separate modifier nodes in side chain for cheap machines,
+          // then connect to shared main chain nodes (QA, Seller) at the end.
+          // Cheap machines like Polisher ($250) get their own side chain node.
+          // QA and Seller are shared - everything sold goes through one Seller.
           for (const mod of modifiers) {
             let newVal = excessValue;
             if (mod.machine.effect === "flat") newVal += mod.machine.value;
             else if (mod.machine.effect === "percent") newVal *= (1 + mod.machine.value);
             else if (mod.machine.effect === "multiply") newVal *= mod.machine.value;
-            if (newVal <= excessValue) continue; // Skip if no improvement
+            if (newVal <= excessValue) continue;
 
             excessValue = newVal;
 
-            // Check if this modifier already exists in the main chain
-            const existingKey = [...uniqueNodes.entries()].find(([k, d]) =>
+            // Check if this modifier exists in the main chain AND is near the seller
+            // (QA is right before Seller - share it. Polisher is in ore chain - don't share)
+            const existingMain = [...uniqueNodes.entries()].find(([k, d]) =>
               d.machine === mod.id && !d.isByproduct
             );
-
-            if (existingKey) {
-              // Connect excess flow to existing main chain modifier
-              const existNode = uniqueNodes.get(existingKey[0]);
-              if (existNode) {
-                // Add downstream from prev to this main chain node
-                const prevNode = uniqueNodes.get(prevKey);
-                if (prevNode) {
-                  if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
-                  if (!prevNode.downstreamKeys.includes(existingKey[0])) {
-                    prevNode.downstreamKeys.push(existingKey[0]);
-                  }
-                }
-                prevKey = existingKey[0];
+            const isNearSeller = existingMain && (() => {
+              // Check if this main node connects to the Seller (directly or 1 step away)
+              const mainNode = uniqueNodes.get(existingMain[0]);
+              const allKeys = [...(mainNode?.downstreamKeys || []), ...(mainNode?.childKeys || [])];
+              // Direct connection to seller
+              for (const dk of allKeys) {
+                const d = uniqueNodes.get(dk);
+                if (d?.machine === "seller") return true;
               }
+              // The seller key format: look for any node with machine="seller"
+              const sellerKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "seller");
+              if (!sellerKey) return false;
+              // Check if this node is a PARENT of the seller (seller's childKeys includes this)
+              const sellerData = uniqueNodes.get(sellerKey[0]);
+              if (sellerData?.childKeys?.includes(existingMain[0])) return true;
+              return false;
+            })();
+
+            if (existingMain && isNearSeller) {
+              // Share the main chain node (e.g., QA → Seller)
+              const prevNode = uniqueNodes.get(prevKey);
+              if (prevNode) {
+                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
+                if (!prevNode.downstreamKeys.includes(existingMain[0])) {
+                  prevNode.downstreamKeys.push(existingMain[0]);
+                }
+              }
+              prevKey = existingMain[0];
+              // Don't need to connect further - main QA already connects to Seller
             } else {
               // Create new modifier node in side chain
               const modKey = getKey("excess_" + mod.id, sideType);
@@ -633,28 +652,18 @@ class GraphGenerator {
             }
           }
 
-          // Add final Seller node for excess
-          const ds = config.hasDoubleSeller ? 2 : 1;
-          const sellerKey = getKey("sell_excess", sideType);
-          if (!uniqueNodes.has(sellerKey)) {
-            uniqueNodes.set(sellerKey, {
-              machine: "sell_excess",
-              type: sideType,
-              value: excessValue * ds,
-              name: `Sell Excess ${ITEM_TYPES[sideType] || sideType}`,
-              category: "source",
-              quantity: excess,
-              childKeys: [],
-              oreCount: 0,
-              isByproduct: true,
-              dupProvided: false,
-            });
-          }
-          const lastNode = uniqueNodes.get(prevKey);
-          if (lastNode && prevKey !== sellerKey) {
-            if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
-            if (!lastNode.downstreamKeys.includes(sellerKey)) {
-              lastNode.downstreamKeys.push(sellerKey);
+          // If we didn't connect to main QA/Seller, connect to main Seller directly
+          const lastNodeData = uniqueNodes.get(prevKey);
+          const connectedToMain = lastNodeData && !lastNodeData.isByproduct;
+          if (!connectedToMain) {
+            const mainSellerKey = [...uniqueNodes.entries()].find(([k, d]) =>
+              d.machine === "seller" && !d.isByproduct
+            );
+            if (mainSellerKey) {
+              if (!lastNodeData.downstreamKeys) lastNodeData.downstreamKeys = [];
+              if (!lastNodeData.downstreamKeys.includes(mainSellerKey[0])) {
+                lastNodeData.downstreamKeys.push(mainSellerKey[0]);
+              }
             }
           }
         }
