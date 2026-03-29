@@ -280,15 +280,7 @@ const PRESTIGE_UPGRADES = [
   { name: "Starting Money", bonusPerLevel: "+$250", medalCostFormula: "2^(level-1)" },
 ];
 
-// === PROGRESSION STAGES ===
-const PROGRESSION_STAGES = [
-  { name: "Starter", budget: "0 - $5K", budgetMax: 5000, tips: "Mine Tin/Iron/Lead near surface. Sell directly or add Ore Cleaner + Polisher.", priority: ["Copper Pickaxe ($50)", "Ore Cleaner ($80)", "Polisher ($250)", "Ore Smelter ($380)"] },
-  { name: "Early Game", budget: "$5K - $50K", budgetMax: 50000, tips: "Smelt ores into bars. Route stone through Crusher → Kiln for glass.", priority: ["Steel Pickaxe ($5K)", "Minidumper ($5K)", "Coiler ($1.75K)", "Bolt Machine ($2.8K)", "Plate Stamper ($3K)", "Kiln ($4.75K)"] },
-  { name: "Mid Game", budget: "$50K - $500K", budgetMax: 500000, tips: "Tempering Forge (2x) is huge. Build Frame → Casing chain. Start Circuit Maker.", priority: ["Tempering Forge ($50K)", "Casing Machine ($50K)", "Alloy Furnace ($100K)", "Output Belt 2 ($100K)", "Super Crawler ($200K)", "Optics Machine ($300K)"] },
-  { name: "Late Game", budget: "$500K - $5M", budgetMax: 5000000, tips: "Engine (2.5x), Superconductor (3x), Tablet (3x) are game-changers. QA adds 20% to finished products.", priority: ["Engine Factory ($1M)", "Superconductor ($1M)", "QA Machine ($2M)", "Tablet Factory ($2.5M)", "Laser Maker ($3.5M)", "Power Core ($4.5M)"] },
-  { name: "Pre-Prestige", budget: "$5M - $20M", budgetMax: 20000000, tips: "Maximize output. Use transmuter side path for 1.61x. Target $20M for first prestige.", priority: ["Output Belt 3 ($1M)", "Unloader 5 ($8M)", "Exa-Drill ($8M)", "Maximize throughput"] },
-  { name: "Post-Prestige", budget: "Medals", budgetMax: null, tips: "Nano Sifter first. Then Philosopher's Stone + Ore Upgrader. Transmuters at 4 medals. Duplicator at 8.", priority: ["Nano Sifter (1 Medal)", "Philosopher's Stone (3 Medals)", "Ore Upgrader (3 Medals)", "Transmuters (4 Medals each)", "Duplicator (8 Medals)"] },
-];
+// PROGRESSION_STAGES removed - progression now data-driven from FlowOptimizer
 
 // === PRESTIGE COST ===
 function getPrestigeCost(level) {
