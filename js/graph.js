@@ -975,19 +975,95 @@ class GraphGenerator {
         }
       }
 
-      // Add byproduct outputs as byproduct child nodes
+      // Add secondary output chain as side nodes
+      // Walk the flow memo to build the chain: stone → crusher → dust → clay_mixer → ceramic
       if (node.byproductOutputs) {
         for (const bp of node.byproductOutputs) {
-          // Walk the byproduct result as a sub-chain
-          if (bp.result) {
-            const bpKey = walkChain(bp.result, key, parentQty);
-            if (bpKey) {
-              const n = uniqueNodes.get(key);
-              if (n && !n.childKeys.includes(bpKey)) n.childKeys.push(bpKey);
-              // Mark the byproduct node
-              const bpNode = uniqueNodes.get(bpKey);
-              if (bpNode) bpNode.isByproduct = true;
+          if (!bp.result || !bp.type) continue;
+          const bpRatio = bp.ratio || 0.5;
+          const bpQty = Math.max(1, Math.round(parentQty * bpRatio));
+
+          // Build the side chain by following the memo
+          // Start with the secondary output type and trace through machines
+          let currentType = bp.type;
+          let prevBpKey = null;
+          const visitedTypes = new Set();
+          let chainDepth = 0;
+
+          while (currentType && !visitedTypes.has(currentType) && chainDepth < 8) {
+            visitedTypes.add(currentType);
+            chainDepth++;
+
+            // Find the machine that processes this type (from the flow result)
+            const typeResult = bp.result.machine && chainDepth === 1
+              ? bp.result  // First step uses the byproduct result directly
+              : null;
+
+            // For subsequent steps, check what machine produces the NEXT type
+            let machineName = null;
+            let machineId = null;
+            let nextType = null;
+            let nodeValue = 0;
+
+            if (typeResult) {
+              machineId = typeResult.machine;
+              const mach = registry.get(machineId);
+              machineName = mach?.name || machineId;
+              nextType = mach?.outputs?.[0]?.type;
+              nodeValue = typeResult.value;
+            } else {
+              // Find machine that accepts this type
+              for (const [mid, mm] of registry.machines) {
+                if (!registry.isAvailable(mid, config)) continue;
+                const accepts = (mm.inputs || []).some(inp => inp === currentType || inp.split("|").includes(currentType));
+                if (!accepts) continue;
+                const skipEffects = new Set(["transport", "split", "overflow", "filter", "gate", "duplicate", "chance"]);
+                if (skipEffects.has(mm.effect)) continue;
+                const ot = mm.outputs?.[0]?.type;
+                if (!ot || ot === "same" || ot === "passthrough" || ot === currentType) continue;
+                machineId = mid;
+                machineName = mm.name || mid;
+                nextType = ot;
+                nodeValue = mm.value || 0;
+                break;
+              }
             }
+
+            if (!machineId) break;
+
+            const bpNodeKey = getKey(machineId, nextType || currentType);
+            if (!uniqueNodes.has(bpNodeKey)) {
+              const mach = registry.get(machineId);
+              uniqueNodes.set(bpNodeKey, {
+                machine: machineId,
+                type: nextType || currentType,
+                value: nodeValue,
+                name: machineName,
+                category: mach?.category || "stonework",
+                quantity: bpQty,
+                childKeys: [],
+                oreCount: 0,
+                isByproduct: true,
+                dupProvided: false,
+              });
+            }
+
+            // Connect to parent (smelter) or previous side chain node
+            if (prevBpKey) {
+              const prevNode = uniqueNodes.get(prevBpKey);
+              if (prevNode && !prevNode.childKeys.includes(bpNodeKey)) {
+                prevNode.childKeys.push(bpNodeKey);
+              }
+            } else {
+              // Connect to the machine that produces this byproduct
+              const parentNode = uniqueNodes.get(key);
+              if (parentNode && !parentNode.childKeys.includes(bpNodeKey)) {
+                parentNode.childKeys.push(bpNodeKey);
+              }
+            }
+
+            prevBpKey = bpNodeKey;
+            currentType = nextType;
           }
         }
       }

@@ -264,14 +264,15 @@ class FlowOptimizer {
           const totalValue = outputResult.value;
           if (totalValue > bestValue) {
             bestValue = totalValue;
+            // Wrap: this machine takes itemType, outputs outputType which chains further
             bestResult = {
               value: totalValue,
               machine: machineId,
-              inputs: [],
+              // The output result IS the child - it represents the downstream chain
+              inputs: [outputResult],
               resolvedType: outputType,
               oreCount: 0,
               isByproduct: true,
-              ...(outputResult.inputs ? { inputs: outputResult.inputs } : {}),
             };
           }
         }
