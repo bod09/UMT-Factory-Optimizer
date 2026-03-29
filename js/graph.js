@@ -806,7 +806,7 @@ class ValueCalculator {
 
 class GraphGenerator {
   // Build from recipe tree: collapsed view with quantities
-  static fromRecipeTree(tree, registry, actualOreCount, config, productQty) {
+  static fromRecipeTree(tree, registry, actualOreCount, config, productQty, flowInfo = {}) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
@@ -1026,18 +1026,54 @@ class GraphGenerator {
           }
         }
 
-        // Connect loop-back edges (sifted ore → first ore processor in main chain)
+        // Connect loop-back edges (sifted ore → ore processing chain)
         for (const loopBack of byproductChain.loopBacks) {
           const fromId = idMapping.get(loopBack.fromId);
           if (fromId === undefined) continue;
 
-          // Find the best target in main graph for this type
-          // Look for the first processor of this type (lowest layer, not byproduct)
-          const processors = nodes.filter(n =>
-            n.type === loopBack.type && !n.isByproduct && n.name !== "Ore Input"
-          );
-          processors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
-          const target = processors[0] || nodes.find(n => n.name === "Ore Input");
+          // If sifted ores benefit from Ore Upgrader but it's not in the main graph,
+          // add it as a byproduct-section node
+          let target = null;
+          if (loopBack.type === "ore" && flowInfo.siftedUsesUpgrader) {
+            // Check if Ore Upgrader exists in main graph
+            target = nodes.find(n => n.name === "Ore Upgrader");
+            if (!target) {
+              // Add Ore Upgrader node in the byproduct section
+              const upgraderMachine = registry.get("ore_upgrader");
+              if (upgraderMachine) {
+                const upgraderId = nextId++;
+                const upgraderNode = {
+                  id: upgraderId,
+                  name: upgraderMachine.name,
+                  type: "ore",
+                  value: null,
+                  category: upgraderMachine.category || "prestige",
+                  layer: -1, // before main chain
+                  isByproduct: true,
+                };
+                nodes.push(upgraderNode);
+                target = upgraderNode;
+                // Connect Ore Upgrader to the first ore processor in main chain
+                const oreProcessors = nodes.filter(n =>
+                  n.type === "ore" && !n.isByproduct && n.name !== "Ore Input" && n.name !== "Ore Upgrader"
+                );
+                oreProcessors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+                const nextProcessor = oreProcessors[0];
+                if (nextProcessor) {
+                  edges.push({ from: upgraderId, to: nextProcessor.id, itemType: "ore", isByproduct: true });
+                }
+              }
+            }
+          }
+
+          // Fallback: find first ore processor in main graph
+          if (!target) {
+            const processors = nodes.filter(n =>
+              n.type === loopBack.type && !n.isByproduct && n.name !== "Ore Input"
+            );
+            processors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+            target = processors[0] || nodes.find(n => n.name === "Ore Input");
+          }
 
           if (target) {
             edges.push({ from: fromId, to: target.id, itemType: loopBack.type, isByproduct: true, isLoopBack: true });

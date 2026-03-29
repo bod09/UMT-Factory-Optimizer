@@ -484,9 +484,12 @@ class FlowOptimizer {
       }
     }
 
+    // Check if sifted ores use the Ore Upgrader (for graph)
+    const siftedUsesUpgrader = bpValue.flows?.some(f => f.siftedUsesUpgrader);
+
     // Build graph using existing GraphGenerator
     const graph = recipeTree
-      ? GraphGenerator.fromRecipeTree(recipeTree, this.registry, totalOres, this.config, productQty)
+      ? GraphGenerator.fromRecipeTree(recipeTree, this.registry, totalOres, this.config, productQty, { siftedUsesUpgrader })
       : null;
 
     return {
@@ -808,9 +811,15 @@ class FlowOptimizer {
       // Then apply the same bar/processing multipliers from the main chain
       const sifterOrePool = bestSifter.id === "nano_sifter" ? NANO_SIFTER_ORES : ["Tin", "Iron", "Lead", "Silver", "Gold"];
       let avgOreValue = 0;
+      let siftedUsesUpgrader = false;
       for (const oreName of sifterOrePool) {
         const ore = ORES.find(o => o.name === oreName);
         if (!ore) continue;
+        // Check if this sifted ore benefits from Ore Upgrader
+        if (this.config.prestigeItems?.oreUpgrader) {
+          const upgraded = getUpgradedOreValue(oreName);
+          if (upgraded !== null) siftedUsesUpgrader = true;
+        }
         // Compute full ore processing value independently for THIS ore
         const siftedOreResult = this.computeOreValue(ore.value);
         // Apply the same bar processing chain (smelt, temper, transmute etc)
@@ -834,7 +843,7 @@ class FlowOptimizer {
       // Geometric series for recursive sifting
       const recursiveChance = stonePerOre * chance;
       totalValue += (oresProduced * avgOreValue) / (1 - recursiveChance);
-      flows.push({ machine: bestSifter.id, type: "ore", qty: oresProduced, value: avgOreValue });
+      flows.push({ machine: bestSifter.id, type: "ore", qty: oresProduced, value: avgOreValue, siftedUsesUpgrader });
     }
 
     // 4. Remaining dust → find best destination
