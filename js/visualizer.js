@@ -476,12 +476,14 @@ class GraphVisualizer {
     };
 
     wrapper.addEventListener("mousedown", (e) => {
+      // Only start pan on middle-click or left-click on empty space
       isPanning = true;
       startPoint = { x: e.clientX, y: e.clientY };
       wrapper.style.cursor = "grabbing";
     });
 
-    window.addEventListener("mousemove", (e) => {
+    // Use document-level listeners to prevent stuck panning
+    document.addEventListener("mousemove", (e) => {
       if (!isPanning) return;
       const dx = (e.clientX - startPoint.x) * (viewBox.width / wrapper.offsetWidth);
       const dy = (e.clientY - startPoint.y) * (viewBox.height / wrapper.offsetHeight);
@@ -491,9 +493,11 @@ class GraphVisualizer {
       startPoint = { x: e.clientX, y: e.clientY };
     });
 
-    window.addEventListener("mouseup", () => {
-      isPanning = false;
-      wrapper.style.cursor = "grab";
+    document.addEventListener("mouseup", () => {
+      if (isPanning) {
+        isPanning = false;
+        wrapper.style.cursor = "grab";
+      }
     });
 
     wrapper.addEventListener("wheel", (e) => {
@@ -504,9 +508,6 @@ class GraphVisualizer {
 
       const newWidth = viewBox.width * scale;
       const newHeight = viewBox.height * scale;
-
-      // Limit zoom range
-      if (newWidth < origW * 0.3 || newWidth > origW * 3) return;
 
       viewBox.x += (viewBox.width - newWidth) * mx;
       viewBox.y += (viewBox.height - newHeight) * my;
