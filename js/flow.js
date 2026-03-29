@@ -51,6 +51,68 @@ class FlowOptimizer {
       totalCost: 0,
     });
 
+    // Add "Gambling" chain: Blast Furnace + Crush + Sift focused strategy
+    // This is a setup where you sell the processed bar from each ore directly,
+    // but the main profit comes from stone → crush → sift → high-value ore recycling
+    if (this.registry.isAvailable("blast_furnace", this.config) && this.crushRerollEV > 0) {
+      const bf = this.registry.get("blast_furnace");
+      const bfStoneRatio = bf.byproductRatio || 1.0;
+
+      // Bar value from blast furnace (0.9x)
+      const oreResult = this.memo.get("ore");
+      const oreVal = oreResult?.value || oreValue;
+      let barVal = oreVal * (bf.value || 0.9);
+
+      // Apply tempering, transmuter enhancement if available
+      const barResult = this.memo.get("bar");
+      if (barResult && oreResult && oreResult.value > 0) {
+        // Scale bar processing by ore ratio
+        barVal = barResult.value * (oreVal * (bf.value || 0.9)) / (oreResult.value * 1.2);
+      }
+
+      // Sell the bar
+      let barSellVal = barVal;
+      const qa = this.registry.get("quality_assurance");
+      if (qa && this.registry.isAvailable("quality_assurance", this.config)) barSellVal *= (1 + qa.value);
+      barSellVal *= ds;
+
+      // Byproduct value using blast furnace (more stone = more sifting)
+      const bpValue = this.computeByproductFlow(1, oreValue, barSellVal, "blast_furnace");
+
+      // Total per ore = bar sell + byproduct value
+      const gamblingPerOre = barSellVal + bpValue.totalValue;
+
+      // Cost: blast furnace + crusher + sifter + prospectors etc
+      let gamblingCost = (bf.cost || 0);
+      for (const [id, m] of this.registry.machines) {
+        if (id === "crusher" || id === "nano_sifter" || id === "sifter") {
+          if (this.registry.isAvailable(id, this.config)) gamblingCost += (m.cost || 0);
+        }
+        if (m.gemType && this.registry.isAvailable(id, this.config)) gamblingCost += (m.cost || 0);
+      }
+
+      if (gamblingCost <= this.config.budget) {
+        const tags = [];
+        if (this.config.prestigeItems?.oreUpgrader) tags.push("Upgraded");
+        if (this.config.prestigeItems?.transmuters) tags.push("Transmute");
+        if (this.config.prestigeItems?.philosophersStone) tags.push("Infused");
+        const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
+
+        results.push({
+          chain: "Gambling Setup" + suffix,
+          totalValue: gamblingPerOre,
+          totalOres: 1,
+          perOre: gamblingPerOre,
+          endType: "gambling",
+          flowGraph: null,
+          totalCost: gamblingCost,
+          cost: gamblingCost,
+          oresNeeded: 1,
+          isGambling: true,
+        });
+      }
+    }
+
     results.sort((a, b) => b.perOre - a.perOre);
     return results;
   }
