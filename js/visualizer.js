@@ -6,7 +6,7 @@ class GraphVisualizer {
     this.nodeWidth = 170;
     this.nodeHeight = 52;
     this.layerGap = 230;
-    this.nodeGap = 90;
+    this.nodeGap = 65;
     this.padding = 40;
   }
 
@@ -247,7 +247,8 @@ class GraphVisualizer {
   //   2. Between flows (different rows): top/bottom ports
   createEdgePath(from, to, edge) {
     const dy = to.y - from.y;
-    const sameFlow = Math.abs(dy) < this.nodeHeight;
+    // Same flow = both main or both byproduct (use isByproduct flag, not Y position)
+    const sameFlow = (!!from.isByproduct) === (!!to.isByproduct);
 
     let x1, y1, x2, y2;
     let connectionType;
