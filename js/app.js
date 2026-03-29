@@ -1703,9 +1703,9 @@ function buildBuilderGraph(oreVal) {
     // Byproducts
     if (m.byproducts) {
       m.byproducts.forEach(bp => {
-        const bpNode = { id: id++, name: ITEM_TYPES[bp] || bp, type: bp, value: 0, category: "stonework", layer: idx + 1 };
+        const bpNode = { id: id++, name: ITEM_TYPES[bp] || bp, type: bp, value: 0, category: "stonework", layer: idx + 1, isByproduct: true };
         nodes.push(bpNode);
-        edges.push({ from: node.id, to: bpNode.id, itemType: bp, dashed: true });
+        edges.push({ from: node.id, to: bpNode.id, itemType: bp, isByproduct: true });
       });
     }
 
