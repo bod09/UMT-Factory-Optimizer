@@ -1042,29 +1042,24 @@ class GraphGenerator {
               const upgraderMachine = registry.get("ore_upgrader");
               if (upgraderMachine) {
                 const upgraderId = nextId++;
-                // Position at Ore Cleaner's layer - they'll stack vertically
-                // (Ore Cleaner on main row, Ore Upgrader below in byproduct row)
+                // Position ONE layer BEFORE Ore Cleaner in byproduct row
+                // so flow goes: Sifter → (down) → Ore Upgrader → (right) → Ore Cleaner
                 const oreCleanerNode = nodes.find(n => n.name === "Ore Cleaner");
-                const upgraderLayer = oreCleanerNode ? (oreCleanerNode.layer || 1) : 1;
+                const oreCleanerLayer = oreCleanerNode ? (oreCleanerNode.layer || 1) : 1;
                 const upgraderNode = {
                   id: upgraderId,
                   name: upgraderMachine.name,
                   type: "ore",
                   value: null,
                   category: upgraderMachine.category || "prestige",
-                  layer: upgraderLayer,
+                  layer: oreCleanerLayer - 1,
                   isByproduct: true,
                 };
                 nodes.push(upgraderNode);
                 target = upgraderNode;
-                // Connect Ore Upgrader to the first ore processor in main chain
-                const oreProcessors = nodes.filter(n =>
-                  n.type === "ore" && !n.isByproduct && n.name !== "Ore Input" && n.name !== "Ore Upgrader"
-                );
-                oreProcessors.sort((a, b) => (a.layer || 0) - (b.layer || 0));
-                const nextProcessor = oreProcessors[0];
-                if (nextProcessor) {
-                  edges.push({ from: upgraderId, to: nextProcessor.id, itemType: "ore", isByproduct: true });
+                // Connect Ore Upgrader → Ore Cleaner (normal left-to-right flow)
+                if (oreCleanerNode) {
+                  edges.push({ from: upgraderId, to: oreCleanerNode.id, itemType: "ore", isByproduct: true });
                 }
               }
             }
