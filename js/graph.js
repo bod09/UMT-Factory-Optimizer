@@ -1042,13 +1042,16 @@ class GraphGenerator {
               const upgraderMachine = registry.get("ore_upgrader");
               if (upgraderMachine) {
                 const upgraderId = nextId++;
+                // Find the Ore Cleaner's layer so we position just before it
+                const oreCleanerNode = nodes.find(n => n.name === "Ore Cleaner");
+                const upgraderLayer = oreCleanerNode ? (oreCleanerNode.layer || 1) - 0.5 : 0.5;
                 const upgraderNode = {
                   id: upgraderId,
                   name: upgraderMachine.name,
                   type: "ore",
                   value: null,
                   category: upgraderMachine.category || "prestige",
-                  layer: -1, // before main chain
+                  layer: upgraderLayer,
                   isByproduct: true,
                 };
                 nodes.push(upgraderNode);
