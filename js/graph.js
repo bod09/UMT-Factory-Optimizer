@@ -916,10 +916,15 @@ class GraphGenerator {
         });
       } else {
         const existing = uniqueNodes.get(key);
-        // Don't add quantity if this node is already provided by a duplicator
-        if (!existing.dupProvided) {
-          existing.quantity += parentQty;
+        // If this node is provided by a duplicator, return the dup key
+        // so the parent connects to the duplicator output, not directly here
+        if (existing.dupProvided) {
+          const dupKey = getKey("duplicator", type);
+          if (uniqueNodes.has(dupKey)) {
+            return dupKey;
+          }
         }
+        existing.quantity += parentQty;
       }
 
       // Determine child quantity
