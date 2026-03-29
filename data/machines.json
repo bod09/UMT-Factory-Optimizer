@@ -1167,7 +1167,8 @@
       "tag": "Duplicated",
       "tag2": "Unduplicatable",
       "size": "3x5",
-      "desc": "Creates 2 copies at 50% value. Both tagged Duplicated + Unduplicatable. All products made FROM duplicated items also get Unduplicatable. Unduplicatable survives Crusher."
+      "desc": "Creates 2 copies at 50% value. Both tagged Duplicated + Unduplicatable. All products made FROM duplicated items also get Unduplicatable. Unduplicatable survives Crusher.",
+      "outputQtyMultiplier": 2
     },
     "conveyor": {
       "name": "Conveyor",
@@ -1411,5 +1412,6 @@
     "crusherResets": "Crusher removes most tags except Unduplicatable",
     "cannotCrushDust": "Dust cannot be put through the crusher",
     "siftedBlocksAll": "Sifted tag blocks ALL sifter types (regular and nano)"
-  }
+  },
+  "_outputQtyMultiplier": "How many output items per input item. Default 1. Duplicator = 2."
 }

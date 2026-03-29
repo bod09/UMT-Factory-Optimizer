@@ -951,10 +951,11 @@ class GraphGenerator {
       const id = nextId++;
       keyToId.set(key, id);
 
-      // Duplicator doubles output quantity
+      // Apply output quantity multiplier from machine data (e.g., duplicator = 2x)
       let qty = data.quantity;
-      if (tn.machine === "duplicator" || tn._isDuplicator) {
-        qty = qty * 2;
+      const qtyMultiplier = machine?.outputQtyMultiplier || 1;
+      if (qtyMultiplier !== 1) {
+        qty = qty * qtyMultiplier;
       }
 
       nodes.push({
@@ -965,7 +966,7 @@ class GraphGenerator {
         category,
         layer: depthMap.get(key),
         quantity: qty,
-        isDuplicator: tn.machine === "duplicator" || tn._isDuplicator,
+        outputQtyMultiplier: qtyMultiplier,
       });
     }
 
@@ -1449,7 +1450,7 @@ let machineRegistry = null;
 
 async function loadMachineRegistry() {
   try {
-    const response = await fetch("data/machines.json");
+    const response = await fetch("data/machines.json?v=79");
     const data = await response.json();
     machineRegistry = new MachineRegistry(data.machines);
     return machineRegistry;
