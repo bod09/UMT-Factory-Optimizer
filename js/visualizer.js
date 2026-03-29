@@ -476,13 +476,14 @@ class GraphVisualizer {
     };
 
     wrapper.addEventListener("mousedown", (e) => {
-      // Only start pan on middle-click or left-click on empty space
+      // Only start pan on empty space - not on nodes (which have graph-node class)
+      const clickedNode = e.target.closest(".graph-node");
+      if (clickedNode) return; // let node handlers deal with it
       isPanning = true;
       startPoint = { x: e.clientX, y: e.clientY };
       wrapper.style.cursor = "grabbing";
     });
 
-    // Use document-level listeners to prevent stuck panning
     document.addEventListener("mousemove", (e) => {
       if (!isPanning) return;
       const dx = (e.clientX - startPoint.x) * (viewBox.width / wrapper.offsetWidth);
@@ -508,6 +509,9 @@ class GraphVisualizer {
 
       const newWidth = viewBox.width * scale;
       const newHeight = viewBox.height * scale;
+
+      // Limit zoom-out: can't zoom out further than showing all nodes
+      if (newWidth > origW || newHeight > origH) return;
 
       viewBox.x += (viewBox.width - newWidth) * mx;
       viewBox.y += (viewBox.height - newHeight) * my;
