@@ -361,8 +361,8 @@ class GraphGenerator {
               uniqueNodes.get(sideKey).quantity += currentQty;
             }
 
-            // Connect previous → current
-            if (prevSideKey) {
+            // Connect previous → current (no self-loops)
+            if (prevSideKey && prevSideKey !== sideKey) {
               const prevNode = uniqueNodes.get(prevSideKey);
               if (prevNode) {
                 if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
@@ -729,7 +729,7 @@ class GraphGenerator {
       // Input edges: child → this node (left to right flow)
       for (const childKey of data.childKeys) {
         const toId = keyToId.get(childKey);
-        if (toId !== undefined) {
+        if (toId !== undefined && toId !== fromId) { // No self-loops
           const childData = uniqueNodes.get(childKey);
           edges.push({
             from: toId,
@@ -738,10 +738,10 @@ class GraphGenerator {
           });
         }
       }
-      // Downstream edges: this node → downstream (byproduct/secondary output flow)
+      // Downstream edges: this node → downstream (secondary output flow)
       for (const dsKey of (data.downstreamKeys || [])) {
         const toId = keyToId.get(dsKey);
-        if (toId !== undefined) {
+        if (toId !== undefined && toId !== fromId) { // No self-loops
           const dsData = uniqueNodes.get(dsKey);
           edges.push({
             from: fromId,
