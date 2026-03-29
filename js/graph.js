@@ -805,11 +805,405 @@ class ValueCalculator {
 // Builds {nodes, edges} for visualization from a production path.
 
 class GraphGenerator {
-  // Build from recipe tree: collapsed view with quantities
+  // Build graph directly from FlowOptimizer chain result
+  // This is the PRIMARY graph builder - uses flow data as single source of truth
+  static fromFlowChain(chainResult, registry, config, dupInfo = {}, bpValue = {}) {
+    const nodes = [];
+    const edges = [];
+    let nextId = 0;
+    const { dupAt, productQty = 1 } = dupInfo;
+
+    // Parse dupAt to find target machine and parent
+    // e.g., "casing in power_core" → targetType="casing", parentType="power_core"
+    // e.g., "ore (before flat bonuses)" → targetMachine="ore_source"
+    let dupTargetType = null, dupParentType = null, dupTargetMachine = null;
+    if (dupAt) {
+      if (dupAt.includes("ore (before")) {
+        dupTargetMachine = "ore_source";
+      } else {
+        const parts = dupAt.split(" in ");
+        dupTargetType = parts[0];
+        dupParentType = parts[1] || null;
+      }
+    }
+
+    // Step 1: Walk chain result, build unique nodes with quantities
+    const uniqueNodes = new Map(); // key → { machine, type, value, oreCount, quantity, childKeys[] }
+
+    function getKey(machine, type) {
+      return (machine || "unknown") + ":" + (type || "?");
+    }
+
+    // Check if a subtree contains a specific machine (for dup multi-slot detection)
+    function subtreeContainsMachine(node, targetMachine) {
+      if (!node) return false;
+      if (node.machine === targetMachine) return true;
+      return (node.inputs || []).some(child => subtreeContainsMachine(child, targetMachine));
+    }
+
+    // Recursively walk the chain result tree
+    function walkChain(node, parentKey, parentQty) {
+      if (!node) return null;
+
+      // Handle ore processing chain (flat machines[] array)
+      if (node.machines && !node.inputs) {
+        let prevKey = null;
+        const qty = parentQty;
+        for (const machineId of node.machines) {
+          const m = registry.get(machineId);
+          const type = "ore";
+          const key = getKey(machineId, type);
+
+          if (!uniqueNodes.has(key)) {
+            uniqueNodes.set(key, {
+              machine: machineId,
+              type,
+              value: node.value,
+              name: m?.name || (machineId === "ore_source" ? "Ore Input" : machineId),
+              category: m?.category || "source",
+              quantity: qty,
+              childKeys: [],
+              oreCount: machineId === "ore_source" ? node.oreCount : 0,
+            });
+          } else {
+            uniqueNodes.get(key).quantity += qty;
+          }
+
+          if (prevKey) {
+            const pn = uniqueNodes.get(prevKey);
+            if (pn && !pn.childKeys.includes(key)) pn.childKeys.push(key);
+          }
+          if (parentKey && !prevKey) {
+            // Connect first ore machine to parent
+            const pn = uniqueNodes.get(parentKey);
+            if (pn && !pn.childKeys.includes(key)) pn.childKeys.push(key);
+          }
+          prevKey = key;
+        }
+        return prevKey; // Return last key in ore chain
+      }
+
+      const machine = node.machine || "unknown";
+      const type = node.resolvedType || node.type || "?";
+      const key = getKey(machine, type);
+
+      // Check if this node should have a duplicator inserted
+      let insertDup = false;
+      if (dupTargetType && type === dupTargetType && parentKey) {
+        // Check if parent matches dupParentType
+        const parentNode = uniqueNodes.get(parentKey);
+        if (!dupParentType || parentNode?.machine === dupParentType) {
+          insertDup = true;
+        }
+      }
+      if (dupTargetMachine && machine === dupTargetMachine) {
+        insertDup = true;
+      }
+
+      // Create or update node
+      if (!uniqueNodes.has(key)) {
+        const m = registry.get(machine);
+        uniqueNodes.set(key, {
+          machine,
+          type,
+          value: node.value,
+          name: m?.name || machine,
+          category: m?.category || "source",
+          quantity: parentQty,
+          childKeys: [],
+          oreCount: node.oreCount,
+          dupProvided: false, // set true when dup fills this slot
+        });
+      } else {
+        const existing = uniqueNodes.get(key);
+        // Don't add quantity if this node is already provided by a duplicator
+        if (!existing.dupProvided) {
+          existing.quantity += parentQty;
+        }
+      }
+
+      // Determine child quantity
+      const m = registry.get(machine);
+      const qtyMult = m?.outputQtyMultiplier || 1;
+      const childQty = qtyMult > 1 ? Math.ceil(parentQty / qtyMult) : parentQty;
+
+      // Recurse into inputs
+      if (node.inputs) {
+        for (const child of node.inputs) {
+          const childKey = walkChain(child, key, childQty);
+          if (childKey) {
+            const n = uniqueNodes.get(key);
+            if (n && !n.childKeys.includes(childKey)) n.childKeys.push(childKey);
+          }
+        }
+      }
+
+      // Insert duplicator between parent and this node
+      if (insertDup) {
+        const dupKey = getKey("duplicator", type);
+        const dupM = registry.get("duplicator");
+        const dupQtyMult = dupM?.outputQtyMultiplier || 2;
+
+        // Check if dup fills multiple slots: does the parent combiner
+        // use this machine's type in OTHER inputs' subtrees?
+        let dupFillsMultiSlots = false;
+        // Walk from the parent in the ORIGINAL chain result tree
+        // to check if other inputs contain this machine
+        function findOriginalParent(searchNode, targetMachine) {
+          if (!searchNode?.inputs) return null;
+          for (const child of searchNode.inputs) {
+            if (child.machine === targetMachine) return searchNode;
+            const found = findOriginalParent(child, targetMachine);
+            if (found) return found;
+          }
+          return null;
+        }
+        // Find the combiner that contains this dup target
+        const parentCombiner = dupParentType
+          ? findOriginalParent(chainResult, machine)
+          : null;
+        if (parentCombiner?.inputs) {
+          for (const sibling of parentCombiner.inputs) {
+            if (sibling.machine === machine) continue; // skip the dup target itself
+            if (subtreeContainsMachine(sibling, machine)) {
+              dupFillsMultiSlots = true;
+              break;
+            }
+          }
+        }
+
+        // For multi-slot: dup provides both slots, child built once
+        const dupChildQty = dupFillsMultiSlots
+          ? Math.ceil(parentQty / dupQtyMult)
+          : parentQty;
+
+        if (!uniqueNodes.has(dupKey)) {
+          uniqueNodes.set(dupKey, {
+            machine: "duplicator",
+            type,
+            value: node.value * 0.5,
+            name: "Duplicator",
+            category: "prestige",
+            quantity: dupChildQty * dupQtyMult,
+            childKeys: [key],
+            oreCount: 0,
+          });
+        }
+
+        // Fix child quantity (built once, dup provides copies)
+        if (dupFillsMultiSlots) {
+          const childNode = uniqueNodes.get(key);
+          if (childNode) {
+            childNode.quantity = dupChildQty;
+            childNode.dupProvided = true; // prevent subsequent visits from adding more
+          }
+        }
+
+        // Rewire: parent → dup → this node
+        if (parentKey) {
+          const parentNode = uniqueNodes.get(parentKey);
+          if (parentNode) {
+            const idx = parentNode.childKeys.indexOf(key);
+            if (idx >= 0) parentNode.childKeys[idx] = dupKey;
+            else parentNode.childKeys.push(dupKey);
+          }
+        }
+
+        return dupKey; // Parent connects to dup, not directly to this node
+      }
+
+      return key;
+    }
+
+    // Build the tree starting from QA wrapper or the chain result itself
+    walkChain(chainResult, null, productQty || 1);
+
+    // Add QA node if available
+    const qa = registry.get("quality_assurance");
+    if (qa && registry.isAvailable("quality_assurance", config)) {
+      const rootKey = getKey(chainResult.machine, chainResult.resolvedType || chainResult.type || "?");
+      const qaKey = getKey("quality_assurance", chainResult.resolvedType || chainResult.type || "?");
+      if (!uniqueNodes.has(qaKey)) {
+        uniqueNodes.set(qaKey, {
+          machine: "quality_assurance",
+          type: chainResult.resolvedType || chainResult.type || "?",
+          value: chainResult.value * (1 + qa.value),
+          name: qa.name,
+          category: qa.category || "multipurpose",
+          quantity: productQty || 1,
+          childKeys: [rootKey],
+          oreCount: 0,
+        });
+      }
+    }
+
+    // Add Seller node
+    const sellerKey = getKey("seller", "sell");
+    const qaKey = getKey("quality_assurance", chainResult.resolvedType || chainResult.type || "?");
+    const lastMainKey = uniqueNodes.has(qaKey) ? qaKey : getKey(chainResult.machine, chainResult.resolvedType || chainResult.type || "?");
+    uniqueNodes.set(sellerKey, {
+      machine: "seller",
+      type: "sell",
+      value: chainResult.value * (qa && registry.isAvailable("quality_assurance", config) ? (1 + qa.value) : 1) * (config.hasDoubleSeller ? 2 : 1),
+      name: "Seller",
+      category: "source",
+      quantity: productQty || 1,
+      childKeys: [lastMainKey],
+      oreCount: 0,
+    });
+
+    // Step 2: Assign layers (depth from leaves)
+    const depthMap = new Map();
+    const layerVisited = new Set();
+    function assignLayer(key) {
+      if (layerVisited.has(key)) return depthMap.get(key) || 0;
+      layerVisited.add(key);
+      const data = uniqueNodes.get(key);
+      if (!data) return 0;
+      let maxChildDepth = -1;
+      for (const ck of data.childKeys) {
+        maxChildDepth = Math.max(maxChildDepth, assignLayer(ck));
+      }
+      const depth = maxChildDepth + 1;
+      depthMap.set(key, depth);
+      return depth;
+    }
+    // Start from seller (root)
+    assignLayer(sellerKey);
+
+    // Step 3: Build graph nodes and edges
+    const keyToId = new Map();
+    for (const [key, data] of uniqueNodes) {
+      const id = nextId++;
+      keyToId.set(key, id);
+
+      nodes.push({
+        id,
+        name: data.name,
+        type: data.type,
+        value: Math.round(data.value),
+        category: data.category,
+        layer: depthMap.get(key) || 0,
+        quantity: data.quantity,
+        outputQtyMultiplier: registry.get(data.machine)?.outputQtyMultiplier || 1,
+      });
+    }
+
+    for (const [key, data] of uniqueNodes) {
+      const fromId = keyToId.get(key);
+      for (const childKey of data.childKeys) {
+        const toId = keyToId.get(childKey);
+        if (toId !== undefined) {
+          const childData = uniqueNodes.get(childKey);
+          edges.push({
+            from: toId,
+            to: fromId,
+            itemType: childData?.type || "?",
+          });
+        }
+      }
+    }
+
+    // Step 4: Add byproduct sub-graph
+    // Find smelter nodes and add stone byproduct chain
+    for (const [key, data] of uniqueNodes) {
+      if (!data.machine) continue;
+      const machine = registry.get(data.machine);
+      if (!machine?.byproducts) continue;
+
+      const sourceId = keyToId.get(key);
+      if (sourceId === undefined) continue;
+      const sourceLayer = depthMap.get(key) || 0;
+      const bpRatio = machine.byproductRatio || 0.5;
+      const bpQty = Math.round(data.quantity * bpRatio) || 1;
+
+      for (const bp of machine.byproducts) {
+        // Byproduct source node
+        const bpName = (ITEM_TYPES[bp.type] || bp.type) + " (Byproduct)";
+        const bpId = nextId++;
+        nodes.push({ id: bpId, name: bpName, type: bp.type, value: 0, category: "stonework",
+          layer: sourceLayer, isByproduct: true, quantity: bpQty });
+        edges.push({ from: sourceId, to: bpId, itemType: bp.type, isByproduct: true });
+
+        // Resolve byproduct chain using existing method
+        let currentLayer = sourceLayer + 1;
+        const byproductChain = GraphGenerator._resolveByproductChain(bp.type, bpQty, registry, config, currentLayer);
+
+        // Add chain nodes and edges
+        const idMapping = new Map();
+        for (const chainNode of byproductChain.nodes) {
+          const globalId = nextId++;
+          idMapping.set(chainNode.id, globalId);
+          nodes.push({ ...chainNode, id: globalId, isByproduct: true });
+        }
+        // First chain node connects to byproduct source
+        if (byproductChain.nodes.length > 0) {
+          const firstChainId = idMapping.get(byproductChain.nodes[0].id);
+          if (firstChainId !== undefined) {
+            edges.push({ from: bpId, to: firstChainId, itemType: bp.type, isByproduct: true });
+          }
+        }
+        for (const chainEdge of byproductChain.edges) {
+          const from = idMapping.get(chainEdge.from);
+          const to = idMapping.get(chainEdge.to);
+          if (from !== undefined && to !== undefined) {
+            edges.push({ ...chainEdge, from, to, isByproduct: true });
+          }
+        }
+
+        // Loop-backs (sifted ore → main chain)
+        for (const lb of byproductChain.loopBacks || []) {
+          const fromId = idMapping.get(lb.fromId);
+          if (fromId === undefined) continue;
+          // Find first ore processor in main chain
+          const oreProcessors = ["ore_upgrader", "ore_cleaner", "polisher"];
+          let target = null;
+          for (const procId of oreProcessors) {
+            const procKey = getKey(procId, "ore");
+            if (keyToId.has(procKey)) { target = keyToId.get(procKey); break; }
+          }
+          if (target === null) {
+            const oreKey = getKey("ore_source", "ore");
+            target = keyToId.get(oreKey);
+          }
+          if (target !== undefined) {
+            edges.push({ from: fromId, to: target, itemType: "ore", isByproduct: true, isLoopBack: true });
+          }
+        }
+
+        // Connections (gems, excess items connecting to main graph or selling)
+        for (const conn of byproductChain.connections || []) {
+          const fromId = conn.fromId !== null ? idMapping.get(conn.fromId) : bpId;
+          if (fromId === undefined) continue;
+          // Sell node for this connection
+          const sellId = nextId++;
+          nodes.push({ id: sellId, name: "Sell " + (ITEM_TYPES[conn.type] || conn.type),
+            type: conn.type, value: Math.round(conn.value || 0), category: "source",
+            layer: currentLayer + 1, isByproduct: true, quantity: conn.qty });
+          edges.push({ from: fromId, to: sellId, itemType: conn.type, isByproduct: true });
+        }
+      }
+    }
+
+    return { nodes, edges };
+  }
+
+  // Build from recipe tree: collapsed view with quantities (used by factory builder)
   static fromRecipeTree(tree, registry, actualOreCount, config, productQty, flowInfo = {}) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
+
+    // Deep-clone the tree to break shared references from memoization
+    // This prevents quantity miscounts from shared subtrees
+    function cloneTree(node) {
+      if (!node) return null;
+      return {
+        ...node,
+        inputs: (node.inputs || []).map(child => cloneTree(child)),
+      };
+    }
+    tree = cloneTree(tree);
 
     // Collapse identical sub-chains: find unique processing pipelines
     // Walk the tree and build a DAG
@@ -887,9 +1281,32 @@ class GraphGenerator {
       data.quantity = flowCounts.get(key) || data.quantity;
     }
 
-    // No additional scaling needed - propagateQuantity with productQty already
-    // accounts for duplicator output. The ore count in the tree matches the
-    // actual production needs.
+    // Fix duplicator-provided types: when a duplicator provides a type that's
+    // also needed elsewhere (e.g., casing for PC + casing for electromagnet),
+    // the second occurrence shouldn't be built separately - it's provided by the dup.
+    // Find all duplicator nodes, then halve the quantity of their child type
+    // (since the dup provides both copies from 1 build).
+    for (const [key, data] of uniqueNodes) {
+      const tn = data.treeNode;
+      if (tn.machine === "duplicator" || tn._isDuplicator) {
+        // Find the child type (what the duplicator wraps)
+        const childKey = data.childKeys[0];
+        if (childKey) {
+          const childData = uniqueNodes.get(childKey);
+          if (childData) {
+            // The dup's child was counted from multiple parents (dup path + other path)
+            // Only fix the dup and its direct child - don't touch shared descendants
+            const machine = registry.get(tn.machine);
+            const qtyMult = machine?.outputQtyMultiplier || 2;
+            // Dup output = childQty (what we build) × multiplier
+            // Child should be built once, dup outputs twice
+            const correctChildQty = Math.max(1, Math.ceil(data.quantity / qtyMult));
+            childData.quantity = correctChildQty;
+            data.quantity = correctChildQty * qtyMult;
+          }
+        }
+      }
+    }
 
     // Build nodes and edges from unique set
     const keyToId = new Map();

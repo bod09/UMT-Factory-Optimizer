@@ -624,30 +624,11 @@ class FlowOptimizer {
     const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
     const displayType = ITEM_TYPES[terminalType] || terminalType;
 
-    // Build recipe tree for graph visualization using the old ValueCalculator
-    // (it has proper tree building with all machine paths)
-    const vizCalc = new ValueCalculator(this.registry, this.config);
-    const vizResult = vizCalc.calculate(terminalType, oreValue);
-    let recipeTree = vizResult?.recipeTree || null;
-
-    // If duplicator was used, inject it into the tree
-    if (dupAt && recipeTree && this.config.prestigeItems?.duplicator) {
-      // Use the old system's duplicator injection for the graph
-      const oldDupResult = vizCalc.optimizeDuplicators({ ...vizResult, value: vizResult.value });
-      if (oldDupResult) {
-        recipeTree = vizCalc.injectDuplicatorNodes(recipeTree, oldDupResult.positions);
-        // Update productQty from old system if it found a combiner dup
-      }
-    }
-
-    // Check if sifted ores use the Ore Upgrader (for graph)
-    const siftedUsesUpgrader = bpValue.flows?.some(f => f.siftedUsesUpgrader);
-
-    // Build graph using existing GraphGenerator
-    // Pass flow's totalOres and productQty (not vizCalc's) for correct quantities
-    const graph = recipeTree
-      ? GraphGenerator.fromRecipeTree(recipeTree, this.registry, totalOres, this.config, productQty, { siftedUsesUpgrader })
-      : null;
+    // Build graph directly from flow chain result - single source of truth
+    const graph = GraphGenerator.fromFlowChain(
+      chainResult, this.registry, this.config,
+      { dupAt, productQty }, bpValue
+    );
 
     return {
       chain: displayType + suffix,
@@ -663,7 +644,6 @@ class FlowOptimizer {
       cost: this.sumCosts(chainResult),
       dupAt,
       productQty,
-      recipeTree,
     };
   }
 
