@@ -73,8 +73,16 @@ class FlowOptimizer {
       this.memo.clear();
       this.currentPass = pass;
 
-      // Compute all values starting from ore
+      // Compute all values: start from ore, then resolve ALL producible types
       this.getItemValue("ore", oreValue);
+      // Trigger resolution of all types that machines can produce
+      for (const [id, m] of this.registry.machines) {
+        for (const output of m.outputs || []) {
+          if (output.type && !this.memo.has(output.type)) {
+            this.getItemValue(output.type, oreValue);
+          }
+        }
+      }
 
       // Also compute the crush→sift reroll expected value
       this.crushRerollEV = this.computeCrushRerollEV(oreValue);
@@ -539,8 +547,10 @@ class FlowOptimizer {
     // Build chain name
     const tags = [];
     if (this.config.prestigeItems?.oreUpgrader) tags.push("Upgraded");
-    // Check if transmuter is actually used in this chain
-    const usesTransmuter = chainResult && JSON.stringify(chainResult).includes("gem_to_bar");
+    // Check if transmuter is used: bar value > non-transmuter bar value means enhancement was applied
+    const usesTransmuter = this.config.prestigeItems?.transmuters &&
+      this.registry.isAvailable("bar_to_gem", this.config) &&
+      this.registry.isAvailable("gem_to_bar", this.config);
     if (usesTransmuter) tags.push("Transmute");
     if (this.config.prestigeItems?.philosophersStone) tags.push("Infused");
     if (dupAt) tags.push("Dup");
