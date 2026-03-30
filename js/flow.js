@@ -133,17 +133,17 @@ class FlowOptimizer {
           const isFreeType = this.registry.isByproduct(type) ||
             this.registry.getProducers(type).length === 0 ||
             this._isProducedFromFreeInputs(type);
-          // Preserve the previous pass result's structure for graph building
-          // Instead of ["cycle_ref"], use the actual machines from the last completed pass
+          // Preserve the FULL previous pass result for graph building
+          // Instead of a minimal cycle_ref, copy everything from the last completed pass
           const prevResult = this._prevPassResults?.get(type);
+          if (prevResult) {
+            return { ...prevResult, isCycleRef: true };
+          }
           return {
             value: prevVal,
-            oreCount: isFreeType ? 0 : (prevResult?.oreCount || 1),
+            oreCount: isFreeType ? 0 : 1,
             perOre: prevVal,
-            machines: prevResult?.machines || ["cycle_ref"],
-            inputs: prevResult?.inputs,
-            machine: prevResult?.machine,
-            throughput: prevResult?.throughput || 1,
+            machines: ["cycle_ref"],
             isCycleRef: true,
           };
         }
