@@ -562,30 +562,52 @@ class GraphGenerator {
       oreCount: 0,
     });
 
-    // Post-process: scale side chain quantities based on final source quantities
-    // The downstream chain was walked once with qty=1. Scale based on actual source qty.
+    // Post-process: scale side chain quantities proportionally
+    // The downstream chain was walked once with initial bpQty. The source node
+    // accumulated its full qty from all visits. Scale downstream by the ratio.
     for (const [key, data] of uniqueNodes) {
       if (data.machine === "secondary_output" && data.downstreamKeys) {
-        const sourceQty = data.quantity; // Final accumulated quantity (e.g., 12 stone)
-        // Walk downstream and scale quantities
-        let currentQty = sourceQty;
+        // Find initial qty (what the first walk used)
+        // and final qty (accumulated from all visits)
+        const finalSourceQty = data.quantity;
+        // Walk downstream, scaling each node proportionally
         const visited = new Set([key]);
-        let currentKey = key;
-        while (true) {
-          const node = uniqueNodes.get(currentKey);
-          if (!node?.downstreamKeys?.length) break;
-          const nextKey = node.downstreamKeys[0]; // Follow first downstream
-          if (visited.has(nextKey)) break;
-          visited.add(nextKey);
-          const nextNode = uniqueNodes.get(nextKey);
-          if (!nextNode) break;
-          // Adjust qty for multi-input machines
-          const nextMachine = registry.get(nextNode.machine);
-          if (nextMachine?.inputs?.length >= 2) {
-            currentQty = Math.max(1, Math.ceil(currentQty / nextMachine.inputs.length));
+        const scaleDown = (nodeKey, parentQty) => {
+          const node = uniqueNodes.get(nodeKey);
+          if (!node || visited.has(nodeKey)) return;
+          visited.add(nodeKey);
+          // Scale this node's quantity to match parent
+          node.quantity = parentQty;
+          // For chance machines, reduce for next in chain
+          let nextQty = parentQty;
+          const m = registry.get(node.machine);
+          if (m?.effect === "chance") {
+            const chance = m.value || 0.05;
+            const produced = Math.max(1, Math.round(parentQty * chance));
+            nextQty = Math.max(1, parentQty - produced);
+            // Update gem sell nodes with correct produced qty
+            for (const dsKey of (node.downstreamKeys || [])) {
+              const dsNode = uniqueNodes.get(dsKey);
+              if (dsNode && dsNode.machine?.startsWith("sell_")) {
+                dsNode.quantity = produced;
+                visited.add(dsKey);
+              }
+            }
           }
-          nextNode.quantity = currentQty;
-          currentKey = nextKey;
+          // Multi-input machines divide quantity
+          if (m?.inputs?.length >= 2) {
+            nextQty = Math.max(1, Math.ceil(parentQty / m.inputs.length));
+          }
+          // Recurse into downstream (non-sell, non-visited)
+          for (const dsKey of (node.downstreamKeys || [])) {
+            if (!visited.has(dsKey)) {
+              scaleDown(dsKey, nextQty);
+            }
+          }
+        };
+        // Start scaling from each downstream of the source
+        for (const dsKey of data.downstreamKeys) {
+          scaleDown(dsKey, finalSourceQty);
         }
       }
     }
