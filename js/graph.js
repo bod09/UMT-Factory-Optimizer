@@ -233,22 +233,21 @@ class GraphGenerator {
         if (!dupParentType) {
           insertDup = true;
         } else {
-          // Check if ANY combiner in the original chain tree contains this type
-          // and matches the dupParentType
-          function findParentCombiner(searchNode, targetMachine) {
-            if (!searchNode?.inputs) return null;
+          // Find the combiner matching dupParentType that contains this machine
+          function findMatchingParent(searchNode, targetMachine, parentType) {
+            if (!searchNode?.inputs) return false;
             for (const child of searchNode.inputs) {
-              if (child.machine === targetMachine) return searchNode;
-              const found = findParentCombiner(child, targetMachine);
-              if (found) return found;
+              if (child.machine === targetMachine) {
+                // Check if THIS node matches the parent type
+                return searchNode.machine === parentType ||
+                       searchNode.resolvedType === parentType;
+              }
+              // Also check if child's subtree contains the target
+              if (findMatchingParent(child, targetMachine, parentType)) return true;
             }
-            return null;
+            return false;
           }
-          const origParent = findParentCombiner(chainResult, machine);
-          if (origParent && (origParent.machine === dupParentType ||
-              origParent.resolvedType === dupParentType)) {
-            insertDup = true;
-          }
+          insertDup = findMatchingParent(chainResult, machine, dupParentType);
         }
       }
       if (dupTargetMachine && machine === dupTargetMachine) {
