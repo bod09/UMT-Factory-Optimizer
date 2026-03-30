@@ -333,8 +333,20 @@ class GraphGenerator {
           // Downstream quantities will be scaled in post-processing
           if (!isFirstVisit) continue;
 
-          // Build side chain: first machine (from result) then downstream chain
+          // Build side chain: chance machines (prospectors) → first machine → downstream
+          // Chance machines are pass-through: item goes through each, some produce byproducts
+          const chanceSteps = (bp.result.chanceChain || []).map(c => ({
+            machine: c.machine,
+            type: bp.type, // Stone passes through, type stays the same
+            value: bp.result.value, // Value represents total including chance EV
+            isChanceMachine: true,
+            gemType: c.gemType,
+            chance: c.chance,
+            byproductValue: c.byproductValue,
+          }));
+
           const sideChainSteps = [
+            ...chanceSteps,
             { machine: bp.result.machine, type: bp.result.resolvedType, value: bp.result.value },
             ...(bp.result.downstreamChain || [])
           ];
