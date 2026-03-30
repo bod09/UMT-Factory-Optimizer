@@ -416,21 +416,11 @@ class GraphGenerator {
                   // Find or create a shared "Gem Processing" node that connects to QA
                   const gemProcKey = getKey("gem_processing", "gem");
                   if (!uniqueNodes.has(gemProcKey)) {
-                    // Find best single-input gem processor from registry
-                    let bestProcName = "Sell Gems";
-                    let bestProcValue = 0;
-                    for (const [procId, procM] of registry.machines) {
-                      if (!procM.inputs || procM.inputs.length !== 1) continue;
-                      if (!["flat", "percent", "multiply"].includes(procM.effect)) continue;
-                      const acceptsGem = procM.inputs.some(inp =>
-                        inp === "gem" || inp.split("|").includes("gem")
-                      );
-                      if (!acceptsGem) continue;
-                      if ((procM.value || 0) > bestProcValue) {
-                        bestProcValue = procM.value;
-                        bestProcName = procM.name;
-                      }
-                    }
+                    // Use flow's memo to find what machine processes gems best
+                    const flowGemResult = flowMemo?.get?.("gem");
+                    const bestMachineId = flowGemResult?.machine;
+                    const bestMachineData = bestMachineId ? registry.get(bestMachineId) : null;
+                    const bestProcName = bestMachineData?.name || "Gem Processing";
                     uniqueNodes.set(gemProcKey, {
                       machine: "gem_processing",
                       type: "gem",

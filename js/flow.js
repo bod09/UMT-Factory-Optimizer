@@ -251,33 +251,53 @@ class FlowOptimizer {
         // All treated the same way - compute output value and compare
 
         // For multi-input machines, check all inputs are free (oreCount=0)
+        // Skip combine machines where ANY input is the type being resolved
+        // (prevents feedback: gem → prismatic(gem+gem) → inflated gem value)
         if (m.inputs.length >= 2) {
           let allFree = true;
+          let hasSelfInput = false;
           for (const inputSpec of m.inputs) {
             const types = inputSpec.split("|");
             const t = types.find(tt => tt === itemType) || types[0];
-            // Self-referential inputs (clay_mixer needs dust+dust when resolving dust)
-            // are free - they're the same item we're evaluating
-            if (t === itemType) continue;
+            if (t === itemType) { hasSelfInput = true; continue; }
             const ir = this.getItemValue(t, baseOreValue);
             if (!ir || ir.oreCount > 0) { allFree = false; break; }
           }
           if (!allFree) continue;
+          // For self-referential combines (prismatic gem+gem), use the current
+          // computed value instead of getItemValue to prevent feedback amplification
         }
 
         // Compute this machine's output value
+        // For free items, use the RAW sell value (not processed)
+        // This prevents compounding multipliers across passes
+        // Raw values: what the item is worth BEFORE any machine processes it
+        const rawValues = { stone: 0, dust: 1, clay: 50, ceramic_casing: 150, glass: 30, gem: 0, bricks: 25, blasting_powder: 2 };
+        const inputItemValue = rawValues[itemType] ?? (this.prevPassValues?.get(itemType) || 0);
         let machineOutputValue = 0;
         if (m.effect === "set") machineOutputValue = m.value || 0;
-        else if (m.effect === "flat") machineOutputValue = m.value || 0;
-        else if (m.effect === "multiply") machineOutputValue = 0;
+        else if (m.effect === "flat") machineOutputValue = inputItemValue + (m.value || 0);
+        else if (m.effect === "multiply") machineOutputValue = inputItemValue * (m.value || 1);
         else if (m.effect === "combine") {
-          // Combine: compute from inputs
           const inputResults = (m.inputs || []).map(inp => {
             const t = inp.split("|").find(tt => tt === itemType) || inp.split("|")[0];
+            if (t === itemType) {
+              // Self-referential: use the stable input value (not inflated flow value)
+              // This is the value BEFORE this combine is applied
+              return { value: inputItemValue || bestValue || 0 };
+            }
             const ir = this.getItemValue(t, baseOreValue);
             return ir || { value: 0 };
           });
           machineOutputValue = this.applyMachineEffect(m, inputResults);
+          // Per-item cost: combines consume multiple items of same type
+          // e.g., prismatic uses 2 gems → output value should be per-gem
+          const selfInputCount = m.inputs.filter(inp =>
+            inp === itemType || inp.split("|").includes(itemType)
+          ).length;
+          if (selfInputCount > 1) {
+            machineOutputValue = machineOutputValue / selfInputCount;
+          }
         }
 
         // For free items (oreCount=0), trace the output through processing-only chains
@@ -386,44 +406,73 @@ class FlowOptimizer {
 
       let byproductValue = 0;
       if (m.gemType) {
-        // Start with raw gem value
+        // Start with this gem's FIXED raw value (not flow-resolved, to prevent feedback loops)
         const gemData = GEMS.find(g => g.name === m.gemType);
         let gemVal = gemData?.value || 0;
 
-        // Try ALL single-input machines that accept gems to find best processing
-        // This checks gem_cutter (1.4x), polisher (+$10), etc.
-        let bestGemVal = gemVal;
+        // Find best processing using FIXED gem value (prevents feedback loops)
+        // Try ALL available machines that accept gems
+        let bestProcessed = gemVal;
+        let bestChain = [];
         for (const [procId, procM] of this.registry.machines) {
           if (!this.registry.isAvailable(procId, this.config)) continue;
-          if (!procM.inputs || procM.inputs.length !== 1) continue;
+          if (!procM.inputs) continue;
           const acceptsGem = procM.inputs.some(inp =>
             inp === "gem" || inp.split("|").includes("gem") || inp === "any"
           );
           if (!acceptsGem) continue;
-          // Skip transport, chance, duplicate, etc.
-          if (!["flat", "percent", "multiply"].includes(procM.effect)) continue;
+          const skipEffects = new Set(["chance", "transport", "split", "overflow", "filter", "gate", "duplicate", "preserve", "set"]);
+          if (skipEffects.has(procM.effect)) continue;
+
+          // For multi-input: only use if ALL inputs are the same free type (gem+gem for prismatic)
+          // or if other inputs are free (oreCount=0)
+          if (procM.inputs.length > 1) {
+            const allGemInputs = procM.inputs.every(inp =>
+              inp === "gem" || inp.split("|").includes("gem")
+            );
+            if (!allGemInputs) {
+              // Check if other inputs are free
+              let allFree = true;
+              for (const inp of procM.inputs) {
+                if (inp === "gem" || inp.split("|").includes("gem")) continue;
+                const t = inp.split("|")[0];
+                const ir = this.getItemValue(t, baseOreValue);
+                if (!ir || ir.oreCount > 0) { allFree = false; break; }
+              }
+              if (!allFree) continue;
+            }
+          }
 
           let processed = gemVal;
           if (procM.effect === "flat") processed += procM.value;
           else if (procM.effect === "percent") processed *= (1 + procM.value);
           else if (procM.effect === "multiply") processed *= procM.value;
-          if (processed > bestGemVal) bestGemVal = processed;
+          else if (procM.effect === "combine") {
+            // For combine machines (prismatic: gem+gem), combine fixed gem values
+            const inputCount = procM.inputs.length;
+            processed = gemVal * inputCount * procM.value;
+            // Per gem: divide by input count (need N gems to make 1 output)
+            processed = processed / inputCount;
+          }
+          if (processed > bestProcessed) {
+            bestProcessed = processed;
+            bestChain = [procId];
+          }
         }
 
-        // Apply polisher on top if safe and not already counted
+        // Stack additional modifiers on top (polisher, QA)
+        // Polisher if safe
         const oreChainTags = this._oreChainTags || new Set();
-        if (oreChainTags.has("Polished") && bestGemVal === gemVal) {
-          bestGemVal += 10;
+        if (oreChainTags.has("Polished") && !bestChain.includes("polisher")) {
+          bestProcessed += 10;
         }
-
-        // QA on the processed gem (safe because gems from prospectors
-        // don't feed into the main chain combiner)
+        // QA (safe - gems don't feed main chain combiners)
         const qa = this.registry.get("quality_assurance");
         if (qa && this.registry.isAvailable("quality_assurance", this.config)) {
-          bestGemVal *= (1 + qa.value);
+          bestProcessed *= (1 + qa.value);
         }
 
-        byproductValue = bestGemVal * ds;
+        byproductValue = bestProcessed * ds;
       } else if (m.byproducts?.[0]?.type) {
         const bpResult = this.getItemValue(m.byproducts[0].type, baseOreValue);
         byproductValue = bpResult?.value || 0;
