@@ -976,25 +976,54 @@ class FlowOptimizer {
     const baseOres = chainResult.oreCount;
     const basePerOre = baseOres > 0 ? baseValue / baseOres : 0;
 
-    let bestDup = null;
+    // How many duplicators does the player have?
+    const dupCount = parseInt(this.config.prestigeItems?.duplicator) || 0;
+    if (dupCount <= 0) return null;
+    const maxDups = Math.min(dupCount, 3); // Cap at 3 to prevent combinatorial explosion
 
-    // Strategy 1: Dup at ore level (before flat bonuses)
-    // 2 ores at 50% → each gets +$10+$10 independently → gain extra flat bonuses
-    const oreDupResult = this.tryDupAtOre(oreValue, chainResult, terminalType, qaMultiplier, ds);
-    if (oreDupResult && oreDupResult.perOre > basePerOre) {
-      bestDup = oreDupResult;
-    }
+    // Iteratively find best dup placements
+    // After placing one dup, items downstream are Unduplicatable
+    let currentBest = null;
+    let currentPerOre = basePerOre;
+    const usedDupLocations = []; // Track where dups are placed
 
-    // Strategy 2: Dup at combiner inputs
-    // For each combiner in the chain, try duplicating each input
-    const combinerDups = this.tryDupAtCombiners(chainResult, terminalType, oreValue, qaMultiplier, ds);
-    for (const dup of combinerDups) {
-      if (dup.perOre > (bestDup?.perOre || basePerOre)) {
-        bestDup = dup;
+    for (let d = 0; d < maxDups; d++) {
+      let bestThisRound = null;
+
+      // Strategy 1: Dup at ore level (only on first dup, ore is always fresh)
+      if (d === 0) {
+        const oreDupResult = this.tryDupAtOre(oreValue, chainResult, terminalType, qaMultiplier, ds);
+        if (oreDupResult && oreDupResult.perOre > currentPerOre) {
+          bestThisRound = oreDupResult;
+        }
       }
+
+      // Strategy 2: Dup at combiner inputs (skip already-duped locations)
+      const combinerDups = this.tryDupAtCombiners(chainResult, terminalType, oreValue, qaMultiplier, ds);
+      for (const dup of combinerDups) {
+        // Skip if this location was already used
+        if (usedDupLocations.includes(dup.dupAt)) continue;
+        // Skip if this input is downstream of a previous dup (Unduplicatable)
+        // For simplicity: if the dup target type matches a previous dup target, skip
+        const dupType = dup.dupAt.split(" in ")[0];
+        const alreadyDuped = usedDupLocations.some(loc => loc.split(" in ")[0] === dupType);
+        if (alreadyDuped) continue;
+
+        if (dup.perOre > (bestThisRound?.perOre || currentPerOre)) {
+          bestThisRound = dup;
+        }
+      }
+
+      if (!bestThisRound) break; // No more improvements possible
+      usedDupLocations.push(bestThisRound.dupAt);
+      currentBest = bestThisRound;
+      currentPerOre = bestThisRound.perOre;
+
+      // If only 1 dup available, stop
+      if (d === 0 && maxDups === 1) break;
     }
 
-    return bestDup;
+    return currentBest;
   }
 
   // Try duplicating at ore level: 2 copies at 50%, each gets flat bonuses independently

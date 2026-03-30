@@ -31,17 +31,17 @@ class GraphVisualizer {
     svg.style.width = "100%";
     svg.style.height = Math.min(maxY, 600) + "px";
 
-    // Arrowhead marker
+    // Circle endpoint markers (orientation-independent)
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
     defs.innerHTML = `
-      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+      <marker id="dot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
+        <circle cx="5" cy="5" r="4" fill="#6b7280"/>
       </marker>
-      <marker id="arrow-dashed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+      <marker id="dot-byproduct" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
+        <circle cx="5" cy="5" r="4" fill="#f59e0b"/>
       </marker>
-      <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#a855f7"/>
+      <marker id="dot-back" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
+        <circle cx="5" cy="5" r="4" fill="#a855f7"/>
       </marker>
     `;
     svg.appendChild(defs);
@@ -54,7 +54,7 @@ class GraphVisualizer {
       const to = layout.find(n => n.id === edge.to);
       if (!from || !to) continue;
 
-      const path = this.createEdgePath(from, to, edge);
+      const path = this.createEdgePath(from, to, edge, layout);
       path.dataset.from = edge.from;
       path.dataset.to = edge.to;
       path.classList.add("graph-edge");
@@ -360,63 +360,76 @@ class GraphVisualizer {
   // Two simple rules:
   //   1. Within same flow (same row): left→right using right/left ports
   //   2. Between flows (different rows): top/bottom ports
-  createEdgePath(from, to, edge) {
+  createEdgePath(from, to, edge, allNodes) {
     const dy = to.y - from.y;
-    // Same flow = both main or both byproduct (use isByproduct flag, not Y position)
     const sameFlow = (!!from.isByproduct) === (!!to.isByproduct);
 
     let x1, y1, x2, y2;
     let connectionType;
 
-    const arrowGap = 6; // Gap between arrow tip and node edge
     if (sameFlow) {
-      // WITHIN a flow: always right side → left side
       connectionType = to.x > from.x ? 'horizontal' : 'back-edge';
       x1 = from.x + this.nodeWidth;
       y1 = from.y + this.nodeHeight / 2;
-      x2 = to.x - arrowGap;
+      x2 = to.x;
       y2 = to.y + this.nodeHeight / 2;
     } else {
-      // BETWEEN flows: always top/bottom ports
       connectionType = 'vertical';
       if (dy > 0) {
-        // Target is below: bottom of source → top of target
         x1 = from.x + this.nodeWidth / 2;
         y1 = from.y + this.nodeHeight;
         x2 = to.x + this.nodeWidth / 2;
-        y2 = to.y - arrowGap;
+        y2 = to.y;
       } else {
-        // Target is above: top of source → bottom of target
         x1 = from.x + this.nodeWidth / 2;
         y1 = from.y;
         x2 = to.x + this.nodeWidth / 2;
-        y2 = to.y + this.nodeHeight + arrowGap;
+        y2 = to.y + this.nodeHeight;
       }
     }
 
+    // Build path with obstacle avoidance
     let d;
     if (connectionType === 'horizontal') {
-      // Gentle S-curve, last segment approaches target horizontally (arrow points right)
       const dx = x2 - x1;
       const cp1x = x1 + dx * 0.4;
       const cp2x = x1 + dx * 0.6;
-      d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
+
+      // Check for nodes between source and target that the line would cross
+      const blockers = (allNodes || []).filter(n => {
+        if (n.id === from.id || n.id === to.id) return false;
+        const nx = n.x;
+        const ny = n.y;
+        // Node is horizontally between source and target
+        if (nx + this.nodeWidth <= Math.min(from.x, to.x) + this.nodeWidth) return false;
+        if (nx >= Math.max(from.x, to.x)) return false;
+        // Node vertically overlaps with the line's Y range
+        const minY = Math.min(y1, y2) - this.nodeHeight / 2;
+        const maxY = Math.max(y1, y2) + this.nodeHeight / 2;
+        return ny < maxY && ny + this.nodeHeight > minY;
+      });
+
+      if (blockers.length > 0 && Math.abs(y1 - y2) < 5) {
+        // Route around: curve above or below the blockers
+        const blockCenter = blockers.reduce((s, n) => s + n.y, 0) / blockers.length;
+        const goAbove = y1 < blockCenter;
+        const detourY = goAbove
+          ? Math.min(...blockers.map(n => n.y)) - 25
+          : Math.max(...blockers.map(n => n.y + this.nodeHeight)) + 25;
+        d = `M ${x1} ${y1} C ${cp1x} ${detourY}, ${cp2x} ${detourY}, ${x2} ${y2}`;
+      } else {
+        d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
+      }
     } else if (connectionType === 'vertical') {
-      // Straight line for short distances, curve for long
       const dx = Math.abs(x2 - x1);
-      const dy = Math.abs(y2 - y1);
       if (dx < 10) {
-        // Nearly vertical: straight line
         d = `M ${x1} ${y1} L ${x2} ${y2}`;
       } else {
-        // Diagonal: use quadratic bezier so arrow aligns with the line direction
-        // The arrow will point along the line from control point to endpoint
-        const cx = (x1 + x2) / 2;
-        const cy = (y1 + y2) / 2;
-        d = `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+        // Smooth S-curve for cross-flow connections
+        const midY = (y1 + y2) / 2;
+        d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
       }
     } else {
-      // back-edge: curve above both nodes
       const midY = Math.min(from.y, to.y) - 40;
       d = `M ${x1} ${y1} C ${x1 + 50} ${midY}, ${x2 - 50} ${midY}, ${x2} ${y2}`;
     }
@@ -431,20 +444,20 @@ class GraphVisualizer {
       path.setAttribute("stroke", "#f59e0b");
       path.setAttribute("stroke-width", "1.5");
       path.setAttribute("stroke-dasharray", "6 3");
-      path.setAttribute("marker-end", "url(#arrow-dashed)");
+      path.setAttribute("marker-end", "url(#dot-byproduct)");
     } else if (edge.dashed) {
       path.setAttribute("stroke", "#4b5563");
       path.setAttribute("stroke-width", "1");
       path.setAttribute("stroke-dasharray", "4 3");
-      path.setAttribute("marker-end", "url(#arrow-dashed)");
+      path.setAttribute("marker-end", "url(#dot)");
     } else if (isBackEdge) {
       path.setAttribute("stroke", "#a855f7");
       path.setAttribute("stroke-width", "2");
-      path.setAttribute("marker-end", "url(#arrow-purple)");
+      path.setAttribute("marker-end", "url(#dot-back)");
     } else {
       path.setAttribute("stroke", "#6b7280");
       path.setAttribute("stroke-width", "1.5");
-      path.setAttribute("marker-end", "url(#arrow)");
+      path.setAttribute("marker-end", "url(#dot)");
     }
 
     return path;
