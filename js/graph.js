@@ -416,21 +416,24 @@ class GraphGenerator {
         // Check if dup fills multiple slots: does the parent combiner
         // use this machine's type in OTHER inputs' subtrees?
         let dupFillsMultiSlots = false;
-        // Walk from the parent in the ORIGINAL chain result tree
-        // to check if other inputs contain this machine
-        function findOriginalParent(searchNode, targetMachine) {
+        // Find the combiner matching dupParentType that directly contains this machine
+        function findDupParentCombiner(searchNode, targetMachine, targetParent) {
           if (!searchNode?.inputs) return null;
           for (const child of searchNode.inputs) {
-            if (child.machine === targetMachine) return searchNode;
-            const found = findOriginalParent(child, targetMachine);
+            if (child.machine === targetMachine) {
+              // Check if THIS node matches the target parent
+              if (!targetParent ||
+                  searchNode.machine === targetParent ||
+                  searchNode.resolvedType === targetParent) {
+                return searchNode;
+              }
+            }
+            const found = findDupParentCombiner(child, targetMachine, targetParent);
             if (found) return found;
           }
           return null;
         }
-        // Find the combiner that contains this dup target
-        const parentCombiner = dupParentType
-          ? findOriginalParent(chainResult, machine)
-          : null;
+        const parentCombiner = findDupParentCombiner(chainResult, machine, dupParentType);
         if (parentCombiner?.inputs) {
           for (const sibling of parentCombiner.inputs) {
             if (sibling.machine === machine) continue; // skip the dup target itself
