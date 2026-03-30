@@ -450,7 +450,13 @@ class GraphGenerator {
                 displayType, // Custom label for the type line
               });
             } else {
-              uniqueNodes.get(sideKey).quantity += currentQty;
+              const existing = uniqueNodes.get(sideKey);
+              existing.quantity += currentQty;
+              // Ensure displayType is set even on revisits
+              if (!existing.displayType && step.isChanceMachine && step.gemType) {
+                existing.displayType = `${step.gemType} Gem (${Math.round((step.chance || 0.05) * 100)}%)`;
+                existing.type = "gem";
+              }
             }
 
             // Connect previous → current (no self-loops)
