@@ -83,8 +83,9 @@ class FlowOptimizer {
         ...[...this.memo.entries()].map(([k, v]) => [k, v?.value || 0])
       ]);
 
-      // Clear memo for fresh computation, but keep previous values for cycle breaking
+      // Clear memo for fresh computation, but keep previous values AND results for cycle breaking
       this.prevPassValues = prevValues;
+      this._prevPassResults = new Map(this.memo); // Full results for graph structure preservation
       this.memo.clear();
       this.currentPass = pass;
 
@@ -129,13 +130,22 @@ class FlowOptimizer {
       if (cached === null && this.prevPassValues?.has(type)) {
         const prevVal = this.prevPassValues.get(type);
         if (prevVal > 0) {
-          // Check if this type is free (produced from secondary outputs, not from ores)
-          // A type is free if: it's a known secondary output, OR no machine produces it from ores,
-          // OR all its producers only use free inputs (detected from registry data)
           const isFreeType = this.registry.isByproduct(type) ||
             this.registry.getProducers(type).length === 0 ||
             this._isProducedFromFreeInputs(type);
-          return { value: prevVal, oreCount: isFreeType ? 0 : 1, perOre: prevVal, machines: ["cycle_ref"], isCycleRef: true };
+          // Preserve the previous pass result's structure for graph building
+          // Instead of ["cycle_ref"], use the actual machines from the last completed pass
+          const prevResult = this._prevPassResults?.get(type);
+          return {
+            value: prevVal,
+            oreCount: isFreeType ? 0 : (prevResult?.oreCount || 1),
+            perOre: prevVal,
+            machines: prevResult?.machines || ["cycle_ref"],
+            inputs: prevResult?.inputs,
+            machine: prevResult?.machine,
+            throughput: prevResult?.throughput || 1,
+            isCycleRef: true,
+          };
         }
       }
       return cached;
