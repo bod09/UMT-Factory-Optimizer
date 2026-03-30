@@ -699,27 +699,17 @@ class GraphGenerator {
       }
     }
 
-    // Post-process: set enhancement path quantities from source node's final quantity
+    // Post-process: set enhancement path quantities from source node
+    // Simple: single-input = same as source, combine = halved
     for (const [enhKey, enhData] of uniqueNodes) {
       if (!enhData._enhSourceKey) continue;
       const sourceNode = uniqueNodes.get(enhData._enhSourceKey);
       if (!sourceNode) continue;
-      let qty = sourceNode.quantity;
-      // Walk from source through enhancement path, reducing at combine machines
-      const sourceResult = flow.memo.get(sourceNode.type);
-      if (sourceResult?.enhancementPath) {
-        for (const mid of sourceResult.enhancementPath) {
-          const em = registry.get(mid);
-          const eOutType = em?.outputs?.[0]?.type || sourceNode.type;
-          const eKey = getKey(mid, eOutType);
-          if (em?.effect === "combine" && (em.inputs || []).length > 1) {
-            qty = Math.max(1, Math.ceil(qty / em.inputs.length));
-          }
-          if (eKey === enhKey) {
-            enhData.quantity = qty;
-            break;
-          }
-        }
+      const em = registry.get(enhData.machine);
+      if (em?.effect === "combine" && (em.inputs || []).length > 1) {
+        enhData.quantity = Math.max(1, Math.ceil(sourceNode.quantity / em.inputs.length));
+      } else {
+        enhData.quantity = sourceNode.quantity;
       }
     }
 
