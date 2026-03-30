@@ -832,6 +832,7 @@ class FlowOptimizer {
         }
 
         // Single-input producers that enhance the type (gem_cutter: gem → cut_gem at 1.4x)
+        const intermediateProcessors = [];
         for (const [prodId, prod] of this.registry.machines) {
           if (!this.registry.isAvailable(prodId, this.config)) continue;
           if (skipMods.has(prodId)) continue;
@@ -842,7 +843,6 @@ class FlowOptimizer {
             inp === intermediateType || inp.split("|").includes(intermediateType)
           );
           if (!acceptsType) continue;
-          // Don't use machines that are also transmuters (preserve effect)
           if (prod.effect === "preserve") continue;
 
           if (prod.effect === "multiply") {
@@ -851,6 +851,7 @@ class FlowOptimizer {
             processedValue += prod.value;
           }
           processedType = prod.outputs?.[0]?.type || processedType;
+          intermediateProcessors.push(prodId);
         }
 
         // Find combine machines where ALL inputs are the same intermediate type
@@ -888,7 +889,7 @@ class FlowOptimizer {
                 value: combinedValue,
                 oreCount: combinedOres,
                 perOre: enhancedPerOre,
-                path: [awayId, combId, backId],
+                path: [awayId, ...intermediateProcessors, combId, backId],
               };
             }
           }
@@ -910,7 +911,7 @@ class FlowOptimizer {
               value: processedValue,
               oreCount: processedOres,
               perOre: enhancedPerOre,
-              path: [awayId, backId],
+              path: [awayId, ...intermediateProcessors, backId],
             };
           }
         }

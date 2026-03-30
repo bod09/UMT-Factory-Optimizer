@@ -464,36 +464,40 @@ class GraphGenerator {
               const producedQty = Math.max(1, Math.round(currentQty * chance));
 
               if (step.gemType) {
-                // Gems connect to QA → Seller (same as all sold items)
-                // They're free items that add bonus profit
                 const prospNode = uniqueNodes.get(sideKey);
                 if (prospNode) {
-                  // Find or create a shared "Gem Processing" node that connects to QA
-                  const gemProcKey = getKey("gem_processing", "gem");
-                  if (!uniqueNodes.has(gemProcKey)) {
-                    // Use flow's memo to find what machine processes gems best
-                    const flowGemResult = flowMemo?.get?.("gem");
-                    const bestMachineId = flowGemResult?.machine;
-                    const bestMachineData = bestMachineId ? registry.get(bestMachineId) : null;
-                    const bestProcName = bestMachineData?.name || "Gem Processing";
-                    uniqueNodes.set(gemProcKey, {
-                      machine: "gem_processing",
-                      type: "gem",
-                      value: step.byproductValue || 0,
-                      name: bestProcName,
-                      category: "jewelcrafting",
-                      quantity: 0, // Accumulated from all prospectors
-                      childKeys: [],
-                      oreCount: 0,
-                      isByproduct: true,
-                    });
+                  // Find existing gem processing machine in main chain (e.g., Prismatic)
+                  // If the main chain already has gem processing, connect to it
+                  let gemTargetKey = null;
+                  for (const [mk, md] of uniqueNodes) {
+                    if (md.isByproduct) continue;
+                    const mData = registry.get(md.machine);
+                    if (mData && (mData.inputs || []).some(inp =>
+                      inp === "gem" || inp === "cut_gem" || inp.split("|").includes("gem")
+                    )) {
+                      gemTargetKey = mk;
+                      break;
+                    }
                   }
-                  // Accumulate gem qty
-                  uniqueNodes.get(gemProcKey).quantity += producedQty;
 
-                  if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
-                  if (!prospNode.downstreamKeys.includes(gemProcKey)) {
-                    prospNode.downstreamKeys.push(gemProcKey);
+                  // If no main chain gem machine, connect to QA/Seller directly
+                  if (!gemTargetKey) {
+                    const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
+                      d.machine === "quality_assurance" && !d.isByproduct
+                    );
+                    const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
+                      d.machine === "seller" && !d.isByproduct
+                    );
+                    gemTargetKey = mainQA?.[0] || mainSeller?.[0];
+                  }
+
+                  if (gemTargetKey) {
+                    if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
+                    if (!prospNode.downstreamKeys.includes(gemTargetKey)) {
+                      prospNode.downstreamKeys.push(gemTargetKey);
+                    }
+                    if (!prospNode._edgeQty) prospNode._edgeQty = {};
+                    prospNode._edgeQty[gemTargetKey] = producedQty;
                   }
                 }
               }
@@ -640,8 +644,8 @@ class GraphGenerator {
           const node = uniqueNodes.get(nodeKey);
           if (!node || visited.has(nodeKey)) return;
           visited.add(nodeKey);
-          // Don't overwrite aggregate nodes (gem_processing collects from multiple sources)
-          if (node.machine === "gem_processing") return;
+          // Skip non-real machines
+          if (!registry.get(node.machine)) return;
           // Scale this node's quantity to match parent
           node.quantity = parentQty;
           // For chance machines, reduce for next in chain
@@ -756,22 +760,7 @@ class GraphGenerator {
       }
     }
 
-    // Connect gem processing node to QA → Seller
-    const gemProcKey = getKey("gem_processing", "gem");
-    if (uniqueNodes.has(gemProcKey)) {
-      const gemNode = uniqueNodes.get(gemProcKey);
-      const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
-        d.machine === "quality_assurance" && !d.isByproduct
-      );
-      const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
-        d.machine === "seller" && !d.isByproduct
-      );
-      const target = mainQA?.[0] || mainSeller?.[0];
-      if (target) {
-        if (!gemNode.downstreamKeys) gemNode.downstreamKeys = [];
-        if (!gemNode.downstreamKeys.includes(target)) gemNode.downstreamKeys.push(target);
-      }
-    }
+    // (Gem processing connections handled inline during prospector node creation)
 
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
