@@ -335,9 +335,10 @@ class GraphGenerator {
 
       // Add enhancement path machines (Bar→Gem→GemCutter→Prismatic→Gem→Bar)
       if (node.enhancementPath) {
-        // Enhancement path: bar → gem → gem_cutter → prismatic → gem → bar
-        // Create nodes on first visit, then update quantities in post-processing
-        // based on the source node's final accumulated quantity
+        // Store path order on source node for post-processing
+        const sourceGraphNode = uniqueNodes.get(key);
+        if (sourceGraphNode) sourceGraphNode._enhPathOrder = node.enhancementPath;
+        // Create enhancement nodes on first visit
         for (const enhMachineId of node.enhancementPath) {
           const enhMachine = registry.get(enhMachineId);
           if (!enhMachine) continue;
@@ -699,17 +700,29 @@ class GraphGenerator {
       }
     }
 
-    // Post-process: set enhancement path quantities from source node
-    // Simple: single-input = same as source, combine = halved
+    // Post-process: set enhancement path quantities by walking in order
+    // Each source node has an enhancement path array [bar_to_gem, gem_cutter, prismatic, gem_to_bar]
+    // Walk in order: start with source qty, halve at combine machines
+    const processedSources = new Set();
     for (const [enhKey, enhData] of uniqueNodes) {
-      if (!enhData._enhSourceKey) continue;
+      if (!enhData._enhSourceKey || processedSources.has(enhData._enhSourceKey)) continue;
+      processedSources.add(enhData._enhSourceKey);
       const sourceNode = uniqueNodes.get(enhData._enhSourceKey);
       if (!sourceNode) continue;
-      const em = registry.get(enhData.machine);
-      if (em?.effect === "combine" && (em.inputs || []).length > 1) {
-        enhData.quantity = Math.max(1, Math.ceil(sourceNode.quantity / em.inputs.length));
-      } else {
-        enhData.quantity = sourceNode.quantity;
+      // Find all enhancement nodes for this source, in path order
+      const sourceResult = sourceNode._enhPathOrder; // Set during walkChain
+      if (!sourceResult) continue;
+      let qty = sourceNode.quantity;
+      for (const mid of sourceResult) {
+        const em = registry.get(mid);
+        if (!em) continue;
+        const eOutType = em.outputs?.[0]?.type || sourceNode.type;
+        const eKey = getKey(mid, eOutType);
+        if (em.effect === "combine" && (em.inputs || []).length > 1) {
+          qty = Math.max(1, Math.ceil(qty / em.inputs.length));
+        }
+        const eNode = uniqueNodes.get(eKey);
+        if (eNode) eNode.quantity = qty;
       }
     }
 
