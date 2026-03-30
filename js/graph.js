@@ -402,31 +402,40 @@ class GraphGenerator {
               }
             }
 
-            // For chance machines (prospectors), add gem output node
-            if (step.isChanceMachine && step.gemType) {
-              const gemKey = getKey("gem_output_" + step.machine, "gem");
-              const gemQty = Math.max(1, Math.round(currentQty * (step.chance || 0.05)));
-              const gemData = GEMS?.find(g => g.name === step.gemType);
-              if (!uniqueNodes.has(gemKey)) {
-                uniqueNodes.set(gemKey, {
-                  machine: "gem_output_" + step.machine,
-                  type: "gem",
-                  value: step.byproductValue || gemData?.value || 0,
-                  name: `${step.gemType} Gem`,
-                  category: "jewelcrafting",
-                  quantity: gemQty,
-                  childKeys: [],
-                  oreCount: 0,
-                  isByproduct: true,
-                  dupProvided: false,
-                });
+            // For chance machines (prospectors/sifters), track remaining quantity
+            // and add gem/ore output flowing to best destination via flow
+            if (step.isChanceMachine) {
+              const chance = step.chance || 0.05;
+              const producedQty = Math.max(1, Math.round(currentQty * chance));
+
+              if (step.gemType) {
+                // Gem produced - resolve best destination via flow
+                const gemData = GEMS?.find(g => g.name === step.gemType);
+                const gemValue = step.byproductValue || gemData?.value || 0;
+                const sellKey = getKey("sell_" + step.machine, "gem");
+
+                if (!uniqueNodes.has(sellKey)) {
+                  uniqueNodes.set(sellKey, {
+                    machine: "sell_" + step.machine,
+                    type: "gem",
+                    value: gemValue,
+                    name: `Sell ${step.gemType}`,
+                    category: "jewelcrafting",
+                    quantity: producedQty,
+                    childKeys: [],
+                    oreCount: 0,
+                    isByproduct: true,
+                  });
+                }
+                const prospNode = uniqueNodes.get(sideKey);
+                if (prospNode) {
+                  if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
+                  if (!prospNode.downstreamKeys.includes(sellKey)) prospNode.downstreamKeys.push(sellKey);
+                }
               }
-              // Connect prospector → gem output
-              const prospNode = uniqueNodes.get(sideKey);
-              if (prospNode) {
-                if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
-                if (!prospNode.downstreamKeys.includes(gemKey)) prospNode.downstreamKeys.push(gemKey);
-              }
+
+              // Reduce remaining quantity (stone consumed on gem production)
+              currentQty = Math.max(1, currentQty - producedQty);
             }
 
             prevSideKey = sideKey;
