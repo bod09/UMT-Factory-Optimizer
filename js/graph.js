@@ -282,7 +282,11 @@ class GraphGenerator {
           const childKey = walkChain(child, key, childQty);
           if (childKey) {
             const n = uniqueNodes.get(key);
-            if (n && !n.childKeys.includes(childKey)) n.childKeys.push(childKey);
+            const childNode = uniqueNodes.get(childKey);
+            // Don't create edges from main chain to side chain nodes
+            // Cross-chain connections are handled in post-processing
+            const crossChain = n && childNode && !n.isByproduct && childNode.isByproduct;
+            if (n && !crossChain && !n.childKeys.includes(childKey)) n.childKeys.push(childKey);
           }
         }
       }
@@ -572,100 +576,25 @@ class GraphGenerator {
         lastSideData._edgeQty[mainKey] = mainQty;
 
         if (excess > 0) {
+          // Excess items route through shared QA → Seller in the main chain
+          // Find the main chain QA and Seller nodes
+          const lastNode = uniqueNodes.get(lastSideKey);
+          const mainQAEntry = [...uniqueNodes.entries()].find(([k, d]) =>
+            d.machine === "quality_assurance" && !d.isByproduct
+          );
+          const mainSellerEntry = [...uniqueNodes.entries()].find(([k, d]) =>
+            d.machine === "seller" && !d.isByproduct
+          );
 
-          // Connect excess from the last side chain node to shared QA → Seller
-          let prevKey = lastSideKey;
-          let excessValue = uniqueNodes.get(lastSideKey)?.value || sideData.value || 0;
-          const modifiers = [];
-
-          // Create separate modifier nodes in side chain for cheap machines,
-          // then connect to shared main chain nodes (QA, Seller) at the end.
-          // Cheap machines like Polisher ($250) get their own side chain node.
-          // QA and Seller are shared - everything sold goes through one Seller.
-          for (const mod of modifiers) {
-            let newVal = excessValue;
-            if (mod.machine.effect === "flat") newVal += mod.machine.value;
-            else if (mod.machine.effect === "percent") newVal *= (1 + mod.machine.value);
-            else if (mod.machine.effect === "multiply") newVal *= mod.machine.value;
-            if (newVal <= excessValue) continue;
-
-            excessValue = newVal;
-
-            // Check if this modifier exists in the main chain and is shared (QA, Seller)
-            // The Seller's childKeys chain tells us what feeds it (QA → Combiner → ...)
-            const existingMain = [...uniqueNodes.entries()].find(([k, d]) =>
-              d.machine === mod.id && !d.isByproduct
-            );
-            // Share if this machine is between the final product and the Seller
-            // (QA is right before Seller - share it. Polisher is in ore chain - don't share)
-            const sellerEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "seller");
-            const isNearSeller = existingMain && sellerEntry && (() => {
-              const sellerData = uniqueNodes.get(sellerEntry[0]);
-              // Check if seller's child chain includes this modifier
-              if (sellerData?.childKeys?.includes(existingMain[0])) return true;
-              // Also check 2 levels deep (Seller → QA → Combiner)
-              for (const ck of sellerData?.childKeys || []) {
-                const child = uniqueNodes.get(ck);
-                if (child?.childKeys?.includes(existingMain[0])) return true;
-              }
-              return false;
-            })();
-
-            if (existingMain && isNearSeller) {
-              // Share the main chain node (e.g., QA → Seller)
-              const prevNode = uniqueNodes.get(prevKey);
-              if (prevNode) {
-                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
-                if (!prevNode.downstreamKeys.includes(existingMain[0])) {
-                  prevNode.downstreamKeys.push(existingMain[0]);
-                }
-                // Set edge qty for excess
-                if (!prevNode._edgeQty) prevNode._edgeQty = {};
-                prevNode._edgeQty[existingMain[0]] = excess;
-              }
-              prevKey = existingMain[0];
-              // Don't need to connect further - main QA already connects to Seller
-            } else {
-              // Create new modifier node in side chain
-              const modKey = getKey("excess_" + mod.id, sideType);
-              if (!uniqueNodes.has(modKey)) {
-                uniqueNodes.set(modKey, {
-                  machine: mod.id,
-                  type: sideType,
-                  value: excessValue,
-                  name: mod.machine.name || mod.id,
-                  category: mod.machine.category || "multipurpose",
-                  quantity: excess,
-                  childKeys: [],
-                  oreCount: 0,
-                  isByproduct: true,
-                  dupProvided: false,
-                });
-              }
-              const prevNode = uniqueNodes.get(prevKey);
-              if (prevNode) {
-                if (!prevNode.downstreamKeys) prevNode.downstreamKeys = [];
-                if (!prevNode.downstreamKeys.includes(modKey)) {
-                  prevNode.downstreamKeys.push(modKey);
-                }
-              }
-              prevKey = modKey;
+          // Connect last side node → QA (if available) or Seller
+          const targetKey = mainQAEntry?.[0] || mainSellerEntry?.[0];
+          if (targetKey && lastNode) {
+            if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
+            if (!lastNode.downstreamKeys.includes(targetKey)) {
+              lastNode.downstreamKeys.push(targetKey);
             }
-          }
-
-          // If we didn't connect to main QA/Seller, connect to main Seller directly
-          const lastNodeData = uniqueNodes.get(prevKey);
-          const connectedToMain = lastNodeData && !lastNodeData.isByproduct;
-          if (!connectedToMain) {
-            const mainSellerKey = [...uniqueNodes.entries()].find(([k, d]) =>
-              d.machine === "seller" && !d.isByproduct
-            );
-            if (mainSellerKey) {
-              if (!lastNodeData.downstreamKeys) lastNodeData.downstreamKeys = [];
-              if (!lastNodeData.downstreamKeys.includes(mainSellerKey[0])) {
-                lastNodeData.downstreamKeys.push(mainSellerKey[0]);
-              }
-            }
+            if (!lastNode._edgeQty) lastNode._edgeQty = {};
+            lastNode._edgeQty[targetKey] = excess;
           }
         }
         break; // Only connect to first matching main node
@@ -751,10 +680,14 @@ class GraphGenerator {
           const dsData = uniqueNodes.get(dsKey);
           // Edge quantity: from _edgeQty if set, otherwise use target's quantity
           const edgeQty = data._edgeQty?.[dsKey] || dsData?.quantity;
+          // For cross-chain edges, use SOURCE type (what's flowing)
+          // not TARGET type (what the target machine produces)
+          const isCrossChain = data.isByproduct !== dsData?.isByproduct;
+          const edgeType = isCrossChain ? data.type : (dsData?.type || data.type || "?");
           edges.push({
             from: fromId,
             to: toId,
-            itemType: dsData?.type || "?",
+            itemType: edgeType,
             isByproduct: true,
             qty: edgeQty,
           });

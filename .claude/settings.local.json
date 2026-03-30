@@ -20,7 +20,9 @@
       "Bash(node -c js/app_clean.js)",
       "Bash(node -c js/optimizer.js)",
       "Bash(node -c js/data.js)",
-      "Bash(node -c js/visualizer.js)"
+      "Bash(node -c js/visualizer.js)",
+      "Bash(npx kill-port:*)",
+      "Bash(xargs -r kill -9)"
     ]
   }
 }

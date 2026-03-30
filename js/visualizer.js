@@ -61,8 +61,8 @@ class GraphVisualizer {
       svg.appendChild(path);
       edgeElements.push(path);
 
-      // Edge label
-      if (edge.itemType && !edge.dashed) {
+      // Edge label (show on all edges including byproduct/dashed)
+      if (edge.itemType) {
         const label = this.createEdgeLabel(from, to, edge.itemType, edge.qty);
         label.dataset.from = edge.from;
         label.dataset.to = edge.to;
