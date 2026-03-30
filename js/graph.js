@@ -335,17 +335,14 @@ class GraphGenerator {
 
       // Add enhancement path machines (Bar→Gem→GemCutter→Prismatic→Gem→Bar)
       if (node.enhancementPath) {
-        let enhQty = node.throughput || 1;
+        // Enhancement path: bar → gem → gem_cutter → prismatic → gem → bar
+        // Create nodes on first visit, then update quantities in post-processing
+        // based on the source node's final accumulated quantity
         for (const enhMachineId of node.enhancementPath) {
           const enhMachine = registry.get(enhMachineId);
           if (!enhMachine) continue;
           const enhOutType = enhMachine.outputs?.[0]?.type || type;
           const enhKey = getKey(enhMachineId, enhOutType);
-          // Combine machines (prismatic) reduce quantity by input count
-          const inputCount = (enhMachine.inputs || []).length;
-          if (enhMachine.effect === "combine" && inputCount > 1) {
-            enhQty = Math.max(1, Math.ceil(enhQty / inputCount));
-          }
           if (!uniqueNodes.has(enhKey)) {
             uniqueNodes.set(enhKey, {
               machine: enhMachineId,
@@ -353,14 +350,13 @@ class GraphGenerator {
               value: node.value,
               name: enhMachine.name || enhMachineId,
               category: enhMachine.category || "jewelcrafting",
-              quantity: enhQty,
+              quantity: 0, // Will be set in post-processing
               childKeys: [finalKey],
               oreCount: node.oreCount,
               isByproduct: nodeIsSideChain,
               dupProvided: false,
+              _enhSourceKey: key, // Track which node this enhancement comes from
             });
-          } else {
-            uniqueNodes.get(enhKey).quantity += enhQty;
           }
           finalKey = enhKey;
         }
@@ -699,6 +695,30 @@ class GraphGenerator {
         // Start scaling from each downstream of the source
         for (const dsKey of data.downstreamKeys) {
           scaleDown(dsKey, finalSourceQty);
+        }
+      }
+    }
+
+    // Post-process: set enhancement path quantities from source node's final quantity
+    for (const [enhKey, enhData] of uniqueNodes) {
+      if (!enhData._enhSourceKey) continue;
+      const sourceNode = uniqueNodes.get(enhData._enhSourceKey);
+      if (!sourceNode) continue;
+      let qty = sourceNode.quantity;
+      // Walk from source through enhancement path, reducing at combine machines
+      const sourceResult = flow.memo.get(sourceNode.type);
+      if (sourceResult?.enhancementPath) {
+        for (const mid of sourceResult.enhancementPath) {
+          const em = registry.get(mid);
+          const eOutType = em?.outputs?.[0]?.type || sourceNode.type;
+          const eKey = getKey(mid, eOutType);
+          if (em?.effect === "combine" && (em.inputs || []).length > 1) {
+            qty = Math.max(1, Math.ceil(qty / em.inputs.length));
+          }
+          if (eKey === enhKey) {
+            enhData.quantity = qty;
+            break;
+          }
         }
       }
     }
