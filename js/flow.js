@@ -446,6 +446,11 @@ class FlowOptimizer {
       const oreChainTags = this._oreChainTags || new Set();
       for (let i = 0; i < inputResults.length; i++) {
         const inp = inputResults[i];
+        // Check if this input type is immune to modifiers (from machines.json output data)
+        // e.g., blasting powder "can only be improved by machines specific to it"
+        const inputProducer = this.registry.get(inp.machine);
+        const isImmune = inputProducer?.outputs?.some(o => o.modifierImmune);
+        if (isImmune) continue;
         // Collect tags from ALL other inputs' ore chains
         // If any other input already has a tag, applying it to this input is free
         const otherTags = new Set(oreChainTags);
