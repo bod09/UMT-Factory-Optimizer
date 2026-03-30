@@ -402,6 +402,33 @@ class GraphGenerator {
               }
             }
 
+            // For chance machines (prospectors), add gem output node
+            if (step.isChanceMachine && step.gemType) {
+              const gemKey = getKey("gem_output_" + step.machine, "gem");
+              const gemQty = Math.max(1, Math.round(currentQty * (step.chance || 0.05)));
+              const gemData = GEMS?.find(g => g.name === step.gemType);
+              if (!uniqueNodes.has(gemKey)) {
+                uniqueNodes.set(gemKey, {
+                  machine: "gem_output_" + step.machine,
+                  type: "gem",
+                  value: step.byproductValue || gemData?.value || 0,
+                  name: `${step.gemType} Gem`,
+                  category: "jewelcrafting",
+                  quantity: gemQty,
+                  childKeys: [],
+                  oreCount: 0,
+                  isByproduct: true,
+                  dupProvided: false,
+                });
+              }
+              // Connect prospector → gem output
+              const prospNode = uniqueNodes.get(sideKey);
+              if (prospNode) {
+                if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
+                if (!prospNode.downstreamKeys.includes(gemKey)) prospNode.downstreamKeys.push(gemKey);
+              }
+            }
+
             prevSideKey = sideKey;
           }
         }
@@ -690,14 +717,17 @@ class GraphGenerator {
       });
     }
 
+    const edgeSet = new Set(); // Track "from:to" pairs to prevent duplicates
     for (const [key, data] of uniqueNodes) {
       const fromId = keyToId.get(key);
       // Input edges: child → this node (left to right flow)
       for (const childKey of data.childKeys) {
         const toId = keyToId.get(childKey);
-        if (toId !== undefined && toId !== fromId) { // No self-loops
+        if (toId !== undefined && toId !== fromId) {
+          const edgePair = `${toId}:${fromId}`;
+          if (edgeSet.has(edgePair)) continue;
+          edgeSet.add(edgePair);
           const childData = uniqueNodes.get(childKey);
-          // Resolve "same" type to the parent's type (modifier machines output same type as input)
           let edgeItemType = childData?.type || "?";
           if (edgeItemType === "same") edgeItemType = data.type || "?";
           edges.push({
@@ -710,7 +740,10 @@ class GraphGenerator {
       // Downstream edges: this node → downstream (secondary output flow)
       for (const dsKey of (data.downstreamKeys || [])) {
         const toId = keyToId.get(dsKey);
-        if (toId !== undefined && toId !== fromId) { // No self-loops
+        if (toId !== undefined && toId !== fromId) {
+          const edgePair = `${fromId}:${toId}`;
+          if (edgeSet.has(edgePair)) continue;
+          edgeSet.add(edgePair);
           const dsData = uniqueNodes.get(dsKey);
           // Edge quantity: from _edgeQty if set, otherwise use target's quantity
           const edgeQty = data._edgeQty?.[dsKey] || dsData?.quantity;
