@@ -653,11 +653,16 @@ class FlowOptimizer {
       // Discover type conversion enhancements from registry
       // For any type, check if there's a convert→process→convert-back path that adds value
       // e.g., bar → bar_to_gem → gem → gem_cutter → prismatic → gem_to_bar → enhanced bar
+      // Compare TOTAL VALUE not per-ore: higher value bars produce more valuable
+      // final products even if they cost more ores. The ore cost propagates to
+      // the terminal product where it's properly evaluated.
+      let enhancementPath = null;
       if (!this._inEnhancement) {
         const enhanced = this._findEnhancementPath(targetType, outputValue, totalOres);
-        if (enhanced && enhanced.perOre > (totalOres > 0 ? outputValue / totalOres : outputValue)) {
+        if (enhanced && enhanced.value > outputValue) {
           outputValue = enhanced.value;
           totalOres = enhanced.oreCount;
+          enhancementPath = enhanced.path; // [convertAway, process/combine, convertBack]
         }
       }
 
@@ -668,7 +673,10 @@ class FlowOptimizer {
       const oresPerInvocation = inputResults.reduce((sum, ir) => sum + (ir.oreCount || 0), 0) || 1;
       const throughput = Math.max(1, Math.round(totalOres / oresPerInvocation));
 
-      if (!bestResult || perOre > bestResult.perOre) {
+      // Compare by TOTAL VALUE, not per-ore. Higher value items produce more
+      // valuable final products through combine multipliers. The ore cost
+      // propagates correctly to the terminal product level.
+      if (!bestResult || outputValue > bestResult.value) {
         bestResult = {
           value: outputValue,
           oreCount: totalOres,
@@ -678,6 +686,7 @@ class FlowOptimizer {
           throughput,
           byproductOutputs: byproductNodes.length > 0 ? byproductNodes : undefined,
           appliedModifiers: appliedModifiers?.length > 0 ? appliedModifiers : undefined,
+          enhancementPath: enhancementPath || undefined,
         };
       }
     }

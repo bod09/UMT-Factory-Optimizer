@@ -333,6 +333,33 @@ class GraphGenerator {
         }
       }
 
+      // Add enhancement path machines (Bar→Gem→GemCutter→Prismatic→Gem→Bar)
+      if (node.enhancementPath) {
+        for (const enhMachineId of node.enhancementPath) {
+          const enhMachine = registry.get(enhMachineId);
+          if (!enhMachine) continue;
+          const enhOutType = enhMachine.outputs?.[0]?.type || type;
+          const enhKey = getKey(enhMachineId, enhOutType);
+          if (!uniqueNodes.has(enhKey)) {
+            uniqueNodes.set(enhKey, {
+              machine: enhMachineId,
+              type: enhOutType,
+              value: node.value,
+              name: enhMachine.name || enhMachineId,
+              category: enhMachine.category || "jewelcrafting",
+              quantity: node.throughput || 1,
+              childKeys: [finalKey],
+              oreCount: node.oreCount,
+              isByproduct: nodeIsSideChain,
+              dupProvided: false,
+            });
+          } else {
+            uniqueNodes.get(enhKey).quantity += (node.throughput || 1);
+          }
+          finalKey = enhKey;
+        }
+      }
+
       // Secondary outputs (stone from smelter, etc.) - walk them like any other output
       if (node.byproductOutputs) {
         const bpRatio = registry.get(machine)?.byproductRatio || 0.5;
