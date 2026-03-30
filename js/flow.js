@@ -646,7 +646,9 @@ class FlowOptimizer {
       // Skip modifiers that accept any INPUT type that was already in the inputs
       // (prevents re-applying tempering_forge to alloy_bar when bars were already tempered)
       const inputTypes = new Set(inputResults.map(r => r.resolvedType || ''));
-      outputValue = this.applyModifiers(targetType, outputValue, inputTypes);
+      const modResult = this.applyModifiers(targetType, outputValue, inputTypes);
+      outputValue = modResult.value;
+      const appliedModifiers = modResult.appliedModifiers;
 
       // Discover type conversion enhancements from registry
       // For any type, check if there's a convert→process→convert-back path that adds value
@@ -675,6 +677,7 @@ class FlowOptimizer {
           inputs: inputResults,
           throughput,
           byproductOutputs: byproductNodes.length > 0 ? byproductNodes : undefined,
+          appliedModifiers: appliedModifiers?.length > 0 ? appliedModifiers : undefined,
         };
       }
     }
@@ -709,22 +712,20 @@ class FlowOptimizer {
 
   // Apply type modifiers (tempering forge, electronic tuner, etc.)
   // skipInputTypes: types that were already in the inputs (don't re-apply their modifiers)
+  // Returns { value, appliedModifiers: [{id, effect, value}] }
   applyModifiers(type, value, skipInputTypes) {
     const skipMods = new Set(["quality_assurance", "ore_cleaner", "polisher", "philosophers_stone", "ore_upgrader", "duplicator", "crusher"]);
     const modifiers = this.registry.getModifiers(type).filter(id => !skipMods.has(id));
+    const applied = [];
 
     for (const modId of modifiers) {
       const mod = this.registry.get(modId);
       if (!mod || !this.registry.isAvailable(modId, this.config)) continue;
 
-      // Skip modifiers that also apply to input types (already applied in input chain)
-      // e.g., tempering_forge accepts bar|alloy_bar - if input was "bar", skip for alloy_bar
       if (skipInputTypes && skipInputTypes.size > 0) {
         const modInputTypes = (mod.inputs || []).flatMap(i => i.split("|"));
         const alreadyApplied = modInputTypes.some(t => skipInputTypes.has(t));
         if (alreadyApplied && type !== modInputTypes[0]) continue;
-        // But allow if the modifier is SPECIFICALLY for this output type
-        // (e.g., electronic_tuner for electromagnet - electromagnet is in its input list)
         if (alreadyApplied && modInputTypes.includes(type)) {
           // This modifier is for THIS type specifically - allow it
         } else if (alreadyApplied) {
@@ -732,13 +733,17 @@ class FlowOptimizer {
         }
       }
 
+      const prevValue = value;
       switch (mod.effect) {
         case "flat": value += mod.value; break;
         case "multiply": value *= mod.value; break;
         case "percent": value *= (1 + mod.value); break;
       }
+      if (value !== prevValue) {
+        applied.push({ id: modId, effect: mod.effect, modValue: mod.value, outputType: type });
+      }
     }
-    return value;
+    return { value, appliedModifiers: applied };
   }
 
   // Discover enhancement paths: convert type → process → convert back

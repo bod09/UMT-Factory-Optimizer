@@ -305,6 +305,34 @@ class GraphGenerator {
         }
       }
 
+      // Add modifier machines (Tempering Forge, Electronic Tuner, etc.) as visible nodes
+      // These are applied by applyModifiers() but need to show in the graph
+      let finalKey = key; // The key that connects to the parent (might be wrapped by modifiers)
+      if (node.appliedModifiers) {
+        for (const mod of node.appliedModifiers) {
+          const modMachine = registry.get(mod.id);
+          if (!modMachine) continue;
+          const modKey = getKey(mod.id, mod.outputType || type);
+          if (!uniqueNodes.has(modKey)) {
+            uniqueNodes.set(modKey, {
+              machine: mod.id,
+              type: mod.outputType || type,
+              value: node.value, // Value after this modifier
+              name: modMachine.name || mod.id,
+              category: modMachine.category || "metalwork",
+              quantity: node.throughput || 1,
+              childKeys: [finalKey], // Input is the previous node
+              oreCount: node.oreCount,
+              isByproduct: nodeIsSideChain,
+              dupProvided: false,
+            });
+          } else {
+            uniqueNodes.get(modKey).quantity += (node.throughput || 1);
+          }
+          finalKey = modKey; // Parent will now connect to this modifier instead
+        }
+      }
+
       // Secondary outputs (stone from smelter, etc.) - walk them like any other output
       if (node.byproductOutputs) {
         const bpRatio = registry.get(machine)?.byproductRatio || 0.5;
@@ -529,7 +557,7 @@ class GraphGenerator {
         return dupKey; // Parent connects to dup, not directly to this node
       }
 
-      return key;
+      return finalKey; // Return modifier-wrapped key so parent connects to the modifier
     }
 
     // Build the tree starting from QA wrapper or the chain result itself
