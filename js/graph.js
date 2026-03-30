@@ -549,31 +549,30 @@ class GraphGenerator {
         // Calculate excess: side produces sideQty, main needs mainQty
         const mainQty = mainData.quantity || 1;
         const excess = sideQty - mainQty;
-        if (excess > 0) {
-          // Build a chain of modifier nodes for excess items
-          // Excess items ARE sold directly so modifiers are safe here
-          let excessValue = sideData.value || 0;
-          let prevKey = sideKey; // Start from the side chain producer
 
-          // Find all value-adding modifiers, sorted: flat first, then multipliers
-          const modifiers = [];
-          for (const [modId, modM] of registry.machines) {
-            if (!registry.isAvailable(modId, config)) continue;
-            if (!modM.inputs || modM.inputs.length !== 1) continue;
-            const accepts = modM.inputs.some(inp =>
-              inp === "any" || inp === sideType || inp.split("|").includes(sideType)
+        // Store edge quantities for display
+        if (!sideData._edgeQty) sideData._edgeQty = {};
+        sideData._edgeQty[mainKey] = mainQty;
+
+        if (excess > 0) {
+          // Find the LAST node in the side chain (follow downstreamKeys)
+          let lastSideKey = sideKey;
+          const visited = new Set([sideKey]);
+          while (true) {
+            const lastNode = uniqueNodes.get(lastSideKey);
+            const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
+              !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct &&
+              uniqueNodes.get(dk)?.machine !== "sell_excess"
             );
-            if (!accepts) continue;
-            const outType = modM.outputs?.[0]?.type;
-            if (outType && outType !== "same" && outType !== sideType) continue;
-            if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
-            // Skip if this modifier already exists in the main chain (reuse it instead)
-            modifiers.push({ id: modId, machine: modM });
+            if (dsKeys.length === 0) break;
+            lastSideKey = dsKeys[0];
+            visited.add(lastSideKey);
           }
-          modifiers.sort((a, b) => {
-            const order = { flat: 0, percent: 1, multiply: 1 };
-            return (order[a.machine.effect] ?? 2) - (order[b.machine.effect] ?? 2);
-          });
+
+          // Connect excess from the last side chain node to shared QA → Seller
+          let prevKey = lastSideKey;
+          let excessValue = uniqueNodes.get(lastSideKey)?.value || sideData.value || 0;
+          const modifiers = [];
 
           // Create separate modifier nodes in side chain for cheap machines,
           // then connect to shared main chain nodes (QA, Seller) at the end.
@@ -743,11 +742,14 @@ class GraphGenerator {
         const toId = keyToId.get(dsKey);
         if (toId !== undefined && toId !== fromId) { // No self-loops
           const dsData = uniqueNodes.get(dsKey);
+          // Edge quantity: from _edgeQty if set, otherwise use target's quantity
+          const edgeQty = data._edgeQty?.[dsKey] || dsData?.quantity;
           edges.push({
             from: fromId,
             to: toId,
             itemType: dsData?.type || "?",
             isByproduct: true,
+            qty: edgeQty,
           });
         }
       }

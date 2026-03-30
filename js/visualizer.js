@@ -63,7 +63,7 @@ class GraphVisualizer {
 
       // Edge label
       if (edge.itemType && !edge.dashed) {
-        const label = this.createEdgeLabel(from, to, edge.itemType);
+        const label = this.createEdgeLabel(from, to, edge.itemType, edge.qty);
         label.dataset.from = edge.from;
         label.dataset.to = edge.to;
         label.classList.add("graph-edge-label");
@@ -436,8 +436,9 @@ class GraphVisualizer {
   }
 
   // Create edge label
-  createEdgeLabel(from, to, itemType) {
-    const label = ITEM_TYPES[itemType] || itemType;
+  createEdgeLabel(from, to, itemType, qty) {
+    let label = ITEM_TYPES[itemType] || itemType;
+    if (qty && qty > 1) label += ` x${qty}`;
     const x = (from.x + this.nodeWidth + to.x) / 2;
     const y = (from.y + to.y) / 2 + this.nodeHeight / 2 - 5;
 
