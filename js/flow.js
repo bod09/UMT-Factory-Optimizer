@@ -242,30 +242,9 @@ class FlowOptimizer {
       if (!acceptsType) continue;
 
       if (m.effect === "chance") {
-        // Chance machines (prospectors, sifters): expected value
-        // EV = chance × byproduct_value + (1-chance) × passthrough_value
-        const chance = m.value || 0.05;
-        const byproductType = m.byproducts?.[0]?.type;
-        let byproductValue = 0;
-
-        if (m.gemType) {
-          byproductValue = (GEMS.find(g => g.name === m.gemType)?.value || 0) * ds;
-        } else if (byproductType) {
-          // Sifter: byproduct is ore, resolve its value
-          const bpResult = this.getItemValue(byproductType, baseOreValue);
-          byproductValue = (bpResult?.value || 0) * ds;
-        }
-
-        // Passthrough: the item continues (stone passes through prospectors)
-        // The passthrough value is the NEXT machine's value for this same type
-        // Don't recurse here - it's handled by chaining machines
-
-        const ev = chance * byproductValue;
-        if (ev > 0) {
-          // Stone passes through prospectors - each takes a chance, rest continues
-          // The total value from chaining ALL prospectors + crusher + rest
-          // is computed by the multi-pass iteration. Here just record this machine.
-        }
+        // Chance machines are pass-through: item goes through AND continues
+        // Collect them separately - they'll be chained after finding the best non-chance path
+        continue;
       } else {
         // Any machine that accepts this type: evaluate its output value
         // This handles crusher (set), kiln (flat), clay_mixer (combine), etc.
@@ -388,6 +367,77 @@ class FlowOptimizer {
             downstreamChain,
           };
         }
+      }
+    }
+
+    // Chain pass-through chance machines (prospectors, sifters) ON TOP of the best path
+    // These add value without consuming the item - stone passes through each one
+    // Sort by byproduct value (highest first = Diamond before Topaz)
+    const chanceMachines = [];
+    for (const [machineId, m] of this.registry.machines) {
+      if (m.effect !== "chance") continue;
+      if (!this.registry.isAvailable(machineId, this.config)) continue;
+      const acceptsType = (m.inputs || []).some(inp =>
+        inp === itemType || inp.split("|").includes(itemType) || inp === "any"
+      );
+      if (!acceptsType) continue;
+      // Don't use crusher-like "any" machines for chance
+      if ((m.inputs || []).includes("any") && !m.gemType && !m.byproducts?.length) continue;
+
+      let byproductValue = 0;
+      if (m.gemType) {
+        // Use raw gem value - prospector gems are sold directly
+        // They could go through gem cutter etc. but that's a separate chain
+        const gemData = GEMS.find(g => g.name === m.gemType);
+        byproductValue = (gemData?.value || 0);
+        // Apply polisher if safe (+$10)
+        const oreChainTags = this._oreChainTags || new Set();
+        if (oreChainTags.has("Polished")) byproductValue += 10;
+        byproductValue *= ds;
+      } else if (m.byproducts?.[0]?.type) {
+        const bpResult = this.getItemValue(m.byproducts[0].type, baseOreValue);
+        byproductValue = bpResult?.value || 0;
+      }
+
+      chanceMachines.push({
+        id: machineId,
+        chance: m.value || 0.05,
+        byproductValue,
+        gemType: m.gemType,
+      });
+    }
+
+    // Sort: highest byproduct value first (Diamond before Topaz)
+    chanceMachines.sort((a, b) => b.byproductValue - a.byproductValue);
+
+    if (chanceMachines.length > 0 && bestResult) {
+      // Chain all chance machines: each one processes remaining items
+      let totalChanceEV = 0;
+      let remainingFraction = 1.0;
+      const chanceChain = [];
+
+      for (const cm of chanceMachines) {
+        const evFromThisMachine = remainingFraction * cm.chance * cm.byproductValue;
+        totalChanceEV += evFromThisMachine;
+        remainingFraction *= (1 - cm.chance);
+        chanceChain.push({
+          machine: cm.id,
+          chance: cm.chance,
+          byproductValue: cm.byproductValue,
+          gemType: cm.gemType,
+          remainingAfter: remainingFraction,
+        });
+      }
+
+      // Total value = chance EV + remaining fraction × best non-chance path value
+      const combinedValue = totalChanceEV + remainingFraction * bestResult.value;
+
+      if (combinedValue > bestResult.value) {
+        bestResult = {
+          ...bestResult,
+          value: combinedValue,
+          chanceChain, // For graph display
+        };
       }
     }
 
