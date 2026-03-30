@@ -713,6 +713,10 @@ class GraphGenerator {
       if (!sideData.isByproduct) continue;
       if (sideData.machine === "sell_excess") continue;
       if (sideKey.startsWith("excess_")) continue;
+      // Skip chance machines (prospectors/sifters) - their outputs are
+      // already connected to main chain at gem/ore processing points
+      const sideM = registry.get(sideData.machine);
+      if (sideM?.effect === "chance") continue;
       const sideType = sideData.type;
 
       // Find main chain nodes that need this type as input
