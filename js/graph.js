@@ -521,53 +521,57 @@ class GraphGenerator {
 
     // Post-process: connect side chain outputs to main chain consumers
     // e.g., Ceramic Furnace (side) → Superconductor Constructor (main)
-    // Also calculate excess and add sell nodes
+    // Connect side chain outputs to main chain consumers + handle excess
+    // Strategy: find the LAST node in each side chain, connect IT to main chain
+    // This ensures items go through ALL processing (polisher, etc.) before entering main chain
+    const connectedMainKeys = new Set(); // Prevent duplicate connections
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
-      if (sideData.machine === "sell_excess") continue; // Don't connect sell nodes to main chain
-      if (sideKey.startsWith("excess_")) continue; // Don't connect excess modifier nodes to main chain
+      if (sideData.machine === "sell_excess") continue;
+      if (sideKey.startsWith("excess_")) continue;
       const sideType = sideData.type;
-      const sideQty = sideData.quantity;
 
       // Find main chain nodes that need this type as input
       for (const [mainKey, mainData] of uniqueNodes) {
         if (mainData.isByproduct) continue;
         const mainMachine = registry.get(mainData.machine);
         if (!mainMachine?.inputs) continue;
-        // Check if this main machine accepts the side chain's output type
         const acceptsType = mainMachine.inputs.some(inp =>
           inp === sideType || inp.split("|").includes(sideType)
         );
         if (!acceptsType) continue;
+        if (connectedMainKeys.has(mainKey)) continue; // Already connected
+        connectedMainKeys.add(mainKey);
 
-        // Connect side → main (cross-chain edge)
-        if (!sideData.downstreamKeys) sideData.downstreamKeys = [];
-        if (!sideData.downstreamKeys.includes(mainKey)) {
-          sideData.downstreamKeys.push(mainKey);
+        // Find the LAST node in the side chain that outputs this type
+        // (follow downstreamKeys to the end of the processing chain)
+        let lastSideKey = sideKey;
+        const visited = new Set([sideKey]);
+        while (true) {
+          const lastNode = uniqueNodes.get(lastSideKey);
+          const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
+            !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct &&
+            uniqueNodes.get(dk)?.machine !== "sell_excess"
+          );
+          if (dsKeys.length === 0) break;
+          lastSideKey = dsKeys[0];
+          visited.add(lastSideKey);
         }
 
-        // Calculate excess: side produces sideQty, main needs mainQty
+        const lastSideData = uniqueNodes.get(lastSideKey);
+        const lastSideQty = lastSideData?.quantity || sideData.quantity;
         const mainQty = mainData.quantity || 1;
-        const excess = sideQty - mainQty;
+        const excess = lastSideQty - mainQty;
 
-        // Store edge quantities for display
-        if (!sideData._edgeQty) sideData._edgeQty = {};
-        sideData._edgeQty[mainKey] = mainQty;
+        // Connect LAST side chain node → main chain (not the producer)
+        if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
+        if (!lastSideData.downstreamKeys.includes(mainKey)) {
+          lastSideData.downstreamKeys.push(mainKey);
+        }
+        if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
+        lastSideData._edgeQty[mainKey] = mainQty;
 
         if (excess > 0) {
-          // Find the LAST node in the side chain (follow downstreamKeys)
-          let lastSideKey = sideKey;
-          const visited = new Set([sideKey]);
-          while (true) {
-            const lastNode = uniqueNodes.get(lastSideKey);
-            const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
-              !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct &&
-              uniqueNodes.get(dk)?.machine !== "sell_excess"
-            );
-            if (dsKeys.length === 0) break;
-            lastSideKey = dsKeys[0];
-            visited.add(lastSideKey);
-          }
 
           // Connect excess from the last side chain node to shared QA → Seller
           let prevKey = lastSideKey;
@@ -615,6 +619,9 @@ class GraphGenerator {
                 if (!prevNode.downstreamKeys.includes(existingMain[0])) {
                   prevNode.downstreamKeys.push(existingMain[0]);
                 }
+                // Set edge qty for excess
+                if (!prevNode._edgeQty) prevNode._edgeQty = {};
+                prevNode._edgeQty[existingMain[0]] = excess;
               }
               prevKey = existingMain[0];
               // Don't need to connect further - main QA already connects to Seller
