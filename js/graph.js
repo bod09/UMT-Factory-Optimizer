@@ -826,6 +826,7 @@ class GraphGenerator {
         machine: data.machine,
         name: data.name,
         type: data.type,
+        displayType: data.displayType,
         value: Math.round(data.value),
         category: data.category,
         layer: depthMap.get(key) || 0,
