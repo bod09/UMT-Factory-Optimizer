@@ -977,7 +977,10 @@ class FlowOptimizer {
     const basePerOre = baseOres > 0 ? baseValue / baseOres : 0;
 
     // How many duplicators does the player have?
-    const dupCount = parseInt(this.config.prestigeItems?.duplicator) || 0;
+    const dupConfig = this.config.prestigeItems?.duplicator;
+    if (!dupConfig) return null;
+    // dupConfig can be boolean (true = has them) or number (quantity owned)
+    const dupCount = typeof dupConfig === 'number' ? dupConfig : (dupConfig ? 10 : 0);
     if (dupCount <= 0) return null;
     const maxDups = Math.min(dupCount, 3); // Cap at 3 to prevent combinatorial explosion
 

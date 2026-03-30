@@ -46,6 +46,12 @@ class GraphVisualizer {
     `;
     svg.appendChild(defs);
 
+    // Count outgoing edges per node (to detect splits)
+    const outgoingCount = new Map();
+    for (const edge of graph.edges) {
+      outgoingCount.set(edge.from, (outgoingCount.get(edge.from) || 0) + 1);
+    }
+
     // Draw edges first (behind nodes)
     const edgeElements = [];
     const labelElements = [];
@@ -61,9 +67,11 @@ class GraphVisualizer {
       svg.appendChild(path);
       edgeElements.push(path);
 
-      // Edge label (show on all edges including byproduct/dashed)
+      // Edge label: show item type, and quantity ONLY when source splits
       if (edge.itemType) {
-        const label = this.createEdgeLabel(from, to, edge.itemType, edge.qty);
+        const isSplit = (outgoingCount.get(edge.from) || 0) > 1;
+        const showQty = isSplit ? edge.qty : null;
+        const label = this.createEdgeLabel(from, to, edge.itemType, showQty);
         label.dataset.from = edge.from;
         label.dataset.to = edge.to;
         label.classList.add("graph-edge-label");
