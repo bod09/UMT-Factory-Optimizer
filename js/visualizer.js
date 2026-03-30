@@ -395,11 +395,25 @@ class GraphVisualizer {
 
     let d;
     if (connectionType === 'horizontal') {
-      const cx = (x1 + x2) / 2;
-      d = `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`;
+      // Gentle S-curve, last segment approaches target horizontally (arrow points right)
+      const dx = x2 - x1;
+      const cp1x = x1 + dx * 0.4;
+      const cp2x = x1 + dx * 0.6;
+      d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
     } else if (connectionType === 'vertical') {
-      const cy = (y1 + y2) / 2;
-      d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
+      // Straight line for short distances, curve for long
+      const dx = Math.abs(x2 - x1);
+      const dy = Math.abs(y2 - y1);
+      if (dx < 10) {
+        // Nearly vertical: straight line
+        d = `M ${x1} ${y1} L ${x2} ${y2}`;
+      } else {
+        // Diagonal: use quadratic bezier so arrow aligns with the line direction
+        // The arrow will point along the line from control point to endpoint
+        const cx = (x1 + x2) / 2;
+        const cy = (y1 + y2) / 2;
+        d = `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+      }
     } else {
       // back-edge: curve above both nodes
       const midY = Math.min(from.y, to.y) - 40;

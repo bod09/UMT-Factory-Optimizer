@@ -357,7 +357,9 @@ class GraphGenerator {
           for (const step of sideChainSteps) {
             if (!step.machine) continue;
             const sideMachine = registry.get(step.machine);
-            const sideType = sideMachine?.outputs?.[0]?.type || step.type || "?";
+            let sideType = sideMachine?.outputs?.[0]?.type || step.type || "?";
+            // Resolve "same" to the actual item type flowing through
+            if (sideType === "same") sideType = step.type || "?";
             const sideKey = getKey(step.machine, sideType);
 
             if (!uniqueNodes.has(sideKey)) {
@@ -678,10 +680,13 @@ class GraphGenerator {
         const toId = keyToId.get(childKey);
         if (toId !== undefined && toId !== fromId) { // No self-loops
           const childData = uniqueNodes.get(childKey);
+          // Resolve "same" type to the parent's type (modifier machines output same type as input)
+          let edgeItemType = childData?.type || "?";
+          if (edgeItemType === "same") edgeItemType = data.type || "?";
           edges.push({
             from: toId,
             to: fromId,
-            itemType: childData?.type || "?",
+            itemType: edgeItemType,
           });
         }
       }
@@ -695,7 +700,9 @@ class GraphGenerator {
           // For cross-chain edges, use SOURCE type (what's flowing)
           // not TARGET type (what the target machine produces)
           const isCrossChain = data.isByproduct !== dsData?.isByproduct;
-          const edgeType = isCrossChain ? data.type : (dsData?.type || data.type || "?");
+          let edgeType = isCrossChain ? data.type : (dsData?.type || data.type || "?");
+          // Resolve "same" to source type
+          if (edgeType === "same") edgeType = data.type || "?";
           edges.push({
             from: fromId,
             to: toId,
