@@ -300,7 +300,7 @@ class GraphVisualizer {
     g.appendChild(nameText);
 
     // Output type + value
-    const typeLabel = ITEM_TYPES[node.type] || node.type || "";
+    const typeLabel = node.displayType || ITEM_TYPES[node.type] || node.type || "";
     const valueStr = node.value ? formatMoney(node.value) : "";
 
     const detailText = document.createElementNS("http://www.w3.org/2000/svg", "text");

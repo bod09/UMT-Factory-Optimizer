@@ -432,9 +432,13 @@ class GraphGenerator {
             const sideKey = getKey(step.machine, sideType);
 
             if (!uniqueNodes.has(sideKey)) {
+              // For chance machines (prospectors), show the gem type not stone passthrough
+              const displayType = step.isChanceMachine && step.gemType
+                ? `${step.gemType} Gem (${Math.round((step.chance || 0.05) * 100)}%)`
+                : sideType;
               uniqueNodes.set(sideKey, {
                 machine: step.machine,
-                type: sideType,
+                type: step.isChanceMachine && step.gemType ? "gem" : sideType,
                 value: step.value || 0,
                 name: sideMachine?.name || step.machine,
                 category: sideMachine?.category || "stonework",
@@ -443,6 +447,7 @@ class GraphGenerator {
                 oreCount: 0,
                 isByproduct: true,
                 dupProvided: false,
+                displayType, // Custom label for the type line
               });
             } else {
               uniqueNodes.get(sideKey).quantity += currentQty;
