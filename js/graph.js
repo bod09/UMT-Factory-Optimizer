@@ -226,14 +226,29 @@ class GraphGenerator {
       // They get isByproduct flag for visual placement in the bottom row
 
       // Check if this node should have a duplicator inserted
+      // Use the ORIGINAL chain tree to check parent, not just the current graph walk parent
+      // (bolts might be first visited from frame_maker but should be duped under casing_machine)
       let insertDup = false;
-      if (dupTargetType && type === dupTargetType && parentKey) {
-        // Check if parent matches dupParentType (by output type OR machine ID)
-        const parentNode = uniqueNodes.get(parentKey);
-        if (!dupParentType ||
-            parentNode?.machine === dupParentType ||
-            parentNode?.type === dupParentType) {
+      if (dupTargetType && type === dupTargetType) {
+        if (!dupParentType) {
           insertDup = true;
+        } else {
+          // Check if ANY combiner in the original chain tree contains this type
+          // and matches the dupParentType
+          function findParentCombiner(searchNode, targetMachine) {
+            if (!searchNode?.inputs) return null;
+            for (const child of searchNode.inputs) {
+              if (child.machine === targetMachine) return searchNode;
+              const found = findParentCombiner(child, targetMachine);
+              if (found) return found;
+            }
+            return null;
+          }
+          const origParent = findParentCombiner(chainResult, machine);
+          if (origParent && (origParent.machine === dupParentType ||
+              origParent.resolvedType === dupParentType)) {
+            insertDup = true;
+          }
         }
       }
       if (dupTargetMachine && machine === dupTargetMachine) {

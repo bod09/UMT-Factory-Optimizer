@@ -368,12 +368,13 @@ class GraphVisualizer {
     let x1, y1, x2, y2;
     let connectionType;
 
+    const arrowGap = 6; // Gap between arrow tip and node edge
     if (sameFlow) {
       // WITHIN a flow: always right side → left side
       connectionType = to.x > from.x ? 'horizontal' : 'back-edge';
       x1 = from.x + this.nodeWidth;
       y1 = from.y + this.nodeHeight / 2;
-      x2 = to.x;
+      x2 = to.x - arrowGap;
       y2 = to.y + this.nodeHeight / 2;
     } else {
       // BETWEEN flows: always top/bottom ports
@@ -383,13 +384,13 @@ class GraphVisualizer {
         x1 = from.x + this.nodeWidth / 2;
         y1 = from.y + this.nodeHeight;
         x2 = to.x + this.nodeWidth / 2;
-        y2 = to.y;
+        y2 = to.y - arrowGap;
       } else {
         // Target is above: top of source → bottom of target
         x1 = from.x + this.nodeWidth / 2;
         y1 = from.y;
         x2 = to.x + this.nodeWidth / 2;
-        y2 = to.y + this.nodeHeight;
+        y2 = to.y + this.nodeHeight + arrowGap;
       }
     }
 
