@@ -319,8 +319,37 @@ class FlowOptimizer {
         let currentValue = machineOutputValue;
         const downstreamChain = []; // Full chain for graph: [{machine, type, value}, ...]
 
-        // Follow processing chains: dust → clay_mixer → clay → ceramic_furnace → ceramic
+        // Follow processing chains: dust → sifter → clay_mixer → clay → ceramic_furnace → ceramic
+        // Also find chance machines (sifters) for intermediate types and add their EV
         for (let depth = 0; depth < 5; depth++) {
+          // First: find chance machines for currentType (sifters for dust)
+          for (const [chId, chM] of this.registry.machines) {
+            if (chM.effect !== "chance") continue;
+            if (!this.registry.isAvailable(chId, this.config)) continue;
+            const acceptsCurrent = (chM.inputs || []).some(inp =>
+              inp === currentType || inp.split("|").includes(currentType)
+            );
+            if (!acceptsCurrent) continue;
+            // Calculate EV from this chance machine
+            let chanceByproductValue = 0;
+            if (chM.byproducts?.[0]?.type) {
+              const bpResult = this.getItemValue(chM.byproducts[0].type, baseOreValue);
+              chanceByproductValue = (bpResult?.value || 0) * (this.config.hasDoubleSeller ? 2 : 1);
+            }
+            const chanceEV = (chM.value || 0.05) * chanceByproductValue;
+            if (chanceEV > 0) {
+              finalValue += chanceEV;
+              downstreamChain.push({
+                machine: chId,
+                type: currentType,
+                value: finalValue,
+                isChanceMachine: true,
+                chance: chM.value || 0.05,
+                byproductValue: chanceByproductValue,
+              });
+            }
+          }
+
           let bestNext = null;
           for (const [nextId, nextM] of this.registry.machines) {
             if (!this.registry.isAvailable(nextId, this.config)) continue;

@@ -335,11 +335,17 @@ class GraphGenerator {
 
       // Add enhancement path machines (Bar→Gem→GemCutter→Prismatic→Gem→Bar)
       if (node.enhancementPath) {
+        let enhQty = node.throughput || 1;
         for (const enhMachineId of node.enhancementPath) {
           const enhMachine = registry.get(enhMachineId);
           if (!enhMachine) continue;
           const enhOutType = enhMachine.outputs?.[0]?.type || type;
           const enhKey = getKey(enhMachineId, enhOutType);
+          // Combine machines (prismatic) reduce quantity by input count
+          const inputCount = (enhMachine.inputs || []).length;
+          if (enhMachine.effect === "combine" && inputCount > 1) {
+            enhQty = Math.max(1, Math.ceil(enhQty / inputCount));
+          }
           if (!uniqueNodes.has(enhKey)) {
             uniqueNodes.set(enhKey, {
               machine: enhMachineId,
@@ -347,14 +353,14 @@ class GraphGenerator {
               value: node.value,
               name: enhMachine.name || enhMachineId,
               category: enhMachine.category || "jewelcrafting",
-              quantity: node.throughput || 1,
+              quantity: enhQty,
               childKeys: [finalKey],
               oreCount: node.oreCount,
               isByproduct: nodeIsSideChain,
               dupProvided: false,
             });
           } else {
-            uniqueNodes.get(enhKey).quantity += (node.throughput || 1);
+            uniqueNodes.get(enhKey).quantity += enhQty;
           }
           finalKey = enhKey;
         }
