@@ -439,6 +439,43 @@ class FlowOptimizer {
 
       if (!valid || inputResults.length === 0) continue;
 
+      // Apply safe modifiers to each input before combining
+      // A modifier is safe if its tag is already on OTHER inputs (tag inheritance means
+      // the combined product would get it anyway). This adds free value.
+      // e.g., Polisher on glass (+$10) is safe because ores are already Polished.
+      const oreChainTags = this._oreChainTags || new Set();
+      for (let i = 0; i < inputResults.length; i++) {
+        const inp = inputResults[i];
+        // Collect tags from ALL other inputs' ore chains
+        // If any other input already has a tag, applying it to this input is free
+        const otherTags = new Set(oreChainTags);
+
+        // Apply each safe modifier
+        for (const [modId, modM] of this.registry.machines) {
+          if (!this.registry.isAvailable(modId, this.config)) continue;
+          if (!modM.inputs || modM.inputs.length !== 1) continue;
+          if (!modM.tag) continue;
+          if (!otherTags.has(modM.tag)) continue; // Only safe if tag already exists
+          if (!["flat", "percent", "multiply"].includes(modM.effect)) continue;
+          // Check this modifier accepts the input type
+          const inpType = inp.resolvedType || "?";
+          const accepts = modM.inputs.some(i2 =>
+            i2 === "any" || i2 === inpType || i2.split("|").includes(inpType)
+          );
+          if (!accepts) continue;
+          // Check if already applied (machines list contains this modifier)
+          if (inp.machines?.includes(modId)) continue;
+          // Apply
+          let newVal = inp.value;
+          if (modM.effect === "flat") newVal += modM.value;
+          else if (modM.effect === "percent") newVal *= (1 + modM.value);
+          else if (modM.effect === "multiply") newVal *= modM.value;
+          if (newVal > inp.value) {
+            inputResults[i] = { ...inp, value: newVal, _modifiedBy: modId };
+          }
+        }
+      }
+
       // Apply machine effect
       let outputValue = this.applyMachineEffect(machine, inputResults);
 
