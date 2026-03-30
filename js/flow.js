@@ -386,14 +386,44 @@ class FlowOptimizer {
 
       let byproductValue = 0;
       if (m.gemType) {
-        // Use raw gem value - prospector gems are sold directly
-        // They could go through gem cutter etc. but that's a separate chain
+        // Start with raw gem value
         const gemData = GEMS.find(g => g.name === m.gemType);
-        byproductValue = (gemData?.value || 0);
-        // Apply polisher if safe (+$10)
+        let gemVal = gemData?.value || 0;
+
+        // Try ALL single-input machines that accept gems to find best processing
+        // This checks gem_cutter (1.4x), polisher (+$10), etc.
+        let bestGemVal = gemVal;
+        for (const [procId, procM] of this.registry.machines) {
+          if (!this.registry.isAvailable(procId, this.config)) continue;
+          if (!procM.inputs || procM.inputs.length !== 1) continue;
+          const acceptsGem = procM.inputs.some(inp =>
+            inp === "gem" || inp.split("|").includes("gem") || inp === "any"
+          );
+          if (!acceptsGem) continue;
+          // Skip transport, chance, duplicate, etc.
+          if (!["flat", "percent", "multiply"].includes(procM.effect)) continue;
+
+          let processed = gemVal;
+          if (procM.effect === "flat") processed += procM.value;
+          else if (procM.effect === "percent") processed *= (1 + procM.value);
+          else if (procM.effect === "multiply") processed *= procM.value;
+          if (processed > bestGemVal) bestGemVal = processed;
+        }
+
+        // Apply polisher on top if safe and not already counted
         const oreChainTags = this._oreChainTags || new Set();
-        if (oreChainTags.has("Polished")) byproductValue += 10;
-        byproductValue *= ds;
+        if (oreChainTags.has("Polished") && bestGemVal === gemVal) {
+          bestGemVal += 10;
+        }
+
+        // QA on the processed gem (safe because gems from prospectors
+        // don't feed into the main chain combiner)
+        const qa = this.registry.get("quality_assurance");
+        if (qa && this.registry.isAvailable("quality_assurance", this.config)) {
+          bestGemVal *= (1 + qa.value);
+        }
+
+        byproductValue = bestGemVal * ds;
       } else if (m.byproducts?.[0]?.type) {
         const bpResult = this.getItemValue(m.byproducts[0].type, baseOreValue);
         byproductValue = bpResult?.value || 0;

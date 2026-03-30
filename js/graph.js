@@ -409,28 +409,47 @@ class GraphGenerator {
               const producedQty = Math.max(1, Math.round(currentQty * chance));
 
               if (step.gemType) {
-                // Gem produced - resolve best destination via flow
-                const gemData = GEMS?.find(g => g.name === step.gemType);
-                const gemValue = step.byproductValue || gemData?.value || 0;
-                const sellKey = getKey("sell_" + step.machine, "gem");
-
-                if (!uniqueNodes.has(sellKey)) {
-                  uniqueNodes.set(sellKey, {
-                    machine: "sell_" + step.machine,
-                    type: "gem",
-                    value: gemValue,
-                    name: `Sell ${step.gemType}`,
-                    category: "jewelcrafting",
-                    quantity: producedQty,
-                    childKeys: [],
-                    oreCount: 0,
-                    isByproduct: true,
-                  });
-                }
+                // Gems connect to QA → Seller (same as all sold items)
+                // They're free items that add bonus profit
                 const prospNode = uniqueNodes.get(sideKey);
                 if (prospNode) {
+                  // Find or create a shared "Gem Processing" node that connects to QA
+                  const gemProcKey = getKey("gem_processing", "gem");
+                  if (!uniqueNodes.has(gemProcKey)) {
+                    // Find best single-input gem processor from registry
+                    let bestProcName = "Sell Gems";
+                    let bestProcValue = 0;
+                    for (const [procId, procM] of registry.machines) {
+                      if (!procM.inputs || procM.inputs.length !== 1) continue;
+                      if (!["flat", "percent", "multiply"].includes(procM.effect)) continue;
+                      const acceptsGem = procM.inputs.some(inp =>
+                        inp === "gem" || inp.split("|").includes("gem")
+                      );
+                      if (!acceptsGem) continue;
+                      if ((procM.value || 0) > bestProcValue) {
+                        bestProcValue = procM.value;
+                        bestProcName = procM.name;
+                      }
+                    }
+                    uniqueNodes.set(gemProcKey, {
+                      machine: "gem_processing",
+                      type: "gem",
+                      value: step.byproductValue || 0,
+                      name: bestProcName,
+                      category: "jewelcrafting",
+                      quantity: 0, // Accumulated from all prospectors
+                      childKeys: [],
+                      oreCount: 0,
+                      isByproduct: true,
+                    });
+                  }
+                  // Accumulate gem qty
+                  uniqueNodes.get(gemProcKey).quantity += producedQty;
+
                   if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
-                  if (!prospNode.downstreamKeys.includes(sellKey)) prospNode.downstreamKeys.push(sellKey);
+                  if (!prospNode.downstreamKeys.includes(gemProcKey)) {
+                    prospNode.downstreamKeys.push(gemProcKey);
+                  }
                 }
               }
 
@@ -576,6 +595,8 @@ class GraphGenerator {
           const node = uniqueNodes.get(nodeKey);
           if (!node || visited.has(nodeKey)) return;
           visited.add(nodeKey);
+          // Don't overwrite aggregate nodes (gem_processing collects from multiple sources)
+          if (node.machine === "gem_processing") return;
           // Scale this node's quantity to match parent
           node.quantity = parentQty;
           // For chance machines, reduce for next in chain
@@ -687,6 +708,23 @@ class GraphGenerator {
           }
         }
         break; // Only connect to first matching main node
+      }
+    }
+
+    // Connect gem processing node to QA → Seller
+    const gemProcKey = getKey("gem_processing", "gem");
+    if (uniqueNodes.has(gemProcKey)) {
+      const gemNode = uniqueNodes.get(gemProcKey);
+      const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
+        d.machine === "quality_assurance" && !d.isByproduct
+      );
+      const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
+        d.machine === "seller" && !d.isByproduct
+      );
+      const target = mainQA?.[0] || mainSeller?.[0];
+      if (target) {
+        if (!gemNode.downstreamKeys) gemNode.downstreamKeys = [];
+        if (!gemNode.downstreamKeys.includes(target)) gemNode.downstreamKeys.push(target);
       }
     }
 
