@@ -559,6 +559,16 @@ class GraphGenerator {
                     oreCount: 0, isByproduct: true, dupProvided: false,
                   });
                 }
+                // Connect previous gem machine → this one via downstreamKeys (for layer ordering)
+                if (lastGemKey && lastGemKey !== gmKey) {
+                  const prevGemNode = uniqueNodes.get(lastGemKey);
+                  if (prevGemNode) {
+                    if (!prevGemNode.downstreamKeys) prevGemNode.downstreamKeys = [];
+                    if (!prevGemNode.downstreamKeys.includes(gmKey)) {
+                      prevGemNode.downstreamKeys.push(gmKey);
+                    }
+                  }
+                }
                 if (!gemTargetKey) gemTargetKey = gmKey;
                 lastGemKey = gmKey;
                 currentGemType = bestGemMachine.outType;
