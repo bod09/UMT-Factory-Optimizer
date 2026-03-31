@@ -18,6 +18,26 @@ function adjustPrestige(inputId, delta) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+// Starting Money: shows dollar amount ($250 per level)
+function adjustStartMoney(delta) {
+  const hidden = document.getElementById("starting-money-level");
+  const display = document.getElementById("starting-money-display");
+  if (!hidden || !display) return;
+  const current = parseInt(hidden.value) || 0;
+  const newVal = Math.max(0, Math.min(10, current + delta));
+  hidden.value = newVal;
+  display.value = "$" + (newVal * 250).toLocaleString();
+  hidden.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function updateStartMoneyDisplay() {
+  const hidden = document.getElementById("starting-money-level");
+  const display = document.getElementById("starting-money-display");
+  if (hidden && display) {
+    display.value = "$" + ((parseInt(hidden.value) || 0) * 250).toLocaleString();
+  }
+}
+
 // --- localStorage persistence ---
 function saveConfig() {
   const config = {
@@ -97,6 +117,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load saved config BEFORE rendering content that depends on it
   loadConfig();
   updateDepthLabels();
+  updateStartMoneyDisplay();
 
   // Now render content that reads checkbox/input state
   initDatabase();

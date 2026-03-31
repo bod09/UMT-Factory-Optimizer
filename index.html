@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>UMT Factory Optimizer - Ultimate Mining Tycoon</title>
-  <link rel="stylesheet" href="css/style.css?v=196">
+  <link rel="stylesheet" href="css/style.css?v=198">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
@@ -71,12 +71,13 @@
           </span>
         </label>
         <span class="header-items-divider">|</span>
-        <label class="prestige-header-item" title="Starting Money upgrade (+$250/level)">
+        <label class="prestige-header-item" title="Starting Money upgrade (+$250 per medal)">
           Start $
           <span class="prestige-spinner">
-            <button onclick="adjustPrestige('starting-money-level',-1)">-</button>
-            <input type="number" id="starting-money-level" value="0" min="0" max="10" data-upgrade="startingMoney">
-            <button onclick="adjustPrestige('starting-money-level',1)">+</button>
+            <button onclick="adjustStartMoney(-1)">-</button>
+            <input type="text" id="starting-money-display" value="$0" readonly style="width:42px;cursor:default">
+            <input type="hidden" id="starting-money-level" value="0" data-upgrade="startingMoney">
+            <button onclick="adjustStartMoney(1)">+</button>
           </span>
         </label>
       </div>
@@ -308,11 +309,11 @@
     <p>Not affiliated with the UMT development team. For educational purposes only.</p>
   </footer>
 
-  <script src="js/data.js?v=197"></script>
-  <script src="js/graph.js?v=197"></script>
-  <script src="js/flow.js?v=197"></script>
-  <script src="js/visualizer.js?v=197"></script>
-  <script src="js/optimizer.js?v=197"></script>
-  <script src="js/app.js?v=197"></script>
+  <script src="js/data.js?v=198"></script>
+  <script src="js/graph.js?v=198"></script>
+  <script src="js/flow.js?v=198"></script>
+  <script src="js/visualizer.js?v=198"></script>
+  <script src="js/optimizer.js?v=198"></script>
+  <script src="js/app.js?v=198"></script>
 </body>
 </html>
