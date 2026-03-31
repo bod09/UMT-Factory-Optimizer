@@ -18,13 +18,13 @@ function saveConfig() {
     oreQuantity: $("#ore-quantity").value,
     oreSelect: $("#ore-select").value,
     doubleSeller: $("#double-seller").checked,
-    xxlBackpack: $("#xxl-backpack").checked,
     theoreticalMax: $("#theoretical-max").checked,
+    startingMoneyLevel: $("#starting-money-level")?.value || "0",
     prestigeItems: {},
-    prestigeUpgrades: {},
   };
-  $$("#prestige-items-config input[type='number']").forEach(inp => {
-    config.prestigeItems[inp.id] = inp.value;
+  // Save prestige items from header
+  $$(".prestige-header-item input[type='number']").forEach(inp => {
+    if (inp.id) config.prestigeItems[inp.id] = inp.value;
   });
   $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
     config.prestigeUpgrades[inp.dataset.upgrade] = inp.value;
@@ -53,8 +53,11 @@ function loadConfig() {
       $("#ore-select-hint").textContent = depthDisabled ? "Overrides depth" : "Uses depth range";
     }
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
-    if (config.xxlBackpack) $("#xxl-backpack").checked = config.xxlBackpack;
     if (config.theoreticalMax) $("#theoretical-max").checked = config.theoreticalMax;
+    if (config.startingMoneyLevel) {
+      const sml = $("#starting-money-level");
+      if (sml) sml.value = config.startingMoneyLevel;
+    }
 
     // Zone select
     if (config.zoneSelect) $("#zone-select").value = config.zoneSelect;
@@ -70,13 +73,7 @@ function loadConfig() {
       });
     }
 
-    // Prestige upgrade levels
-    if (config.prestigeUpgrades) {
-      $$("#prestige-upgrades-config input[type='number']").forEach(inp => {
-        const val = config.prestigeUpgrades[inp.dataset.upgrade];
-        if (val !== undefined) inp.value = val;
-      });
-    }
+    // Prestige upgrades removed (only Starting Money kept in header)
   } catch(e) {}
 }
 
@@ -84,7 +81,6 @@ function loadConfig() {
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initZoneSelect();
-  initPrestigeUpgrades();
   attachEvents();
 
   // Load saved config BEFORE rendering content that depends on it
@@ -193,9 +189,9 @@ function attachEvents() {
   $("#output-belts").addEventListener("change", saveConfig);
   $("#ore-quantity").addEventListener("input", saveConfig);
   $("#double-seller").addEventListener("change", saveConfig);
-  $("#xxl-backpack").addEventListener("change", () => {
-    saveConfig();
-    renderProgression();
+  // Header prestige items - save on change
+  $$(".prestige-header-item input[type='number']").forEach(inp => {
+    inp.addEventListener("change", saveConfig);
   });
   // Switch to "Custom" when manually editing depths
   $("#depth-min").addEventListener("input", () => {
@@ -228,18 +224,7 @@ function attachEvents() {
   });
 }
 
-function initPrestigeUpgrades() {
-  const container = $("#prestige-upgrades-config");
-  PRESTIGE_UPGRADES.forEach(upgrade => {
-    const row = document.createElement("div");
-    row.className = "prestige-upgrade-row";
-    row.innerHTML = `
-      <span>${upgrade.name} (${upgrade.bonusPerLevel}/lvl)</span>
-      <input type="number" value="0" min="0" max="20" data-upgrade="${upgrade.name}">
-    `;
-    container.appendChild(row);
-  });
-}
+// initPrestigeUpgrades removed - only Starting Money kept in header
 
 function runOptimizer(scrollToResults = false) {
   const theoreticalMax = $("#theoretical-max").checked;
