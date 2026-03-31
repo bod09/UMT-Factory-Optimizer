@@ -512,29 +512,48 @@ class GraphGenerator {
             }
 
             // If no gem processor, create side chain gem machines
+            // Follow the gem processing chain: gem → gem_cutter → prismatic → etc
             let lastGemKey = gemTargetKey;
             if (!gemTargetKey) {
               let currentGemType = "gem";
-              for (const [gmId, gmM] of registry.machines) {
-                if (!registry.isAvailable(gmId, config)) continue;
-                if (!gmM.inputs || gmM.inputs.length !== 1) continue;
-                if (!gmM.inputs.some(inp => inp === currentGemType || inp.split("|").includes(currentGemType))) continue;
-                const outType = gmM.outputs?.[0]?.type;
-                if (!outType || outType === "same") continue;
-                if (!["multiply", "flat", "percent"].includes(gmM.effect)) continue;
+              let currentQtyInChain = totalGems;
+              for (let depth = 0; depth < 5; depth++) {
+                let bestGemMachine = null;
+                for (const [gmId, gmM] of registry.machines) {
+                  if (!registry.isAvailable(gmId, config)) continue;
+                  if (!gmM.inputs || gmM.inputs.length === 0) continue;
+                  // Accept single-input OR combine (same type, like prismatic: gem+gem)
+                  const allSameType = gmM.inputs.every(inp =>
+                    inp === currentGemType || inp.split("|").includes(currentGemType)
+                  );
+                  if (!allSameType) continue;
+                  const outType = gmM.outputs?.[0]?.type;
+                  if (!outType || outType === "same") continue;
+                  if (!["multiply", "flat", "percent", "combine"].includes(gmM.effect)) continue;
+                  if (!bestGemMachine || (gmM.value || 1) > (bestGemMachine.value || 1)) {
+                    bestGemMachine = { id: gmId, machine: gmM, outType };
+                  }
+                }
+                if (!bestGemMachine) break;
 
-                const gmKey = getKey(gmId, outType);
+                const gmKey = getKey(bestGemMachine.id, bestGemMachine.outType);
+                // Combine machines reduce quantity (prismatic: 2→1)
+                const inputCount = bestGemMachine.machine.inputs.length;
+                if (bestGemMachine.machine.effect === "combine" && inputCount > 1) {
+                  currentQtyInChain = Math.max(1, Math.ceil(currentQtyInChain / inputCount));
+                }
                 if (!uniqueNodes.has(gmKey)) {
                   uniqueNodes.set(gmKey, {
-                    machine: gmId, type: outType, value: 0,
-                    name: gmM.name || gmId, category: gmM.category || "jewelcrafting",
-                    quantity: totalGems, childKeys: lastGemKey ? [lastGemKey] : [],
+                    machine: bestGemMachine.id, type: bestGemMachine.outType, value: 0,
+                    name: bestGemMachine.machine.name || bestGemMachine.id,
+                    category: bestGemMachine.machine.category || "jewelcrafting",
+                    quantity: currentQtyInChain, childKeys: lastGemKey ? [lastGemKey] : [],
                     oreCount: 0, isByproduct: true, dupProvided: false,
                   });
                 }
                 if (!gemTargetKey) gemTargetKey = gmKey;
                 lastGemKey = gmKey;
-                currentGemType = outType;
+                currentGemType = bestGemMachine.outType;
               }
             }
 
