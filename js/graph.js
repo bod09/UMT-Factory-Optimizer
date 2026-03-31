@@ -744,14 +744,16 @@ class GraphGenerator {
     }
 
     // Build the tree starting from QA wrapper or the chain result itself
-    walkChain(chainResult, null, productQty || 1);
+    // walkChain returns the FINAL key (may include enhancement wrapping like gem_to_bar)
+    const rootFinalKey = walkChain(chainResult, null, productQty || 1);
 
     // Add QA node if available
     const qa = registry.get("quality_assurance");
     const rootMachine = registry.get(chainResult.machine);
     const terminalType = chainResult.resolvedType || chainResult.type || rootMachine?.outputs?.[0]?.type || "product";
     if (qa && registry.isAvailable("quality_assurance", config)) {
-      const rootKey = getKey(chainResult.machine, terminalType);
+      // Connect QA to the FINAL key from walkChain (includes enhancements)
+      const qaInputKey = rootFinalKey || getKey(chainResult.machine, terminalType);
       const qaKey = getKey("quality_assurance", terminalType);
       if (!uniqueNodes.has(qaKey)) {
         uniqueNodes.set(qaKey, {
@@ -761,7 +763,7 @@ class GraphGenerator {
           name: qa.name,
           category: qa.category || "multipurpose",
           quantity: productQty || 1,
-          childKeys: [rootKey],
+          childKeys: [qaInputKey],
           oreCount: 0,
         });
       }
@@ -770,7 +772,7 @@ class GraphGenerator {
     // Add Seller node
     const sellerKey = getKey("seller", "sell");
     const qaKeyCheck = getKey("quality_assurance", terminalType);
-    const lastMainKey = uniqueNodes.has(qaKeyCheck) ? qaKeyCheck : getKey(chainResult.machine, terminalType);
+    const lastMainKey = uniqueNodes.has(qaKeyCheck) ? qaKeyCheck : (rootFinalKey || getKey(chainResult.machine, terminalType));
     uniqueNodes.set(sellerKey, {
       machine: "seller",
       type: "sell",
