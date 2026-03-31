@@ -366,9 +366,9 @@ class GraphGenerator {
       // Secondary outputs (stone from smelter, etc.) - walk them like any other output
       if (node.byproductOutputs) {
         const bpRatio = registry.get(machine)?.byproductRatio || 0.5;
-        // Per-invocation: how many secondary items THIS visit produces
-        // The node is visited multiple times; each visit adds to the total
-        const bpQty = Math.max(1, Math.round(nodeThru * bpRatio));
+        // Accumulate fractional byproduct amount per visit
+        // Don't round per-visit (Math.max(1) was forcing 1 per visit even for 0.5 ratio)
+        const bpQtyRaw = nodeThru * bpRatio;
 
         for (const bp of node.byproductOutputs) {
           if (!bp.result || !bp.type) continue;
@@ -384,14 +384,15 @@ class GraphGenerator {
               value: bp.result.value || 0,
               name: typeName,
               category: "stonework",
-              quantity: bpQty,
+              quantity: 0, // Will be set after all visits accumulate
+              _rawQty: bpQtyRaw,
               childKeys: [],
               oreCount: 0,
               isByproduct: true,
               dupProvided: false,
             });
           } else {
-            uniqueNodes.get(sourceKey).quantity += bpQty;
+            uniqueNodes.get(sourceKey)._rawQty = (uniqueNodes.get(sourceKey)._rawQty || 0) + bpQtyRaw;
           }
           // Connect parent (smelter) → stone source with correct type and quantity
           const parentNode = uniqueNodes.get(key);
@@ -427,7 +428,7 @@ class GraphGenerator {
           ];
 
           let prevSideKey = sourceKey;
-          let currentQty = bpQty;
+          let currentQty = Math.max(1, Math.round(bpQtyRaw));
           let pendingGemConnections = null;
           let pendingGemQAConnections = null;
 
@@ -779,13 +780,17 @@ class GraphGenerator {
       oreCount: 0,
     });
 
+    // Finalize fractional byproduct quantities: round accumulated _rawQty
+    for (const [key, data] of uniqueNodes) {
+      if (data._rawQty !== undefined) {
+        data.quantity = Math.max(1, Math.round(data._rawQty));
+        delete data._rawQty;
+      }
+    }
+
     // Post-process: scale side chain quantities proportionally
-    // The downstream chain was walked once with initial bpQty. The source node
-    // accumulated its full qty from all visits. Scale downstream by the ratio.
     for (const [key, data] of uniqueNodes) {
       if (data.machine === "secondary_output" && data.downstreamKeys) {
-        // Find initial qty (what the first walk used)
-        // and final qty (accumulated from all visits)
         const finalSourceQty = data.quantity;
         // Walk downstream, scaling each node proportionally
         const visited = new Set([key]);
