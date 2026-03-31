@@ -426,6 +426,7 @@ class GraphGenerator {
           let prevSideKey = sourceKey;
           let currentQty = bpQty;
           let pendingGemConnections = null;
+          let pendingGemQAConnections = null;
 
           for (const step of sideChainSteps) {
             if (!step.machine) continue;
@@ -564,24 +565,10 @@ class GraphGenerator {
               }
             }
 
-            // Connect last gem machine to QA → Seller
+            // Track last gem key for QA connection in post-processing
             if (lastGemKey) {
-              const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
-                d.machine === "quality_assurance" && !d.isByproduct
-              );
-              const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
-                d.machine === "seller" && !d.isByproduct
-              );
-              const sellTarget = mainQA?.[0] || mainSeller?.[0];
-              if (sellTarget) {
-                const lastGemNode = uniqueNodes.get(lastGemKey);
-                if (lastGemNode) {
-                  if (!lastGemNode.downstreamKeys) lastGemNode.downstreamKeys = [];
-                  if (!lastGemNode.downstreamKeys.includes(sellTarget)) {
-                    lastGemNode.downstreamKeys.push(sellTarget);
-                  }
-                }
-              }
+              if (!pendingGemQAConnections) pendingGemQAConnections = [];
+              pendingGemQAConnections.push(lastGemKey);
             }
 
             // Connect each prospector to the gem target
@@ -894,6 +881,41 @@ class GraphGenerator {
     }
 
     // (Gem processing connections handled inline during prospector node creation)
+
+    // Post-process: connect side chain gem endpoints to QA → Seller
+    // Must run AFTER cross-chain connections which may add ring_maker/laser_maker
+    {
+      const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
+        d.machine === "quality_assurance" && !d.isByproduct
+      );
+      const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
+        d.machine === "seller" && !d.isByproduct
+      );
+      const sellTarget = mainQA?.[0] || mainSeller?.[0];
+      if (sellTarget) {
+        // Find all side chain gem endpoints (nodes with no downstream to main chain)
+        for (const [key, data] of uniqueNodes) {
+          if (!data.isByproduct) continue;
+          const m = registry.get(data.machine);
+          if (!m) continue;
+          // Check if this is a gem processing machine (gem_cutter, prismatic)
+          const isGemProcessor = m.category === "jewelcrafting" &&
+            (m.inputs || []).some(inp => inp === "gem" || inp.split("|").includes("gem"));
+          if (!isGemProcessor) continue;
+          // Check if it has NO downstream to main chain QA/Seller
+          const hasMainDownstream = (data.downstreamKeys || []).some(dk => {
+            const dkData = uniqueNodes.get(dk);
+            return dkData && !dkData.isByproduct;
+          });
+          if (hasMainDownstream) continue;
+          // Connect to QA
+          if (!data.downstreamKeys) data.downstreamKeys = [];
+          if (!data.downstreamKeys.includes(sellTarget)) {
+            data.downstreamKeys.push(sellTarget);
+          }
+        }
+      }
+    }
 
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
