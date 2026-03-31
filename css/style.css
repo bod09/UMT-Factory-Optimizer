@@ -1733,19 +1733,36 @@ footer a:hover { text-decoration: underline; }
 @media (max-width: 480px) {
   main { padding: 0.75rem; }
 
-  /* Header */
-  .header-content { padding: 0.4rem 0.5rem; gap: 0.3rem; }
+  /* Header - compact */
+  .header-content { padding: 0.3rem 0.5rem; gap: 0.25rem; }
   .logo h1 { font-size: 0.85rem; }
   .logo-icon { font-size: 1rem; }
-  nav { gap: 0.2rem; width: 100%; }
-  .nav-btn { padding: 0.3rem 0.5rem; font-size: 0.7rem; flex: 1; text-align: center; }
-  .header-items-bar { gap: 0.3rem; }
-  .header-items-label { font-size: 0.6rem; }
+  nav { gap: 0.2rem; }
+  .nav-btn { padding: 0.3rem 0.5rem; font-size: 0.7rem; }
+
+  /* Prestige items: collapsible on mobile */
+  .header-items-bar {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.3rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid var(--border);
+  }
+  .header-items-label { display: none; }
   .header-items-divider { display: none; }
-  .prestige-header-item { font-size: 0.65rem; gap: 0.2rem; }
-  .prestige-header-item input[type="number"] { width: 26px; height: 20px; font-size: 0.65rem; }
+  .robux-toggle { font-size: 0.7rem; grid-column: span 3; }
+  .prestige-header-item {
+    font-size: 0.65rem;
+    gap: 0.15rem;
+    flex-direction: column;
+    align-items: center;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    padding: 0.2rem;
+  }
+  .prestige-header-item input[type="number"] { width: 28px; height: 20px; font-size: 0.65rem; }
   .prestige-spinner button { width: 16px; height: 16px; font-size: 0.65rem; }
-  .robux-toggle { font-size: 0.7rem; }
 
   /* Config */
   .config-grid { grid-template-columns: 1fr; gap: 0.5rem; }
