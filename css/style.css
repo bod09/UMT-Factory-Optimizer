@@ -1733,29 +1733,28 @@ footer a:hover { text-decoration: underline; }
 @media (max-width: 600px) {
   main { padding: 0.75rem; }
 
-  /* Header - compact rows */
+  /* Header - stacked rows on mobile */
   .header-content {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     padding: 0.3rem 0.5rem;
-    gap: 0.3rem;
+    gap: 0.25rem;
+    align-items: stretch;
   }
-  /* Row 1: logo + nav inline */
-  .header-content > .logo { grid-row: 1; }
-  .header-content > nav { grid-row: 1; justify-self: end; }
-  .logo { flex-shrink: 1; min-width: 0; }
-  .logo h1 { font-size: 0.75rem; white-space: nowrap; }
-  .logo-icon { font-size: 0.9rem; }
+  .logo { align-self: flex-start; }
+  .logo h1 { font-size: 0.85rem; }
+  .logo-icon { font-size: 1rem; }
   nav {
     display: flex;
-    gap: 0.15rem;
-    flex-wrap: nowrap;
+    gap: 0.2rem;
+    width: 100%;
   }
   .nav-btn {
-    padding: 0.2rem 0.35rem;
-    font-size: 0.55rem;
+    flex: 1;
+    padding: 0.35rem 0.2rem;
+    font-size: 0.65rem;
+    text-align: center;
     white-space: nowrap;
-    flex-shrink: 0;
   }
 
   /* Prestige items: collapsible on mobile */
