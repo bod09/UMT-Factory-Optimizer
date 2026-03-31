@@ -740,6 +740,9 @@ class GraphGenerator {
           // Skip non-real machines
           if (!registry.get(node.machine)) return;
           // Scale this node's quantity to match parent
+          // Skip gem processing machines - their quantity is set by gem chain creation
+          const nodeM = registry.get(node.machine);
+          if (nodeM?.category === "jewelcrafting" && node.isByproduct) return;
           node.quantity = parentQty;
           // For chance machines, reduce for next in chain
           let nextQty = parentQty;
