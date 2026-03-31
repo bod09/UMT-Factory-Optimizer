@@ -844,14 +844,15 @@
       ],
       "outputs": [
         {
-          "type": "prismatic_gem",
+          "type": "gem",
           "chance": 1.0,
-          "desc": "Prismatic Gem (1.15x combined)"
+          "desc": "Prismatic Gem (1.15x combined value, tagged Prismatic)"
         }
       ],
       "effect": "combine",
       "value": 1.15,
-      "desc": "Combines 2 gems into prismatic gem at 1.15x combined. Cannot be re-combined."
+      "desc": "Combines 2 gems into prismatic gem at 1.15x combined. Cannot be re-combined.",
+      "tag": "Prismatic"
     },
     "gilder": {
       "name": "Gilder",
