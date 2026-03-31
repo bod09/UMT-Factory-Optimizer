@@ -516,9 +516,11 @@ class GraphGenerator {
                     }
                     if (!prospNode._edgeQty) prospNode._edgeQty = {};
                     prospNode._edgeQty[gemTargetKey] = producedQty;
-                    // Add gem quantity to the target machine
+                    // Track extra gems to add AFTER enhancement post-processing
                     const targetNode = uniqueNodes.get(gemTargetKey);
-                    if (targetNode) targetNode.quantity += producedQty;
+                    if (targetNode) {
+                      targetNode._extraGemQty = (targetNode._extraGemQty || 0) + producedQty;
+                    }
                   }
                 }
               }
@@ -727,6 +729,12 @@ class GraphGenerator {
         const eNode = uniqueNodes.get(eKey);
         if (eNode) eNode.quantity = qty;
       }
+    }
+
+    // Post-process: add extra gem quantities from prospectors
+    // (must be after enhancement qty reset which overwrites quantities)
+    for (const [k, d] of uniqueNodes) {
+      if (d._extraGemQty) d.quantity += d._extraGemQty;
     }
 
     // Post-process: connect side chain outputs to main chain consumers
