@@ -435,7 +435,6 @@ function renderChainResults(results, oresAtDepth) {
       <div class="chain-header">
         <span class="chain-name">${result.chain}</span>
         <span class="chain-value">${showBatch ? formatMoney(result.batchProfit) + ' <small>total</small>' : formatMoney(result.avgPerOre || result.perOre) + ' <small>avg/ore</small>'}</span>
-        ${idx === 0 ? '<span class="best-badge">BEST</span>' : ''}
       </div>
       <div class="chain-details">
         <div class="chain-detail">Per Ore: <strong>${formatMoney(result.avgPerOre || result.perOre)}</strong></div>
