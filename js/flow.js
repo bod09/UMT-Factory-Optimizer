@@ -787,6 +787,9 @@ class FlowOptimizer {
     for (const modId of modifiers) {
       const mod = this.registry.get(modId);
       if (!mod || !this.registry.isAvailable(modId, this.config)) continue;
+      // Skip multi-input machines - they're not simple modifiers
+      // (e.g., blasting_powder_refiner needs dust + powder, not just powder)
+      if (mod.inputs && mod.inputs.length > 1) continue;
 
       if (skipInputTypes && skipInputTypes.size > 0) {
         const modInputTypes = (mod.inputs || []).flatMap(i => i.split("|"));
