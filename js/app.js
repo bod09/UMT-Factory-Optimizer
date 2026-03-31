@@ -783,8 +783,7 @@ function renderProgression() {
     { name: "Early Chains", budgetMax: 50000, ore: "Silver", oreVal: 150, desc: "Build bolt/plate chains, start frame production" },
     { name: "Mid Game", budgetMax: 500000, ore: "Gold", oreVal: 350, desc: "Tempering Forge doubles bar value, build casing chain" },
     { name: "Advanced", budgetMax: 2000000, ore: "Titanium", oreVal: 500, desc: "Engine, Superconductor, and multi-input factories" },
-    { name: "Mega Factories", budgetMax: 10000000, ore: "Mithril", oreVal: 3000, desc: "Power Core, Tablet, Laser - maximize per-ore value" },
-    { name: "Push to Prestige", budgetMax: 20000000, ore: "Mithril", oreVal: 3000, desc: "Maximize throughput, reach $20M to prestige" },
+    { name: "Pre-Prestige", budgetMax: 20000000, ore: "Mithril", oreVal: 3000, desc: "Power Core, Tablet, Laser - maximize per-ore value and reach $20M to prestige" },
   ];
 
   let prevMachines = new Set();
@@ -902,7 +901,7 @@ function renderProgression() {
           </div>
         </div>
       ` : ""}
-      <div class="stage-graph-container" id="stage-graph-${idx}"></div>
+      <div class="stage-graph-container graph-container" id="stage-graph-${idx}"></div>
     `;
     container.appendChild(card);
 
@@ -1079,12 +1078,10 @@ function renderPrestigeCostTable() {
   const tbody = $("#prestige-cost-table");
   if (!tbody) return;
   tbody.innerHTML = "";
-  let totalMedals = 0;
   for (let i = 1; i <= 10; i++) {
-    totalMedals += i;
     const cost = getPrestigeCost(i);
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${i}</td><td>${formatMoney(cost)}</td><td>${totalMedals}</td>`;
+    row.innerHTML = `<td>${i}</td><td>${formatMoney(cost)}</td><td>${i}</td>`;
     tbody.appendChild(row);
   }
 }
