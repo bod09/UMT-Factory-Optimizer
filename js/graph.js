@@ -516,6 +516,9 @@ class GraphGenerator {
                     }
                     if (!prospNode._edgeQty) prospNode._edgeQty = {};
                     prospNode._edgeQty[gemTargetKey] = producedQty;
+                    // Add gem quantity to the target machine
+                    const targetNode = uniqueNodes.get(gemTargetKey);
+                    if (targetNode) targetNode.quantity += producedQty;
                   }
                 }
               }

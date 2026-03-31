@@ -344,15 +344,17 @@ class FlowOptimizer {
                 id: chId, chance: chM.value || 0.05,
                 byproductValue: chanceByproductValue, chanceEV,
                 bpType: chM.byproducts?.[0]?.type || "unknown",
+                gemType: chM.gemType,
               });
             }
           }
-          // Keep only best per byproduct type
+          // Keep only best per FUNCTION (sifters dedup, prospectors keep all)
           intermediateChance.sort((a, b) => b.chanceEV - a.chanceEV);
-          const seenBpTypes = new Set();
+          const seenFuncs = new Set();
           for (const ic of intermediateChance) {
-            if (seenBpTypes.has(ic.bpType)) continue;
-            seenBpTypes.add(ic.bpType);
+            const funcKey = ic.gemType ? `gem:${ic.gemType}` : ic.bpType;
+            if (seenFuncs.has(funcKey)) continue;
+            seenFuncs.add(funcKey);
             finalValue += ic.chanceEV;
             downstreamChain.push({
               machine: ic.id, type: currentType, value: finalValue,
@@ -539,16 +541,18 @@ class FlowOptimizer {
     // Sort: highest byproduct value first (Diamond before Topaz)
     chanceMachines.sort((a, b) => b.byproductValue - a.byproductValue);
 
-    // Deduplicate: if multiple machines produce the SAME byproduct type,
-    // keep only the best one (e.g., nano_sifter > sifter for ore production)
-    // Items can only be processed once per tag (Sifted prevents re-sifting)
-    const seenByproductTypes = new Set();
+    // Deduplicate: machines that do the SAME thing (sifter vs nano_sifter)
+    // keep only the best. Different machines (each prospector = different gem) keep all.
+    // Key: machines with same inputs AND same byproduct type AND no unique gemType = duplicates
+    const seenFunctions = new Set();
     const dedupedChanceMachines = [];
     for (const cm of chanceMachines) {
       const m = this.registry.get(cm.id);
       const bpType = m?.byproducts?.[0]?.type || "unknown";
-      if (seenByproductTypes.has(bpType)) continue; // Already have a better one (sorted by value)
-      seenByproductTypes.add(bpType);
+      // Unique key: gemType makes each prospector distinct, sifters share the same key
+      const funcKey = cm.gemType ? `gem:${cm.gemType}` : bpType;
+      if (seenFunctions.has(funcKey)) continue;
+      seenFunctions.add(funcKey);
       dedupedChanceMachines.push(cm);
     }
 
