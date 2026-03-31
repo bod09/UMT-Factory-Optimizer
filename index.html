@@ -31,23 +31,53 @@
         <span class="header-items-divider">|</span>
         <span class="header-items-label">PRESTIGE:</span>
         <label class="prestige-header-item" title="1 Medal each">
-          Nano Sifter <input type="number" id="has-nano-sifter" value="0" min="0" max="20">
+          Nano Sifter
+          <span class="prestige-spinner">
+            <button onclick="adjustPrestige('has-nano-sifter',-1)">-</button>
+            <input type="number" id="has-nano-sifter" value="0" min="0" max="20">
+            <button onclick="adjustPrestige('has-nano-sifter',1)">+</button>
+          </span>
         </label>
         <label class="prestige-header-item" title="3 Medals each">
-          Philo Stone <input type="number" id="has-philosophers-stone" value="0" min="0" max="20">
+          Philo Stone
+          <span class="prestige-spinner">
+            <button onclick="adjustPrestige('has-philosophers-stone',-1)">-</button>
+            <input type="number" id="has-philosophers-stone" value="0" min="0" max="20">
+            <button onclick="adjustPrestige('has-philosophers-stone',1)">+</button>
+          </span>
         </label>
         <label class="prestige-header-item" title="3 Medals each">
-          Ore Upgrader <input type="number" id="has-ore-upgrader" value="0" min="0" max="20">
+          Ore Upgrader
+          <span class="prestige-spinner">
+            <button onclick="adjustPrestige('has-ore-upgrader',-1)">-</button>
+            <input type="number" id="has-ore-upgrader" value="0" min="0" max="20">
+            <button onclick="adjustPrestige('has-ore-upgrader',1)">+</button>
+          </span>
         </label>
         <label class="prestige-header-item" title="4 Medals each">
-          Transmuters <input type="number" id="has-transmuters" value="0" min="0" max="20">
+          Transmuters
+          <span class="prestige-spinner">
+            <button onclick="adjustPrestige('has-transmuters',-1)">-</button>
+            <input type="number" id="has-transmuters" value="0" min="0" max="20">
+            <button onclick="adjustPrestige('has-transmuters',1)">+</button>
+          </span>
         </label>
         <label class="prestige-header-item" title="8 Medals each">
-          Duplicator <input type="number" id="has-duplicator" value="0" min="0" max="20">
+          Duplicator
+          <span class="prestige-spinner">
+            <button onclick="adjustPrestige('has-duplicator',-1)">-</button>
+            <input type="number" id="has-duplicator" value="0" min="0" max="20">
+            <button onclick="adjustPrestige('has-duplicator',1)">+</button>
+          </span>
         </label>
         <span class="header-items-divider">|</span>
         <label class="prestige-header-item" title="Starting Money upgrade (+$250/level)">
-          Start $ <input type="number" id="starting-money-level" value="0" min="0" max="10" data-upgrade="startingMoney">
+          Start $
+          <span class="prestige-spinner">
+            <button onclick="adjustPrestige('starting-money-level',-1)">-</button>
+            <input type="number" id="starting-money-level" value="0" min="0" max="10" data-upgrade="startingMoney">
+            <button onclick="adjustPrestige('starting-money-level',1)">+</button>
+          </span>
         </label>
       </div>
     </div>
@@ -278,11 +308,11 @@
     <p>Not affiliated with the UMT development team. For educational purposes only.</p>
   </footer>
 
-  <script src="js/data.js?v=193"></script>
-  <script src="js/graph.js?v=193"></script>
-  <script src="js/flow.js?v=193"></script>
-  <script src="js/visualizer.js?v=193"></script>
-  <script src="js/optimizer.js?v=193"></script>
-  <script src="js/app.js?v=193"></script>
+  <script src="js/data.js?v=190"></script>
+  <script src="js/graph.js?v=190"></script>
+  <script src="js/flow.js?v=190"></script>
+  <script src="js/visualizer.js?v=190"></script>
+  <script src="js/optimizer.js?v=190"></script>
+  <script src="js/app.js?v=190"></script>
 </body>
 </html>

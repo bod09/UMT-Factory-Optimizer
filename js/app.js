@@ -7,6 +7,17 @@ const STORAGE_KEY = "umt-optimizer-config";
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// Prestige spinner +/- buttons
+function adjustPrestige(inputId, delta) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const min = parseInt(input.min) || 0;
+  const max = parseInt(input.max) || 20;
+  const current = parseInt(input.value) || 0;
+  input.value = Math.max(min, Math.min(max, current + delta));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 // --- localStorage persistence ---
 function saveConfig() {
   const config = {
