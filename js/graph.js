@@ -539,8 +539,7 @@ class GraphGenerator {
             }
 
             // Connect last gem machine to QA → Seller
-            if (lastGemKey && lastGemKey !== gemTargetKey) {
-              // Only if we created new machines (not reusing main chain)
+            if (lastGemKey) {
               const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
                 d.machine === "quality_assurance" && !d.isByproduct
               );
