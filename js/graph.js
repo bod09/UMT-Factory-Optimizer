@@ -530,6 +530,8 @@ class GraphGenerator {
                   const outType = gmM.outputs?.[0]?.type;
                   if (!outType || outType === "same") continue;
                   if (!["multiply", "flat", "percent", "combine"].includes(gmM.effect)) continue;
+                  // Skip machines already in this gem chain
+                  if (uniqueNodes.has(getKey(gmId, outType))) continue;
                   // Prefer single-input first (1.4x per gem > 1.15x per 2 gems)
                   // Only use combine if no single-input found, or it's a LATER step
                   const isSingle = gmM.inputs.length === 1;
