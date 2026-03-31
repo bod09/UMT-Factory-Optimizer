@@ -1021,10 +1021,8 @@ class GraphGenerator {
           const dsData = uniqueNodes.get(dsKey);
           // Edge quantity: from _edgeQty if set, otherwise use target's quantity
           const edgeQty = data._edgeQty?.[dsKey] || dsData?.quantity;
-          // For cross-chain edges, use SOURCE type (what's flowing)
-          // not TARGET type (what the target machine produces)
-          const isCrossChain = data.isByproduct !== dsData?.isByproduct;
-          let edgeType = isCrossChain ? data.type : (dsData?.type || data.type || "?");
+          // Always use SOURCE type (what's flowing out of the source node)
+          let edgeType = data.type || "?";
           // Resolve "same" to source type
           if (edgeType === "same") edgeType = data.type || "?";
           edges.push({
