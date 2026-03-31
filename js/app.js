@@ -789,41 +789,74 @@ function renderProgression() {
 
   let prevMachines = new Set();
 
-  stages.forEach((stage, idx) => {
-    // Use FlowOptimizer at this budget to find best chain
+  // Pre-compute ALL stages' results to check upgrade path compatibility
+  const allStageResults = stages.map(stage => {
     const stageConfig = {
       budget: stage.budgetMax,
-      hasDoubleSeller: false, // no double seller until post-prestige
+      hasDoubleSeller: false,
       prestigeItems: {},
     };
     const flowOpt = new FlowOptimizer(machineRegistry, stageConfig);
-    const results = flowOpt.discoverAll(stage.oreVal);
+    return flowOpt.discoverAll(stage.oreVal);
+  });
 
-    // Get best chain that fits budget
-    const best = results.length > 0 ? results[0] : null;
+  stages.forEach((stage, idx) => {
+    const results = allStageResults[idx];
 
-    // Extract machines used in this chain
+    // Pick best chain that builds toward the NEXT stage
+    // Score: value/ore × upgrade_efficiency
+    // upgrade_efficiency = how many of this stage's machines are reused in the next stage
+    let best = null;
+    if (results.length > 0) {
+      const nextResults = idx < stages.length - 1 ? allStageResults[idx + 1] : null;
+      const nextBestMachines = new Set();
+      if (nextResults?.[0]?.graph) {
+        nextResults[0].graph.nodes.forEach(n => {
+          if (n.name && !n.isByproduct) nextBestMachines.add(n.name);
+        });
+      }
+
+      let bestScore = -1;
+      for (const result of results.slice(0, 5)) { // Check top 5 chains
+        const thisMachines = new Set();
+        if (result.graph) {
+          result.graph.nodes.forEach(n => {
+            if (n.name && !n.isByproduct) thisMachines.add(n.name);
+          });
+        }
+
+        // Reuse score: what % of this stage's machines are in the next stage?
+        let reuse = 0;
+        if (nextBestMachines.size > 0) {
+          thisMachines.forEach(m => { if (nextBestMachines.has(m)) reuse++; });
+          reuse = thisMachines.size > 0 ? reuse / thisMachines.size : 0;
+        } else {
+          reuse = 1; // Last stage, no next to compare
+        }
+
+        // Score = per-ore value × (0.5 + 0.5 × reuse)
+        // Reuse gives up to 50% bonus. A chain with 80% reuse at 90% value beats
+        // a chain with 0% reuse at 100% value.
+        const score = result.perOre * (0.5 + 0.5 * reuse);
+        if (score > bestScore) {
+          bestScore = score;
+          best = result;
+        }
+      }
+    }
+
+    // Extract machines used in this chain from graph nodes
     const currentMachines = new Set();
     let totalCost = 0;
+    const skipMachines = new Set(["ore_source", "seller", "secondary_output", "sell_excess", "byproduct_source"]);
     if (best?.graph) {
       best.graph.nodes.forEach(n => {
-        const m = machineRegistry.get(n.machineId);
-        if (m && n.machineId !== "ore_source" && n.machineId !== "seller" &&
-            !n.machineId.startsWith("byproduct") && !n.machineId.startsWith("sifted")) {
-          currentMachines.add(n.machineId);
+        // Use the machine field from graph nodes (set by fromFlowChain)
+        const machineId = n.machineId || n.machine;
+        if (machineId && !skipMachines.has(machineId) && !machineId.startsWith("excess_")) {
+          currentMachines.add(machineId);
         }
       });
-    }
-    // Also extract from recipe tree if graph is missing
-    if (best?.recipeTree) {
-      const extractMachines = (node) => {
-        if (!node) return;
-        if (node.machine && node.machine !== "ore_source" && node.machine !== "seller") {
-          currentMachines.add(node.machine);
-        }
-        if (node.inputs) node.inputs.forEach(extractMachines);
-      };
-      extractMachines(best.recipeTree);
     }
 
     // Calculate what's NEW this stage
@@ -873,10 +906,17 @@ function renderProgression() {
     `;
     container.appendChild(card);
 
-    // Render mini graph if available
+    // Render graph using shared GraphVisualizer (same as Factory Optimizer)
     if (best?.graph) {
       const graphContainer = card.querySelector(`#stage-graph-${idx}`);
-      renderProgressionGraph(graphContainer, best.graph);
+      if (graphContainer) {
+        graphVisualizer.render(best.graph, graphContainer);
+        // Scale down for progression view
+        const svg = graphContainer.querySelector('svg');
+        if (svg) {
+          svg.style.height = Math.min(parseInt(svg.style.height) || 300, 250) + 'px';
+        }
+      }
     }
 
     // Update previous machines for next stage
@@ -887,7 +927,9 @@ function renderProgression() {
   renderPrestigeCostTable();
 }
 
-function renderProgressionGraph(container, graphData) {
+// renderProgressionGraph removed - now uses shared graphVisualizer.render()
+
+function __unused(container, graphData) {
   if (!container || !graphData || !graphData.nodes.length) return;
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
