@@ -425,6 +425,7 @@ class GraphGenerator {
 
           let prevSideKey = sourceKey;
           let currentQty = bpQty;
+          let pendingGemConnections = null;
 
           for (const step of sideChainSteps) {
             if (!step.machine) continue;
@@ -482,88 +483,9 @@ class GraphGenerator {
               const producedQty = Math.max(1, Math.round(currentQty * chance));
 
               if (step.gemType) {
-                const prospNode = uniqueNodes.get(sideKey);
-                if (prospNode) {
-                  // Find best destination for gems:
-                  // 1. Check main chain for existing gem processor
-                  // 2. If none, use flow to find best gem chain and create side nodes
-                  let gemTargetKey = null;
-
-                  // Search ALL nodes (main + side) for gem processors
-                  for (const [mk, md] of uniqueNodes) {
-                    const mData = registry.get(md.machine);
-                    if (mData && (mData.inputs || []).some(inp =>
-                      inp === "gem" || inp === "cut_gem" || inp.split("|").includes("gem")
-                    )) {
-                      gemTargetKey = mk;
-                      break;
-                    }
-                  }
-
-                  // If no gem processor exists, find best gem processing machines
-                  // from registry and create side chain nodes
-                  if (!gemTargetKey) {
-                    // Find single-input machines that accept gems and add value
-                    let currentGemType = "gem";
-                    let prevGemKey = null;
-                    for (const [gmId, gmM] of registry.machines) {
-                      if (!registry.isAvailable(gmId, config)) continue;
-                      if (!gmM.inputs || gmM.inputs.length !== 1) continue;
-                      const accepts = gmM.inputs.some(inp =>
-                        inp === currentGemType || inp.split("|").includes(currentGemType)
-                      );
-                      if (!accepts) continue;
-                      const outType = gmM.outputs?.[0]?.type;
-                      if (!outType || outType === "same") continue;
-                      if (!["multiply", "flat", "percent"].includes(gmM.effect)) continue;
-
-                      const gmKey = getKey(gmId, outType);
-                      if (!uniqueNodes.has(gmKey)) {
-                        uniqueNodes.set(gmKey, {
-                          machine: gmId,
-                          type: outType,
-                          value: 0,
-                          name: gmM.name || gmId,
-                          category: gmM.category || "jewelcrafting",
-                          quantity: producedQty,
-                          childKeys: prevGemKey ? [prevGemKey] : [],
-                          oreCount: 0,
-                          isByproduct: true,
-                          dupProvided: false,
-                        });
-                      } else {
-                        uniqueNodes.get(gmKey).quantity += producedQty;
-                      }
-                      if (!gemTargetKey) gemTargetKey = gmKey; // First machine is the entry point
-                      prevGemKey = gmKey;
-                      currentGemType = outType; // Follow the chain
-                    }
-                  }
-
-                  // Fallback: connect to QA/Seller
-                  if (!gemTargetKey) {
-                    const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
-                      d.machine === "quality_assurance" && !d.isByproduct
-                    );
-                    const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
-                      d.machine === "seller" && !d.isByproduct
-                    );
-                    gemTargetKey = mainQA?.[0] || mainSeller?.[0];
-                  }
-
-                  if (gemTargetKey) {
-                    if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
-                    if (!prospNode.downstreamKeys.includes(gemTargetKey)) {
-                      prospNode.downstreamKeys.push(gemTargetKey);
-                    }
-                    if (!prospNode._edgeQty) prospNode._edgeQty = {};
-                    prospNode._edgeQty[gemTargetKey] = producedQty;
-                    const targetNode = uniqueNodes.get(gemTargetKey);
-                    if (targetNode) {
-                      targetNode._extraGemQty = (targetNode._extraGemQty || 0) + producedQty;
-                    }
-                  }
-                }
+                // Track prospector gem outputs - will connect AFTER all prospectors
+                if (!pendingGemConnections) pendingGemConnections = [];
+                pendingGemConnections.push({ prospKey: sideKey, qty: producedQty });
               }
 
               // Reduce remaining quantity (stone consumed on gem production)
@@ -571,6 +493,90 @@ class GraphGenerator {
             }
 
             prevSideKey = sideKey;
+          }
+
+          // After all prospectors: connect gems to best processing
+          if (pendingGemConnections && pendingGemConnections.length > 0) {
+            const totalGems = pendingGemConnections.reduce((s, g) => s + g.qty, 0);
+
+            // Find gem target: existing gem processor in ANY chain, or create new
+            let gemTargetKey = null;
+            for (const [mk, md] of uniqueNodes) {
+              const mData = registry.get(md.machine);
+              if (mData && (mData.inputs || []).some(inp =>
+                inp === "gem" || inp === "cut_gem" || inp.split("|").includes("gem")
+              )) {
+                gemTargetKey = mk;
+                break;
+              }
+            }
+
+            // If no gem processor, create side chain gem machines
+            let lastGemKey = gemTargetKey;
+            if (!gemTargetKey) {
+              let currentGemType = "gem";
+              for (const [gmId, gmM] of registry.machines) {
+                if (!registry.isAvailable(gmId, config)) continue;
+                if (!gmM.inputs || gmM.inputs.length !== 1) continue;
+                if (!gmM.inputs.some(inp => inp === currentGemType || inp.split("|").includes(currentGemType))) continue;
+                const outType = gmM.outputs?.[0]?.type;
+                if (!outType || outType === "same") continue;
+                if (!["multiply", "flat", "percent"].includes(gmM.effect)) continue;
+
+                const gmKey = getKey(gmId, outType);
+                if (!uniqueNodes.has(gmKey)) {
+                  uniqueNodes.set(gmKey, {
+                    machine: gmId, type: outType, value: 0,
+                    name: gmM.name || gmId, category: gmM.category || "jewelcrafting",
+                    quantity: totalGems, childKeys: lastGemKey ? [lastGemKey] : [],
+                    oreCount: 0, isByproduct: true, dupProvided: false,
+                  });
+                }
+                if (!gemTargetKey) gemTargetKey = gmKey;
+                lastGemKey = gmKey;
+                currentGemType = outType;
+              }
+            }
+
+            // Connect last gem machine to QA → Seller
+            if (lastGemKey && lastGemKey !== gemTargetKey) {
+              // Only if we created new machines (not reusing main chain)
+              const mainQA = [...uniqueNodes.entries()].find(([k, d]) =>
+                d.machine === "quality_assurance" && !d.isByproduct
+              );
+              const mainSeller = [...uniqueNodes.entries()].find(([k, d]) =>
+                d.machine === "seller" && !d.isByproduct
+              );
+              const sellTarget = mainQA?.[0] || mainSeller?.[0];
+              if (sellTarget) {
+                const lastGemNode = uniqueNodes.get(lastGemKey);
+                if (lastGemNode) {
+                  if (!lastGemNode.downstreamKeys) lastGemNode.downstreamKeys = [];
+                  if (!lastGemNode.downstreamKeys.includes(sellTarget)) {
+                    lastGemNode.downstreamKeys.push(sellTarget);
+                  }
+                }
+              }
+            }
+
+            // Connect each prospector to the gem target
+            if (gemTargetKey) {
+              for (const gc of pendingGemConnections) {
+                const prospNode = uniqueNodes.get(gc.prospKey);
+                if (!prospNode) continue;
+                if (!prospNode.downstreamKeys) prospNode.downstreamKeys = [];
+                if (!prospNode.downstreamKeys.includes(gemTargetKey)) {
+                  prospNode.downstreamKeys.push(gemTargetKey);
+                }
+                if (!prospNode._edgeQty) prospNode._edgeQty = {};
+                prospNode._edgeQty[gemTargetKey] = gc.qty;
+              }
+              // Track extra gems for enhancement post-processing
+              const targetNode = uniqueNodes.get(gemTargetKey);
+              if (targetNode) {
+                targetNode._extraGemQty = (targetNode._extraGemQty || 0) + totalGems;
+              }
+            }
           }
         }
       }
