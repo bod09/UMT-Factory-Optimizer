@@ -734,7 +734,9 @@ class GraphGenerator {
     // Post-process: add extra gem quantities from prospectors
     // (must be after enhancement qty reset which overwrites quantities)
     for (const [k, d] of uniqueNodes) {
-      if (d._extraGemQty) d.quantity += d._extraGemQty;
+      if (d._extraGemQty) {
+        d.quantity += d._extraGemQty;
+      }
     }
 
     // Post-process: connect side chain outputs to main chain consumers
