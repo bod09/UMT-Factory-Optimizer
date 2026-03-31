@@ -548,7 +548,8 @@ class GraphGenerator {
                 // Combine machines reduce quantity (prismatic: 2 gems → 1)
                 const inputCount = bestGemMachine.machine.inputs.length;
                 if (bestGemMachine.machine.effect === "combine" && inputCount > 1) {
-                  currentQtyInChain = Math.max(1, Math.ceil(currentQtyInChain / inputCount));
+                  currentQtyInChain = Math.floor(currentQtyInChain / inputCount);
+                  if (currentQtyInChain <= 0) break; // Not enough items to combine
                 }
                 if (!uniqueNodes.has(gmKey)) {
                   uniqueNodes.set(gmKey, {
@@ -797,7 +798,7 @@ class GraphGenerator {
         const eOutType = em.outputs?.[0]?.type || sourceNode.type;
         const eKey = getKey(mid, eOutType);
         if (em.effect === "combine" && (em.inputs || []).length > 1) {
-          qty = Math.max(1, Math.ceil(qty / em.inputs.length));
+          qty = Math.floor(qty / em.inputs.length);
         }
         const eNode = uniqueNodes.get(eKey);
         if (eNode) eNode.quantity = qty;
