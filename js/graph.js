@@ -1020,7 +1020,13 @@ class GraphGenerator {
           edgeSet.add(edgePair);
           const dsData = uniqueNodes.get(dsKey);
           // Edge quantity: from _edgeQty if set, otherwise use target's quantity
-          const edgeQty = data._edgeQty?.[dsKey] || dsData?.quantity;
+          // For combine machines, multiply by input count (items flowing IN)
+          let edgeQty = data._edgeQty?.[dsKey];
+          if (!edgeQty && dsData) {
+            const dsM = registry.get(dsData.machine);
+            const inputCount = (dsM?.effect === "combine" && dsM.inputs?.length > 1) ? dsM.inputs.length : 1;
+            edgeQty = dsData.quantity * inputCount;
+          }
           // Always use SOURCE type (what's flowing out of the source node)
           let edgeType = data.type || "?";
           // Resolve "same" to source type
