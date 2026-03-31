@@ -24,7 +24,7 @@ function adjustStartMoney(delta) {
   const display = document.getElementById("starting-money-display");
   if (!hidden || !display) return;
   const current = parseInt(hidden.value) || 0;
-  const newVal = Math.max(0, Math.min(10, current + delta));
+  const newVal = Math.max(0, current + delta);
   hidden.value = newVal;
   display.value = "$" + (newVal * 250).toLocaleString();
   hidden.dispatchEvent(new Event("change", { bubbles: true }));
@@ -793,21 +793,80 @@ function renderEquipment() {
 }
 
 
+// Generate progression stages dynamically from machine costs
+function generateProgressionStages() {
+  if (!machineRegistry) return [{ name: "Start", budgetMax: 0, ore: "Tin", oreVal: 10, desc: "Loading..." }];
+
+  // Get all machine costs, sorted
+  const machineCosts = [];
+  for (const [id, m] of machineRegistry.machines) {
+    if (m.cost && m.cost > 0 && !m.medals) {
+      machineCosts.push({ id, name: m.name, cost: m.cost });
+    }
+  }
+  machineCosts.sort((a, b) => a.cost - b.cost);
+
+  if (machineCosts.length === 0) return [];
+
+  // Define budget tiers at natural breakpoints
+  // Use logarithmic spacing: each tier is roughly 5-10x the previous
+  const tiers = [];
+  const startingMoney = (parseInt($("#starting-money-level")?.value) || 0) * 250;
+
+  // Stage 0: Starting money only (no mining yet)
+  if (startingMoney > 0) {
+    tiers.push({ budgetMax: startingMoney, name: "Starting Budget" });
+  }
+
+  // Find natural breakpoints where significant machines become available
+  const breakpoints = [500, 2000, 5000, 15000, 50000, 150000, 500000, 1500000, 5000000, 20000000];
+
+  for (const bp of breakpoints) {
+    // Only add if there are NEW machines in this range vs previous
+    const prevBudget = tiers.length > 0 ? tiers[tiers.length - 1].budgetMax : 0;
+    const newMachines = machineCosts.filter(m => m.cost > prevBudget && m.cost <= bp);
+    if (newMachines.length > 0) {
+      // Name the stage after the most expensive new machine
+      const keyMachine = newMachines[newMachines.length - 1];
+      tiers.push({ budgetMax: bp, keyMachine: keyMachine.name });
+    }
+  }
+
+  // Convert tiers to stages with appropriate ore
+  const stageNames = ["Bootstrap", "Early Setup", "Basic Chains", "Mid Game",
+    "Advanced", "Late Game", "Mega Factories", "Pre-Prestige", "Endgame", "Max"];
+
+  return tiers.map((tier, idx) => {
+    // Find best ore for this budget level
+    // Cheap ores for early game, expensive for late
+    const budget = tier.budgetMax;
+    let ore, oreVal;
+    if (budget <= 1000) { ore = "Tin"; oreVal = 10; }
+    else if (budget <= 5000) { ore = "Lead"; oreVal = 30; }
+    else if (budget <= 20000) { ore = "Cobalt"; oreVal = 50; }
+    else if (budget <= 100000) { ore = "Silver"; oreVal = 150; }
+    else if (budget <= 500000) { ore = "Gold"; oreVal = 350; }
+    else if (budget <= 2000000) { ore = "Titanium"; oreVal = 500; }
+    else { ore = "Mithril"; oreVal = 2000; }
+
+    const name = tier.name || stageNames[Math.min(idx, stageNames.length - 1)];
+    const desc = tier.keyMachine
+      ? `${tier.keyMachine} now affordable`
+      : "Start with prestige items and starting money";
+
+    return { name, budgetMax: budget, ore, oreVal, desc };
+  });
+}
+
 // Progression (combined speedrun + upgrade paths)
 function renderProgression() {
   const container = $("#progression-stages");
   if (!container) return;
   container.innerHTML = "";
 
-  // Define budget stages - each builds on previous
-  const stages = [
-    { name: "Bootstrap", budgetMax: 500, ore: "Tin", oreVal: 10, desc: "Mine surface ores, sell with basic processing" },
-    { name: "Smelting Setup", budgetMax: 5000, ore: "Lead", oreVal: 30, desc: "Smelt ores into bars for 1.2x value" },
-    { name: "Early Chains", budgetMax: 50000, ore: "Silver", oreVal: 150, desc: "Build bolt/plate chains, start frame production" },
-    { name: "Mid Game", budgetMax: 500000, ore: "Gold", oreVal: 350, desc: "Tempering Forge doubles bar value, build casing chain" },
-    { name: "Advanced", budgetMax: 2000000, ore: "Titanium", oreVal: 500, desc: "Engine, Superconductor, and multi-input factories" },
-    { name: "Pre-Prestige", budgetMax: 20000000, ore: "Mithril", oreVal: 3000, desc: "Power Core, Tablet, Laser - maximize per-ore value and reach $20M to prestige" },
-  ];
+  // Generate stages dynamically from machine costs
+  // Group machines into natural budget tiers
+  const stages = generateProgressionStages();
 
   // Read current prestige config from header
   const currentPrestige = {
