@@ -534,6 +534,9 @@ class GraphGenerator {
                     }
                     if (!sifterNode._edgeQty) sifterNode._edgeQty = {};
                     sifterNode._edgeQty[oreTargetKey] = producedQty;
+                    // Override edge type to "ore" (not "dust" which is the sifter's main type)
+                    if (!sifterNode._edgeType) sifterNode._edgeType = {};
+                    sifterNode._edgeType[oreTargetKey] = "ore";
                   }
                 }
               }
@@ -1077,8 +1080,8 @@ class GraphGenerator {
             const inputCount = (dsM?.effect === "combine" && dsM.inputs?.length > 1) ? dsM.inputs.length : 1;
             edgeQty = dsData.quantity * inputCount;
           }
-          // Always use SOURCE type (what's flowing out of the source node)
-          let edgeType = data.type || "?";
+          // Use override type if set (e.g., sifter ore output), otherwise source type
+          let edgeType = data._edgeType?.[dsKey] || data.type || "?";
           // Resolve "same" to source type
           if (edgeType === "same") edgeType = data.type || "?";
           edges.push({
