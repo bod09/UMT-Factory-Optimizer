@@ -804,14 +804,15 @@
       ],
       "outputs": [
         {
-          "type": "cut_gem",
+          "type": "gem",
           "chance": 1.0,
-          "desc": "Cut Gem (1.4x)"
+          "desc": "Gem (1.4x value, tagged Cut)"
         }
       ],
       "effect": "multiply",
       "value": 1.4,
-      "desc": "Gem to Cut Gem at 1.4x value. Cut gems still count as gems for other machines."
+      "desc": "Gem to Cut Gem at 1.4x value. Cut gems still count as gems for other machines.",
+      "tag": "Cut"
     },
     "ring_maker": {
       "name": "Ring Maker",

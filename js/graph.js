@@ -521,27 +521,20 @@ class GraphGenerator {
                 let bestGemMachine = null;
                 for (const [gmId, gmM] of registry.machines) {
                   if (!registry.isAvailable(gmId, config)) continue;
-                  if (!gmM.inputs || gmM.inputs.length === 0) continue;
-                  // Accept single-input OR combine (same type, like prismatic: gem+gem)
-                  const allSameType = gmM.inputs.every(inp =>
-                    inp === currentGemType || inp.split("|").includes(currentGemType)
-                  );
-                  if (!allSameType) continue;
+                  // Single-input machines only for free gem processing
+                  if (!gmM.inputs || gmM.inputs.length !== 1) continue;
+                  if (!gmM.inputs.some(inp => inp === currentGemType || inp.split("|").includes(currentGemType))) continue;
                   const outType = gmM.outputs?.[0]?.type;
                   if (!outType || outType === "same") continue;
-                  if (!["multiply", "flat", "percent", "combine"].includes(gmM.effect)) continue;
+                  if (!["multiply", "flat", "percent"].includes(gmM.effect)) continue;
                   if (!bestGemMachine || (gmM.value || 1) > (bestGemMachine.value || 1)) {
-                    bestGemMachine = { id: gmId, machine: gmM, outType };
+                    bestGemMachine = { id: gmId, machine: gmM, outType, value: gmM.value };
                   }
                 }
                 if (!bestGemMachine) break;
 
                 const gmKey = getKey(bestGemMachine.id, bestGemMachine.outType);
-                // Combine machines reduce quantity (prismatic: 2→1)
-                const inputCount = bestGemMachine.machine.inputs.length;
-                if (bestGemMachine.machine.effect === "combine" && inputCount > 1) {
-                  currentQtyInChain = Math.max(1, Math.ceil(currentQtyInChain / inputCount));
-                }
+                // Single-input: quantity stays the same
                 if (!uniqueNodes.has(gmKey)) {
                   uniqueNodes.set(gmKey, {
                     machine: bestGemMachine.id, type: bestGemMachine.outType, value: 0,
