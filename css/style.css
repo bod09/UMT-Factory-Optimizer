@@ -424,17 +424,7 @@ body:has(.builder-fullpage.active) {
   box-shadow: 0 0 20px rgba(245, 158, 11, 0.1);
 }
 
-.chain-card.best::before {
-  content: "BEST";
-  background: var(--accent);
-  color: #000;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  float: right;
-  letter-spacing: 1px;
-}
+/* Best badge removed - accent border is sufficient */
 
 .chain-header {
   display: flex;
