@@ -445,10 +445,22 @@ class GraphGenerator {
               const displayType = isChance && gemType
                 ? `${gemType} Gem (${Math.round((chance || 0.05) * 100)}%)`
                 : (ITEM_TYPES[sideType] || sideType);
+              // For chance machines, show the PRODUCED item's value, not passthrough
+              let nodeValue = step.value || 0;
+              if (isChance) {
+                if (gemType) {
+                  // Prospector: show the gem's value
+                  const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === gemType) : null;
+                  nodeValue = gemData?.value || step.byproductValue || 0;
+                } else if (step.byproductValue) {
+                  // Sifter: show the average ore value produced
+                  nodeValue = step.byproductValue;
+                }
+              }
               uniqueNodes.set(sideKey, {
                 machine: step.machine,
                 type: isChance && gemType ? "gem" : sideType,
-                value: step.value || 0,
+                value: nodeValue,
                 name: sideMachine?.name || step.machine,
                 category: sideMachine?.category || "stonework",
                 quantity: currentQty,
