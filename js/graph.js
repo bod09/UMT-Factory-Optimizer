@@ -506,25 +506,25 @@ class GraphGenerator {
                 // The ore goes back through the full processing pipeline
                 const sifterNode = uniqueNodes.get(sideKey);
                 if (sifterNode) {
-                  // Find the first ore processing machine in the main chain
+                  // Find the first ore processor AFTER ore_source
+                  // Trace: ore_source → first child that processes ore
                   let oreTargetKey = null;
-                  for (const [mk, md] of uniqueNodes) {
-                    if (md.isByproduct) continue;
-                    const mData = registry.get(md.machine);
-                    if (mData && (mData.inputs || []).some(inp =>
-                      inp === "ore" || inp.split("|").includes("ore")
-                    )) {
-                      oreTargetKey = mk;
-                      break;
-                    }
-                  }
-                  // Fallback to ore_source if no processor found
-                  if (!oreTargetKey) {
+                  const oreSourceKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source")?.[0];
+                  if (oreSourceKey) {
+                    // Find which node has ore_source as a child (= the next machine after ore_source)
                     for (const [mk, md] of uniqueNodes) {
-                      if (md.machine === "ore_source" || md.machine === "ore_upgrader" || md.machine === "ore_cleaner") {
+                      if (md.isByproduct) continue;
+                      if (md.childKeys?.includes(oreSourceKey)) {
                         oreTargetKey = mk;
                         break;
                       }
+                    }
+                  }
+                  // Fallback: any non-source ore node
+                  if (!oreTargetKey) {
+                    for (const [mk, md] of uniqueNodes) {
+                      if (md.isByproduct || md.machine === "ore_source") continue;
+                      if (md.type === "ore") { oreTargetKey = mk; break; }
                     }
                   }
                   if (oreTargetKey) {
