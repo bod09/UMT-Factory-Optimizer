@@ -802,14 +802,25 @@ function renderProgression() {
     { name: "Pre-Prestige", budgetMax: 20000000, ore: "Mithril", oreVal: 3000, desc: "Power Core, Tablet, Laser - maximize per-ore value and reach $20M to prestige" },
   ];
 
+  // Read current prestige config from header
+  const currentPrestige = {
+    philosophersStone: (parseInt($("#has-philosophers-stone")?.value) || 0) > 0,
+    nanoSifter: (parseInt($("#has-nano-sifter")?.value) || 0) > 0,
+    oreUpgrader: (parseInt($("#has-ore-upgrader")?.value) || 0) > 0,
+    duplicator: (parseInt($("#has-duplicator")?.value) || 0) > 0,
+    transmuters: (parseInt($("#has-transmuters")?.value) || 0) > 0,
+  };
+  const hasDoubleSeller = $("#double-seller")?.checked || false;
+  const startingMoney = (parseInt($("#starting-money-level")?.value) || 0) * 250;
+
   let prevMachines = new Set();
 
   // Pre-compute ALL stages' results to check upgrade path compatibility
   const allStageResults = stages.map(stage => {
     const stageConfig = {
-      budget: stage.budgetMax,
-      hasDoubleSeller: false,
-      prestigeItems: {},
+      budget: stage.budgetMax + startingMoney,
+      hasDoubleSeller,
+      prestigeItems: currentPrestige,
     };
     const flowOpt = new FlowOptimizer(machineRegistry, stageConfig);
     return flowOpt.discoverAll(stage.oreVal);
@@ -917,7 +928,7 @@ function renderProgression() {
           </div>
         </div>
       ` : ""}
-      <div class="stage-graph-container graph-container" id="stage-graph-${idx}"></div>
+      ${best?.graph ? `<div class="stage-graph-container graph-container" id="stage-graph-${idx}"></div>` : ''}
     `;
     container.appendChild(card);
 
