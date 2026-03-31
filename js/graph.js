@@ -393,11 +393,14 @@ class GraphGenerator {
           } else {
             uniqueNodes.get(sourceKey).quantity += bpQty;
           }
-          // Connect parent (smelter) → stone source
+          // Connect parent (smelter) → stone source with correct type and quantity
           const parentNode = uniqueNodes.get(key);
           if (parentNode) {
             if (!parentNode.downstreamKeys) parentNode.downstreamKeys = [];
             if (!parentNode.downstreamKeys.includes(sourceKey)) parentNode.downstreamKeys.push(sourceKey);
+            // Override edge type to show byproduct type (stone), not parent output (bar)
+            if (!parentNode._edgeType) parentNode._edgeType = {};
+            parentNode._edgeType[sourceKey] = bp.type;
           }
 
           // Only walk the downstream chain on FIRST visit
