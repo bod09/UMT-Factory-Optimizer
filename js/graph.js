@@ -445,22 +445,24 @@ class GraphGenerator {
               const displayType = isChance && gemType
                 ? `${gemType} Gem (${Math.round((chance || 0.05) * 100)}%)`
                 : (ITEM_TYPES[sideType] || sideType);
-              // For chance machines, show the PRODUCED item's value, not passthrough
+              // For chance machines, show BOTH produced item value and passthrough value
               let nodeValue = step.value || 0;
+              let secondaryValue = null;
               if (isChance) {
                 if (gemType) {
-                  // Prospector: show the gem's value
                   const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === gemType) : null;
                   nodeValue = gemData?.value || step.byproductValue || 0;
+                  secondaryValue = step.value || 0; // Stone passthrough value
                 } else if (step.byproductValue) {
-                  // Sifter: show the average ore value produced
-                  nodeValue = step.byproductValue;
+                  nodeValue = step.byproductValue; // Ore value
+                  secondaryValue = step.value || 0; // Dust passthrough value
                 }
               }
               uniqueNodes.set(sideKey, {
                 machine: step.machine,
                 type: isChance && gemType ? "gem" : sideType,
                 value: nodeValue,
+                secondaryValue, // For chance machines: passthrough item value
                 name: sideMachine?.name || step.machine,
                 category: sideMachine?.category || "stonework",
                 quantity: currentQty,
@@ -995,6 +997,7 @@ class GraphGenerator {
         type: data.type,
         displayType: data.displayType,
         value: Math.round(data.value),
+        secondaryValue: data.secondaryValue ? Math.round(data.secondaryValue) : undefined,
         category: data.category,
         layer: depthMap.get(key) || 0,
         quantity: data.quantity,

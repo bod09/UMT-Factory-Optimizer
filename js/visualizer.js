@@ -325,6 +325,19 @@ class GraphVisualizer {
       g.appendChild(valText);
     }
 
+    // Secondary value for chance machines (e.g., "Stone $315" below gem value)
+    if (node.secondaryValue) {
+      const secText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      secText.setAttribute("x", this.nodeWidth - 8);
+      secText.setAttribute("y", "50");
+      secText.setAttribute("fill", "#9ca3b4");
+      secText.setAttribute("font-size", "9");
+      secText.setAttribute("font-family", "'JetBrains Mono', monospace");
+      secText.setAttribute("text-anchor", "end");
+      secText.textContent = `Pass: ${formatMoney(node.secondaryValue)}`;
+      g.appendChild(secText);
+    }
+
     // Quantity badge - always show flow quantity
     if (node.quantity && node.quantity >= 1) {
       const badgeW = 28;
