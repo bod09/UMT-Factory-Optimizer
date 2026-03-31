@@ -775,7 +775,7 @@ class GraphGenerator {
       machine: "seller",
       type: "sell",
       value: chainResult.value * (qa && registry.isAvailable("quality_assurance", config) ? (1 + qa.value) : 1) * (config.hasDoubleSeller ? 2 : 1),
-      name: "Seller",
+      name: config.hasDoubleSeller ? "Double Seller (x2)" : "Seller",
       category: "source",
       quantity: productQty || 1,
       childKeys: [lastMainKey],
