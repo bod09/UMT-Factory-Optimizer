@@ -501,9 +501,44 @@ class GraphGenerator {
                 // Track prospector gem outputs - will connect AFTER all prospectors
                 if (!pendingGemConnections) pendingGemConnections = [];
                 pendingGemConnections.push({ prospKey: sideKey, qty: producedQty });
+              } else {
+                // Sifter ore output - connect to first ore processing node in main chain
+                // The ore goes back through the full processing pipeline
+                const sifterNode = uniqueNodes.get(sideKey);
+                if (sifterNode) {
+                  // Find the first ore processing machine in the main chain
+                  let oreTargetKey = null;
+                  for (const [mk, md] of uniqueNodes) {
+                    if (md.isByproduct) continue;
+                    const mData = registry.get(md.machine);
+                    if (mData && (mData.inputs || []).some(inp =>
+                      inp === "ore" || inp.split("|").includes("ore")
+                    )) {
+                      oreTargetKey = mk;
+                      break;
+                    }
+                  }
+                  // Fallback to ore_source if no processor found
+                  if (!oreTargetKey) {
+                    for (const [mk, md] of uniqueNodes) {
+                      if (md.machine === "ore_source" || md.machine === "ore_upgrader" || md.machine === "ore_cleaner") {
+                        oreTargetKey = mk;
+                        break;
+                      }
+                    }
+                  }
+                  if (oreTargetKey) {
+                    if (!sifterNode.downstreamKeys) sifterNode.downstreamKeys = [];
+                    if (!sifterNode.downstreamKeys.includes(oreTargetKey)) {
+                      sifterNode.downstreamKeys.push(oreTargetKey);
+                    }
+                    if (!sifterNode._edgeQty) sifterNode._edgeQty = {};
+                    sifterNode._edgeQty[oreTargetKey] = producedQty;
+                  }
+                }
               }
 
-              // Reduce remaining quantity (stone consumed on gem production)
+              // Reduce remaining quantity
               currentQty = Math.max(1, currentQty - producedQty);
             }
 
