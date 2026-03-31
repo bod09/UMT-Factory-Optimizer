@@ -297,10 +297,12 @@ class GraphGenerator {
           if (childKey) {
             const n = uniqueNodes.get(key);
             const childNode = uniqueNodes.get(childKey);
-            // Don't create edges from main chain to side chain nodes
-            // Cross-chain connections are handled in post-processing
+            // Don't create edges between nodes when:
+            // 1. Main chain → side chain (cross-chain handled in post-processing)
+            // 2. Both are side chain nodes (downstream flow handles their connections)
             const crossChain = n && childNode && !n.isByproduct && childNode.isByproduct;
-            if (n && !crossChain && !n.childKeys.includes(childKey)) n.childKeys.push(childKey);
+            const bothSide = n && childNode && n.isByproduct && childNode.isByproduct;
+            if (n && !crossChain && !bothSide && !n.childKeys.includes(childKey)) n.childKeys.push(childKey);
           }
         }
       }
