@@ -593,9 +593,10 @@ class GraphGenerator {
                 if (!prospNode._edgeQty) prospNode._edgeQty = {};
                 prospNode._edgeQty[gemTargetKey] = gc.qty;
               }
-              // Track extra gems for enhancement post-processing
+              // Only add extra gems if the target was from the MAIN chain enhancement path
+              // (not a side chain gem machine we just created - those already have correct qty)
               const targetNode = uniqueNodes.get(gemTargetKey);
-              if (targetNode) {
+              if (targetNode && !targetNode.isByproduct) {
                 targetNode._extraGemQty = (targetNode._extraGemQty || 0) + totalGems;
               }
             }
