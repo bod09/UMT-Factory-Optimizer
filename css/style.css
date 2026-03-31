@@ -219,7 +219,9 @@ nav {
 }
 
 .prestige-header-item input[type="text"] {
-  width: 52px;
+  width: auto;
+  min-width: 42px;
+  max-width: 70px;
   cursor: default;
 }
 
