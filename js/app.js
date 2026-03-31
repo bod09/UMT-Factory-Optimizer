@@ -220,10 +220,17 @@ function attachEvents() {
   });
   $("#output-belts").addEventListener("change", saveConfig);
   $("#ore-quantity").addEventListener("input", saveConfig);
-  $("#double-seller").addEventListener("change", saveConfig);
-  // Header prestige items - save on change
-  $$(".prestige-header-item input[type='number']").forEach(inp => {
-    inp.addEventListener("change", saveConfig);
+  $("#double-seller").addEventListener("change", () => {
+    saveConfig();
+    if (machineRegistry) renderProgression();
+  });
+  // Header prestige items - save on change + re-render progression
+  $$(".prestige-header-item input").forEach(inp => {
+    inp.addEventListener("change", () => {
+      saveConfig();
+      updateStartMoneyDisplay();
+      if (machineRegistry) renderProgression();
+    });
   });
   // Switch to "Custom" when manually editing depths
   $("#depth-min").addEventListener("input", () => {
