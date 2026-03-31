@@ -4,7 +4,7 @@
 class GraphVisualizer {
   constructor() {
     this.nodeWidth = 170;
-    this.nodeHeight = 52;
+    this.nodeHeight = 44;
     this.layerGap = 230;
     this.nodeGap = 65;
     this.padding = 40;
@@ -271,8 +271,9 @@ class GraphVisualizer {
 
     // Background rect
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    const actualHeight = node.secondaryValue ? this.nodeHeight + 14 : this.nodeHeight;
     rect.setAttribute("width", this.nodeWidth);
-    rect.setAttribute("height", this.nodeHeight);
+    rect.setAttribute("height", actualHeight);
     rect.setAttribute("rx", "6");
     rect.setAttribute("fill", "#222632");
     rect.setAttribute("stroke", node.selected ? "#f59e0b" : "#333848");
