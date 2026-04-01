@@ -497,7 +497,7 @@ class GraphGenerator {
             // and add gem/ore output flowing to best destination via flow
             if (step.isChanceMachine) {
               const chance = step.chance || 0.05;
-              const producedQty = Math.max(1, Math.round(currentQty * chance));
+              const producedQty = Math.round(currentQty * chance);
 
               if (step.gemType) {
                 // Track prospector gem outputs - will connect AFTER all prospectors
@@ -586,7 +586,7 @@ class GraphGenerator {
               }
 
               // Reduce remaining quantity
-              currentQty = Math.max(1, currentQty - producedQty);
+              currentQty = currentQty - producedQty;
             }
 
             prevSideKey = sideKey;
@@ -969,8 +969,8 @@ class GraphGenerator {
           const m = registry.get(node.machine);
           if (m?.effect === "chance") {
             const chance = m.value || 0.05;
-            const produced = Math.max(1, Math.round(parentQty * chance));
-            nextQty = Math.max(1, parentQty - produced);
+            const produced = Math.round(parentQty * chance);
+            nextQty = parentQty - produced;
             // Update gem sell nodes with correct produced qty
             for (const dsKey of (node.downstreamKeys || [])) {
               const dsNode = uniqueNodes.get(dsKey);
