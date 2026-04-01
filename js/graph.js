@@ -1224,34 +1224,46 @@ class GraphGenerator {
       }
     }
 
-    // Final quantity fix: recalculate chance machine quantities from Stone qty
-    // The downstream scaling may not reach all prospectors/sifters correctly
+    // Final quantity fix: recalculate chance machine chain quantities
+    // Walk from Stone → Prospector1 → Prospector2 → ... → Crusher
+    // Each prospector gets the REMAINING stone count, which decreases
     for (const [key, data] of uniqueNodes) {
-      if (!data.isByproduct) continue;
-      const m4 = registry.get(data.machine);
-      if (!m4 || m4.effect !== "chance") continue;
-      // Find what feeds this chance machine (its parent via edges)
-      let parentQty = 0;
-      for (const [pk, pd] of uniqueNodes) {
-        if (pd.downstreamKeys?.includes(key)) {
-          parentQty = pd.quantity;
+      if (data.machine !== "secondary_output") continue;
+      // Walk the downstream chain, tracking remaining qty
+      let remainingQty = data.quantity;
+      const chanceVisited = new Set([key]);
+      let currentKey = key;
+      while (currentKey) {
+        const currentNode = uniqueNodes.get(currentKey);
+        if (!currentNode) break;
+        // Find next downstream node
+        let nextKey = null;
+        for (const dsKey of (currentNode.downstreamKeys || [])) {
+          if (chanceVisited.has(dsKey)) continue;
+          const dsNode = uniqueNodes.get(dsKey);
+          if (!dsNode || !dsNode.isByproduct) continue;
+          nextKey = dsKey;
           break;
         }
-      }
-      if (parentQty > 0) {
-        data.quantity = parentQty; // Stone passes through
-        const chance = m4.value || 0.05;
-        const produced = Math.round(parentQty * chance);
-        // Update gem/ore output nodes connected to this chance machine
-        for (const dsKey of (data.downstreamKeys || [])) {
-          const dsNode = uniqueNodes.get(dsKey);
-          if (!dsNode) continue;
-          const dsM = registry.get(dsNode.machine);
-          // Next chance machine in chain gets reduced qty
-          if (dsM?.effect === "chance") {
-            dsNode.quantity = parentQty - produced;
+        if (!nextKey) break;
+        chanceVisited.add(nextKey);
+        const nextNode = uniqueNodes.get(nextKey);
+        const nextM = registry.get(nextNode.machine);
+        if (nextM?.effect === "chance") {
+          // Chance machine: gets remaining qty, reduces by produced amount
+          nextNode.quantity = remainingQty;
+          const chance = nextM.value || 0.05;
+          const produced = Math.round(remainingQty * chance);
+          remainingQty = remainingQty - produced;
+        } else {
+          // Non-chance machine (crusher, sifter, etc): gets remaining qty
+          nextNode.quantity = remainingQty;
+          // Multi-input machines divide
+          if (nextM?.inputs?.length >= 2) {
+            remainingQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
           }
         }
+        currentKey = nextKey;
       }
     }
 
