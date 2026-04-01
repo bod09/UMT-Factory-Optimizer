@@ -577,23 +577,7 @@ class GraphGenerator {
                     if (!sifterNode._edgeType) sifterNode._edgeType = {};
                     sifterNode._edgeType[oreTargetKey] = "ore";
 
-                    // Add sifted ore quantity to ALL ore processing nodes
-                    // Trace through the main chain: ore_cleaner → polisher → philo → smelter
-                    // Start from the target (may be side chain upgrader) and follow downstream
-                    // then continue through main chain ore processors
-                    const oreProcessors = [...uniqueNodes.entries()]
-                      .filter(([k, d]) => !d.isByproduct && d.type === "ore" && d.machine !== "ore_source")
-                      .map(([k, d]) => k);
-                    for (const opKey of oreProcessors) {
-                      const opNode = uniqueNodes.get(opKey);
-                      if (opNode) opNode.quantity += producedQty;
-                    }
-                    // Also add to smelter (type: bar, but processes ore)
-                    const smelterEntries = [...uniqueNodes.entries()]
-                      .filter(([k, d]) => !d.isByproduct && (d.machine === "ore_smelter" || d.machine === "blast_furnace"));
-                    for (const [sk, sd] of smelterEntries) {
-                      sd.quantity += producedQty;
-                    }
+                    // Quantity propagation handled by global cross-chain step below
                   }
                 }
               }
@@ -703,12 +687,8 @@ class GraphGenerator {
                 if (!prospNode._edgeQty) prospNode._edgeQty = {};
                 prospNode._edgeQty[gemTargetKey] = gc.qty;
               }
-              // Only add extra gems if the target was from the MAIN chain enhancement path
-              // (not a side chain gem machine we just created - those already have correct qty)
-              const targetNode = uniqueNodes.get(gemTargetKey);
-              if (targetNode && !targetNode.isByproduct) {
-                targetNode._extraGemQty = (targetNode._extraGemQty || 0) + totalGems;
-              }
+              // Gem quantities are added by the global cross-chain propagation step
+              // Don't add here to avoid double-counting
             }
           }
         }
@@ -994,9 +974,6 @@ class GraphGenerator {
     // Post-process: add extra gem quantities from prospectors
     // (must be after enhancement qty reset which overwrites quantities)
     for (const [k, d] of uniqueNodes) {
-      if (d._extraGemQty) {
-        d.quantity += d._extraGemQty;
-      }
     }
 
     // Post-process: connect side chain outputs to main chain consumers
@@ -1119,8 +1096,10 @@ class GraphGenerator {
     }
 
     // Global: propagate side chain quantities to connected main chain nodes
-    // ONLY for single-input or same-type-input machines (modifiers/processors)
-    // NOT for combine machines with different input types (superconductor, power core, etc.)
+    // Handles ALL cross-chain connections: sifter ores, prospector gems, etc.
+    // ONLY for single-input or same-type-input machines (not combine with mixed inputs)
+    // Also propagates to DOWNSTREAM main chain nodes of the same processing type
+    const propagated = new Set();
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
       for (const dsKey of (sideData.downstreamKeys || [])) {
@@ -1128,16 +1107,50 @@ class GraphGenerator {
         if (!dsNode || dsNode.isByproduct) continue;
         const edgeQty = sideData._edgeQty?.[dsKey] || 0;
         if (edgeQty <= 0) continue;
-        // Skip if already handled (sifter ores)
-        if (sideData._edgeType?.[dsKey] === "ore") continue;
-        // Check target machine: only propagate qty to single-input or same-type-input machines
+        const propKey = `${sideKey}→${dsKey}`;
+        if (propagated.has(propKey)) continue;
+        propagated.add(propKey);
+
+        // Check target: only propagate to single-input or same-type-input machines
         const targetMachine = registry.get(dsNode.machine);
         if (targetMachine?.inputs?.length >= 2) {
-          // Multi-input: only propagate if ALL inputs are the same type
           const uniqueInputTypes = new Set(targetMachine.inputs.flatMap(i => i.split("|")));
-          if (uniqueInputTypes.size > 1) continue; // Mixed inputs (combine) - don't propagate
+          if (uniqueInputTypes.size > 1) continue; // Mixed inputs - don't propagate
         }
+
+        // Add qty to target
         dsNode.quantity += edgeQty;
+
+        // Propagate to all downstream main chain nodes that process the same item type
+        // e.g., sifter ore → ore_cleaner → polisher → philo → smelter (all process ore)
+        const itemType = sideData._edgeType?.[dsKey] || sideData.type;
+        const traceVisited = new Set([dsKey]);
+        const traceQueue = [dsKey];
+        while (traceQueue.length > 0) {
+          const currentKey = traceQueue.shift();
+          const currentNode = uniqueNodes.get(currentKey);
+          if (!currentNode) continue;
+          // Find main chain nodes that have this node as a child (= next in chain)
+          for (const [mk, md] of uniqueNodes) {
+            if (md.isByproduct || traceVisited.has(mk)) continue;
+            if (!md.childKeys?.includes(currentKey)) continue;
+            // Only propagate through nodes that process the same item type
+            // (ore → ore → ore → bar stops at the type change to bar)
+            // Exception: smelter (type "bar" but processes ore)
+            const isSameType = md.type === itemType ||
+              (md.machine === "ore_smelter" || md.machine === "blast_furnace") && itemType === "ore";
+            if (!isSameType) continue;
+            // Check it's not a combine machine with mixed inputs
+            const mdMachine = registry.get(md.machine);
+            if (mdMachine?.inputs?.length >= 2) {
+              const mInputTypes = new Set(mdMachine.inputs.flatMap(i => i.split("|")));
+              if (mInputTypes.size > 1) continue;
+            }
+            md.quantity += edgeQty;
+            traceVisited.add(mk);
+            traceQueue.push(mk);
+          }
+        }
       }
     }
 
