@@ -1256,8 +1256,10 @@ class GraphGenerator {
           nextNode.quantity = produced; // Show what it produces
           remainingQty = remainingQty - produced;
         } else {
-          // Non-chance machine (crusher, sifter, etc): gets remaining qty
-          nextNode.quantity = remainingQty;
+          // Non-chance machine (crusher, clay mixer, etc): gets remaining qty
+          // UNLESS this node has a specific edgeQty set (e.g., sifter → ore upgrader)
+          const edgeQty = currentNode._edgeQty?.[nextKey];
+          nextNode.quantity = edgeQty || remainingQty;
           // Multi-input machines divide
           if (nextM?.inputs?.length >= 2) {
             remainingQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
