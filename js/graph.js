@@ -1434,7 +1434,7 @@ class GraphGenerator {
           // Edge quantity: from _edgeQty if set, otherwise use target's quantity
           // For combine machines, multiply by input count (items flowing IN)
           let edgeQty = data._edgeQty?.[dsKey];
-          if (!edgeQty && dsData) {
+          if (edgeQty === undefined && dsData) {
             const dsM = registry.get(dsData.machine);
             const inputCount = (dsM?.effect === "combine" && dsM.inputs?.length > 1) ? dsM.inputs.length : 1;
             edgeQty = dsData.quantity * inputCount;
