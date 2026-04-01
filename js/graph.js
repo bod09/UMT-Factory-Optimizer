@@ -1111,7 +1111,15 @@ class GraphGenerator {
     // Each prospector gets the REMAINING stone count, which decreases
     for (const [key, data] of uniqueNodes) {
       if (data.machine !== "secondary_output") continue;
-      // Walk the downstream chain, tracking remaining qty
+      // Recalculate stone qty from smelter's CURRENT qty × byproduct ratio
+      const smelterEntry = [...uniqueNodes.entries()].find(([k, d]) =>
+        !d.isByproduct && (d.machine === "ore_smelter" || d.machine === "blast_furnace")
+      );
+      if (smelterEntry) {
+        const smelterM = registry.get(smelterEntry[1].machine);
+        const bpRatio = smelterM?.byproductRatio || 0.5;
+        data.quantity = Math.round(smelterEntry[1].quantity * bpRatio);
+      }
       let remainingQty = data.quantity;
       const chanceVisited = new Set([key]);
       let currentKey = key;
@@ -1328,22 +1336,57 @@ class GraphGenerator {
       }
     }
 
-    // FINAL: Cross-chain excess handling (runs AFTER all quantity fixes)
-    // For each side chain node connecting to a main chain node,
-    // check if side produces more than main needs → create sell excess node
+    // FINAL: Find and create cross-chain connections + handle excess
+    // For each side chain endpoint (last node before connecting to main chain),
+    // find which main chain node needs its output type and connect them
+    const connectedMainKeys2 = new Set();
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
-      for (const dsKey of (sideData.downstreamKeys || [])) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue; // Only cross-chain
-        const sideQty = sideData.quantity || 0;
-        const mainQty = dsNode.quantity || 1;
+      const sideType = sideData.type;
+      if (!sideType) continue;
+
+      // Find main chain nodes that accept this type
+      for (const [mainKey, mainData] of uniqueNodes) {
+        if (mainData.isByproduct) continue;
+        if (connectedMainKeys2.has(mainKey)) continue;
+        const mainM = registry.get(mainData.machine);
+        if (!mainM?.inputs) continue;
+        const accepts = mainM.inputs.some(inp =>
+          inp === sideType || inp.split("|").includes(sideType)
+        );
+        if (!accepts) continue;
+
+        // Find the LAST node in this side chain (follow downstream to end)
+        let lastKey = sideKey;
+        const traceV = new Set([sideKey]);
+        while (true) {
+          const lastNode = uniqueNodes.get(lastKey);
+          const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
+            !traceV.has(dk) && uniqueNodes.get(dk)?.isByproduct
+          );
+          if (dsKeys.length === 0) break;
+          lastKey = dsKeys[0];
+          traceV.add(lastKey);
+        }
+
+        const lastNode = uniqueNodes.get(lastKey);
+        if (!lastNode) continue;
+        connectedMainKeys2.add(mainKey);
+
+        // Connect last side node → main chain node
+        if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
+        if (!lastNode.downstreamKeys.includes(mainKey)) {
+          lastNode.downstreamKeys.push(mainKey);
+        }
+
+        // Set edge qty and handle excess
+        const sideQty = lastNode.quantity || 0;
+        const mainQty = mainData.quantity || 1;
         const excess = sideQty - mainQty;
-        // Set correct edge qty (how many main chain actually needs)
-        if (!sideData._edgeQty) sideData._edgeQty = {};
-        sideData._edgeQty[dsKey] = Math.min(sideQty, mainQty);
+        if (!lastNode._edgeQty) lastNode._edgeQty = {};
+        lastNode._edgeQty[mainKey] = Math.min(sideQty, mainQty);
+
         if (excess > 0) {
-          // Route excess through QA → Seller
           const qaEntry = [...uniqueNodes.entries()].find(([k, d]) =>
             d.machine === "quality_assurance" && !d.isByproduct
           );
@@ -1352,12 +1395,13 @@ class GraphGenerator {
           );
           const targetKey = qaEntry?.[0] || sellerEntry?.[0];
           if (targetKey) {
-            if (!sideData.downstreamKeys.includes(targetKey)) {
-              sideData.downstreamKeys.push(targetKey);
+            if (!lastNode.downstreamKeys.includes(targetKey)) {
+              lastNode.downstreamKeys.push(targetKey);
             }
-            sideData._edgeQty[targetKey] = excess;
+            lastNode._edgeQty[targetKey] = excess;
           }
         }
+        break; // Only connect to first matching main node
       }
     }
 
