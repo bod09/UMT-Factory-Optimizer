@@ -540,7 +540,10 @@ class GraphGenerator {
                         });
                         // Connect upgrader to ore cleaner
                         if (oreCleanerKey) {
-                          uniqueNodes.get(upgraderKey).downstreamKeys = [oreCleanerKey];
+                          const upgraderNode = uniqueNodes.get(upgraderKey);
+                          upgraderNode.downstreamKeys = [oreCleanerKey];
+                          upgraderNode._edgeQty = { [oreCleanerKey]: producedQty };
+                          upgraderNode._edgeType = { [oreCleanerKey]: "ore" };
                         }
                         oreTargetKey = upgraderKey;
                       }
