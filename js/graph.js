@@ -1420,11 +1420,11 @@ class GraphGenerator {
         // Use edge qty if set, otherwise use node quantity (for chance machines)
         let edgeQty = sideData._edgeQty?.[dsKey];
         if (edgeQty === undefined || edgeQty === null) edgeQty = 0;
-        // For chance machines, the node quantity IS the produced amount
-        const sideM2 = registry.get(sideData.machine);
-        if (sideM2?.effect === "chance" && sideData.quantity > 0) {
+        // For side chain nodes, use the node's quantity as edge qty
+        // This handles: chance machines (prospectors: produced gems),
+        // sifter ore upgrader (processed ores), and any other side→main flow
+        if (edgeQty <= 0 && sideData.quantity > 0) {
           edgeQty = sideData.quantity;
-          // Also update the edge qty for display
           if (!sideData._edgeQty) sideData._edgeQty = {};
           sideData._edgeQty[dsKey] = edgeQty;
         }
