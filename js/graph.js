@@ -1481,31 +1481,9 @@ class GraphGenerator {
         const childData = uniqueNodes.get(data.childKeys[0]);
         if (childData) {
           const newQty = Math.floor(childData.quantity / m4.inputs.length);
-          if (newQty > data.quantity) {
-            data.quantity = newQty;
-            // Propagate increase downstream through single-input machines
-            // e.g., Prismatic x8 → Gem to Bar should also be x8
-            let traceKey3 = key;
-            const traced3 = new Set([key]);
-            while (traceKey3) {
-              let nextKey3 = null;
-              for (const [mk, md] of uniqueNodes) {
-                if (md.isByproduct || traced3.has(mk)) continue;
-                if (md.childKeys?.includes(traceKey3)) {
-                  const mm = registry.get(md.machine);
-                  // Only update single-input machines
-                  if (mm?.inputs?.length === 1) {
-                    md.quantity = uniqueNodes.get(traceKey3).quantity;
-                    nextKey3 = mk;
-                  }
-                  break;
-                }
-              }
-              if (!nextKey3) break;
-              traced3.add(nextKey3);
-              traceKey3 = nextKey3;
-            }
-          }
+          if (newQty > data.quantity) data.quantity = newQty;
+          // Don't propagate downstream - extra items from propagation
+          // (prospector gems) are sold separately, not converted further
         }
       }
     }
