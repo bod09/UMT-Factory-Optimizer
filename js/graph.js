@@ -1589,10 +1589,14 @@ class GraphGenerator {
           const childData = uniqueNodes.get(childKey);
           let edgeItemType = childData?.type || "?";
           if (edgeItemType === "same") edgeItemType = data.type || "?";
+          // Check if CHILD has edge qty for this parent (e.g., Prismatic → Gem to Bar)
+          // _edgeQty is stored on the SOURCE node (child) keyed by TARGET (parent)
+          const childEdgeQty = childData?._edgeQty?.[key];
           edges.push({
             from: toId,
             to: fromId,
             itemType: edgeItemType,
+            qty: childEdgeQty,
           });
         }
       }
