@@ -1250,10 +1250,10 @@ class GraphGenerator {
         const nextNode = uniqueNodes.get(nextKey);
         const nextM = registry.get(nextNode.machine);
         if (nextM?.effect === "chance") {
-          // Chance machine: gets remaining qty, reduces by produced amount
-          nextNode.quantity = remainingQty;
+          // Chance machine: qty = items PRODUCED (gems/ores), not throughput
           const chance = nextM.value || 0.05;
           const produced = Math.round(remainingQty * chance);
+          nextNode.quantity = produced; // Show what it produces
           remainingQty = remainingQty - produced;
         } else {
           // Non-chance machine (crusher, sifter, etc): gets remaining qty
