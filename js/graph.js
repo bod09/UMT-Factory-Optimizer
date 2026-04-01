@@ -890,8 +890,10 @@ class GraphGenerator {
           // throughput from walkChain is correct. The flow memo's oreCount for the
           // OUTPUT type may be inflated by enhancement paths (transmuter doubles bar oreCount)
           const m2 = registry.get(data.machine);
-          const isTypeConverter = m2?.inputs?.length === 1 && m2.outputs?.[0]?.type &&
-            m2.outputs[0].type !== "same" && m2.inputs[0] !== "any";
+          const outType2 = m2?.outputs?.[0]?.type;
+          const inType2 = m2?.inputs?.[0]?.split("|")[0];
+          const isTypeConverter = m2?.inputs?.length === 1 && outType2 &&
+            outType2 !== "same" && outType2 !== inType2 && inType2 !== "any";
           if (isTypeConverter) {
             const inputType = m2.inputs[0].split("|")[0];
             if (inputType === "ore") {
