@@ -663,11 +663,13 @@ class GraphGenerator {
         }
       }
 
-      // Insert duplicator between parent and this node
+      // Insert duplicator AFTER enhancement path (wraps the enhanced output)
       if (insertDup) {
         const dupKey = getKey("duplicator", type);
         const dupM = registry.get("duplicator");
         const dupQtyMult = dupM?.outputQtyMultiplier || 2;
+        // Use finalKey (enhanced output) not raw key
+        const dupChildKey = finalKey;
 
         // Check if dup fills multiple slots: does the parent combiner
         // use this machine's type in OTHER inputs' subtrees?
@@ -713,31 +715,34 @@ class GraphGenerator {
             name: "Duplicator",
             category: "prestige",
             quantity: dupChildQty * dupQtyMult,
-            childKeys: [key],
+            childKeys: [dupChildKey],
             oreCount: 0,
           });
         }
 
         // Fix child quantity (built once, dup provides copies)
         if (dupFillsMultiSlots) {
-          const childNode = uniqueNodes.get(key);
+          const childNode = uniqueNodes.get(dupChildKey) || uniqueNodes.get(key);
           if (childNode) {
             childNode.quantity = dupChildQty;
             childNode.dupProvided = true; // prevent subsequent visits from adding more
           }
         }
 
-        // Rewire: parent → dup → this node
+        // Rewire: parent → dup → enhanced node
         if (parentKey) {
           const parentNode = uniqueNodes.get(parentKey);
           if (parentNode) {
-            const idx = parentNode.childKeys.indexOf(key);
-            if (idx >= 0) parentNode.childKeys[idx] = dupKey;
+            // Replace finalKey (or key) with dupKey in parent's childKeys
+            const idx1 = parentNode.childKeys.indexOf(dupChildKey);
+            const idx2 = parentNode.childKeys.indexOf(key);
+            if (idx1 >= 0) parentNode.childKeys[idx1] = dupKey;
+            else if (idx2 >= 0) parentNode.childKeys[idx2] = dupKey;
             else parentNode.childKeys.push(dupKey);
           }
         }
 
-        return dupKey; // Parent connects to dup, not directly to this node
+        return dupKey; // Parent connects to dup, which connects to enhanced output
       }
 
       return finalKey; // Return modifier-wrapped key so parent connects to the modifier
