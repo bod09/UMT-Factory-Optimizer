@@ -892,7 +892,19 @@ class GraphGenerator {
           const m2 = registry.get(data.machine);
           const isTypeConverter = m2?.inputs?.length === 1 && m2.outputs?.[0]?.type &&
             m2.outputs[0].type !== "same" && m2.inputs[0] !== "any";
-          if (!isTypeConverter) {
+          if (isTypeConverter) {
+            // Type converters (smelter: ore→bar): qty = input items processed
+            // Use input type's oreCount, not output type's (which may be inflated by enhancement)
+            const inputType = m2.inputs[0].split("|")[0];
+            if (inputType === "ore") {
+              data.quantity = actualOreCount;
+            } else {
+              const inputResult = flowMemo.get(inputType);
+              if (inputResult?.oreCount > 0) {
+                data.quantity = Math.max(1, Math.round(actualOreCount / inputResult.oreCount));
+              }
+            }
+          } else {
             const flowResult = flowMemo.get(data.type);
             if (flowResult?.oreCount > 0) {
               data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
@@ -900,7 +912,6 @@ class GraphGenerator {
               data.quantity = actualOreCount;
             }
           }
-          // Type converters keep their accumulated throughput from walkChain
         }
       }
     }
