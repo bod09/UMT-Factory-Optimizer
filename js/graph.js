@@ -508,25 +508,63 @@ class GraphGenerator {
                 if (!pendingGemConnections) pendingGemConnections = [];
                 pendingGemConnections.push({ prospKey: sideKey, qty: producedQty });
               } else {
-                // Sifter ore output - connect to first ore processing node in main chain
-                // The ore goes back through the full processing pipeline
+                // Sifter ore output - connect to first ore processing node
+                // If Ore Upgrader is available, use it (even if main chain skips it for max-tier ore)
                 const sifterNode = uniqueNodes.get(sideKey);
                 if (sifterNode) {
-                  // Find the first ore processor AFTER ore_source
-                  // Trace: ore_source → first child that processes ore
                   let oreTargetKey = null;
-                  const oreSourceKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source")?.[0];
-                  if (oreSourceKey) {
-                    // Find which node has ore_source as a child (= the next machine after ore_source)
-                    for (const [mk, md] of uniqueNodes) {
-                      if (md.isByproduct) continue;
-                      if (md.childKeys?.includes(oreSourceKey)) {
-                        oreTargetKey = mk;
-                        break;
+
+                  // Check if Ore Upgrader is available and should be used
+                  const hasUpgrader = config.prestigeItems?.oreUpgrader;
+                  if (hasUpgrader) {
+                    // Look for existing Ore Upgrader node
+                    const existingUpgrader = [...uniqueNodes.entries()].find(([k, d]) =>
+                      d.machine === "ore_upgrader" && !d.isByproduct
+                    );
+                    if (existingUpgrader) {
+                      oreTargetKey = existingUpgrader[0];
+                    } else {
+                      // Add Ore Upgrader as a side chain node for sifted ores
+                      const upgraderM = registry.get("ore_upgrader");
+                      if (upgraderM) {
+                        const upgraderKey = getKey("ore_upgrader", "ore");
+                        const oreCleanerKey = [...uniqueNodes.entries()].find(([k, d]) =>
+                          d.machine === "ore_cleaner" && !d.isByproduct
+                        )?.[0];
+                        uniqueNodes.set(upgraderKey, {
+                          machine: "ore_upgrader",
+                          type: "ore",
+                          value: 0,
+                          name: upgraderM.name || "Ore Upgrader",
+                          category: upgraderM.category || "prestige",
+                          quantity: producedQty,
+                          childKeys: [],
+                          oreCount: 0,
+                          isByproduct: true, // Side chain node for sifted ores
+                        });
+                        // Connect upgrader to ore cleaner
+                        if (oreCleanerKey) {
+                          uniqueNodes.get(upgraderKey).downstreamKeys = [oreCleanerKey];
+                        }
+                        oreTargetKey = upgraderKey;
                       }
                     }
                   }
-                  // Fallback: any non-source ore node
+
+                  // Fallback: find first ore processor after ore_source
+                  if (!oreTargetKey) {
+                    const oreSourceKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source")?.[0];
+                    if (oreSourceKey) {
+                      for (const [mk, md] of uniqueNodes) {
+                        if (md.isByproduct) continue;
+                        if (md.childKeys?.includes(oreSourceKey)) {
+                          oreTargetKey = mk;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  // Last fallback: any non-source ore node
                   if (!oreTargetKey) {
                     for (const [mk, md] of uniqueNodes) {
                       if (md.isByproduct || md.machine === "ore_source") continue;
@@ -540,9 +578,37 @@ class GraphGenerator {
                     }
                     if (!sifterNode._edgeQty) sifterNode._edgeQty = {};
                     sifterNode._edgeQty[oreTargetKey] = producedQty;
-                    // Override edge type to "ore" (not "dust" which is the sifter's main type)
                     if (!sifterNode._edgeType) sifterNode._edgeType = {};
                     sifterNode._edgeType[oreTargetKey] = "ore";
+
+                    // Add sifted ore quantity to target and downstream ore processors
+                    // This shows the total flow including recycled ores
+                    const targetNode = uniqueNodes.get(oreTargetKey);
+                    if (targetNode) targetNode.quantity += producedQty;
+                    // Also add to all ore processors downstream of the target
+                    // (ore cleaner → polisher → philosopher's stone → smelter)
+                    let traceKey = oreTargetKey;
+                    const traced = new Set([traceKey]);
+                    while (traceKey) {
+                      const traceNode = uniqueNodes.get(traceKey);
+                      if (!traceNode) break;
+                      // Find which node has this as a child (= the next machine)
+                      let nextKey = null;
+                      for (const [mk, md] of uniqueNodes) {
+                        if (md.isByproduct || traced.has(mk)) continue;
+                        if (md.childKeys?.includes(traceKey) && md.type === "ore" || md.type === "bar") {
+                          nextKey = mk;
+                          break;
+                        }
+                      }
+                      if (!nextKey) break;
+                      traced.add(nextKey);
+                      const nextNode = uniqueNodes.get(nextKey);
+                      if (nextNode && nextNode.type === "ore") {
+                        nextNode.quantity += producedQty;
+                      }
+                      traceKey = nextKey;
+                    }
                   }
                 }
               }
