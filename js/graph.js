@@ -1192,7 +1192,8 @@ class GraphGenerator {
       while (currentKey) {
         const currentNode = uniqueNodes.get(currentKey);
         if (!currentNode) break;
-        // Process ALL downstream byproduct nodes (not just the first)
+        // Process ALL downstream byproduct nodes using a queue
+        // This ensures EVERY node gets updated, not just the first branch
         const nextKeys = [];
         for (const dsKey of (currentNode.downstreamKeys || [])) {
           if (chanceVisited.has(dsKey)) continue;
@@ -1201,8 +1202,9 @@ class GraphGenerator {
           nextKeys.push(dsKey);
         }
         if (nextKeys.length === 0) break;
-        // Process all but continue main loop with the FIRST
-        // (other branches handled inline)
+
+        // Process ALL branches - add them to a processing queue
+        // Each branch gets the appropriate qty and continues downstream
         for (let bi = 1; bi < nextKeys.length; bi++) {
           const branchKey = nextKeys[bi];
           chanceVisited.add(branchKey);
@@ -1210,9 +1212,36 @@ class GraphGenerator {
           const branchM = registry.get(branchNode?.machine);
           if (branchNode) {
             const edgeQty2 = currentNode._edgeQty?.[branchKey];
-            branchNode.quantity = edgeQty2 || remainingQty;
+            let branchQty = edgeQty2 !== undefined ? edgeQty2 : remainingQty;
             if (branchM?.inputs?.length >= 2) {
-              branchNode.quantity = Math.max(1, Math.ceil(branchNode.quantity / branchM.inputs.length));
+              branchQty = Math.max(1, Math.ceil(branchQty / branchM.inputs.length));
+            }
+            branchNode.quantity = branchQty;
+            // Continue walking this branch's downstream nodes
+            let bKey = branchKey;
+            let bQty = branchQty;
+            while (bKey) {
+              const bNode = uniqueNodes.get(bKey);
+              if (!bNode) break;
+              let bNext = null;
+              for (const bds of (bNode.downstreamKeys || [])) {
+                if (chanceVisited.has(bds)) continue;
+                const bdsNode = uniqueNodes.get(bds);
+                if (!bdsNode || !bdsNode.isByproduct) continue;
+                bNext = bds;
+                break;
+              }
+              if (!bNext) break;
+              chanceVisited.add(bNext);
+              const bNextNode = uniqueNodes.get(bNext);
+              const bNextM = registry.get(bNextNode?.machine);
+              const bEdgeQty = bNode._edgeQty?.[bNext];
+              bQty = bEdgeQty !== undefined ? bEdgeQty : bQty;
+              if (bNextM?.inputs?.length >= 2) {
+                bQty = Math.max(1, Math.ceil(bQty / bNextM.inputs.length));
+              }
+              bNextNode.quantity = bQty;
+              bKey = bNext;
             }
           }
         }
