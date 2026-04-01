@@ -848,10 +848,10 @@ class GraphGenerator {
       }
     }
 
-    // Post-process: set correct quantities from flow data
-    // Instead of accumulating from tree walk (unreliable with memoization),
-    // compute each node's quantity directly from the chain's oreCount
-    if (actualOreCount > 0) {
+    // Post-process: compute ALL main chain quantities from flow data
+    // Tree walk accumulation is unreliable with memoized references.
+    // Use actualOreCount and flow memo's oreCount to calculate each node.
+    if (actualOreCount > 0 && flowMemo) {
       for (const [key, data] of uniqueNodes) {
         if (data.isByproduct) continue;
         if (data.machine === "seller") {
@@ -862,22 +862,52 @@ class GraphGenerator {
           data.quantity = actualOreCount;
           continue;
         }
-        // Ore processing machines (type=ore): process ALL ores
-        if (data.type === "ore") {
-          data.quantity = actualOreCount;
-          continue;
-        }
-        // Smelter/blast furnace: process ALL ores
-        if (data.machine === "ore_smelter" || data.machine === "blast_furnace") {
-          data.quantity = actualOreCount;
-          continue;
-        }
-        // For other machines: quantity = actualOreCount / machine's oreCount per invocation
-        // Use the flow memo to get the machine's oreCount
-        if (flowMemo) {
+        // Compute quantity from flow data
+        const m = registry.get(data.machine);
+
+        // Single-input TYPE-SPECIFIC modifiers (like Tempering Forge: bar→bar 2x):
+        // These process the SAME count as their input producer
+        // Only applies to machines with a SPECIFIC input type (not "any")
+        // Machines accepting "any" (QA, Duplicator, Polisher) should use their node's type
+        if (m?.inputs?.length === 1 && m.outputs?.[0]?.type === "same" &&
+            m.inputs[0] !== "any") {
+          // Modifier: qty = how many items of this type exist
+          const inputType = data.type || m.inputs[0].split("|")[0];
+          if (inputType === "ore") {
+            data.quantity = actualOreCount;
+          } else {
+            const typeResult = flowMemo.get(inputType);
+            if (typeResult?.oreCount > 0) {
+              // Check if this type's oreCount is inflated by an enhancement path
+              // (e.g., bar oreCount=2 due to transmuter, but tempering sees 1 bar/ore)
+              // Detect: type is produced by a single-input machine (smelter: ore→bar)
+              // but oreCount > input's oreCount. The difference is from enhancement.
+              let useOreCount = typeResult.oreCount;
+              const producer = registry.getProducers(inputType)?.[0];
+              if (producer) {
+                const pMachine = registry.get(producer);
+                if (pMachine?.inputs?.length === 1) {
+                  const pInputType = pMachine.inputs[0].split("|")[0];
+                  const pInputResult = flowMemo.get(pInputType);
+                  const producerOreCount = pInputResult?.oreCount || 1;
+                  // If type's oreCount > producer's input oreCount, enhancement inflated it
+                  if (typeResult.oreCount > producerOreCount) {
+                    useOreCount = producerOreCount; // Use pre-enhancement count
+                  }
+                }
+              }
+              data.quantity = Math.max(1, Math.round(actualOreCount / useOreCount));
+            } else {
+              data.quantity = actualOreCount;
+            }
+          }
+        } else {
+          // Non-modifier machines: use flow memo directly
           const flowResult = flowMemo.get(data.type);
           if (flowResult?.oreCount > 0) {
             data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
+          } else if (data.type === "ore") {
+            data.quantity = actualOreCount;
           }
         }
       }
@@ -893,9 +923,10 @@ class GraphGenerator {
           const node = uniqueNodes.get(nodeKey);
           if (!node || visited.has(nodeKey)) return;
           visited.add(nodeKey);
+          // STOP at main chain nodes - don't overwrite their quantities
+          if (!node.isByproduct) return;
           // Skip non-real machines
           if (!registry.get(node.machine)) return;
-          // Scale this node's quantity to match parent
           // Skip gem processing machines - their quantity is set by gem chain creation
           const nodeM = registry.get(node.machine);
           if (nodeM?.category === "jewelcrafting" && node.isByproduct) return;
