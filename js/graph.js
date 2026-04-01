@@ -1106,9 +1106,10 @@ class GraphGenerator {
 
         if (!connectedToDifferentMain && !alreadyConnectedToThis) {
           lastSideData.downstreamKeys.push(mainKey);
-          if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
-          lastSideData._edgeQty[mainKey] = mainQty;
         }
+        // Always set edge qty to mainQty (how many the main chain actually needs)
+        if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
+        lastSideData._edgeQty[mainKey] = mainQty;
 
         if (excess > 0) {
           // Excess items route through shared QA → Seller in the main chain
