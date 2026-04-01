@@ -899,15 +899,34 @@ class GraphGenerator {
     // Recalculate secondary output quantities from parent's final quantity × ratio
     for (const [key, data] of uniqueNodes) {
       if (data.machine !== "secondary_output") continue;
-      // Find parent (smelter/blast furnace) that produces this byproduct
+      // Find parent node that has an edge TO this secondary output
+      // Check both downstreamKeys AND edges (parent may connect via edge without downstreamKeys)
+      let found = false;
       for (const [pk, pd] of uniqueNodes) {
         if (pd.isByproduct) continue;
-        if (!pd.downstreamKeys?.includes(key)) continue;
-        const parentMachine = registry.get(pd.machine);
-        if (!parentMachine?.byproducts) continue;
-        const bpRatio = parentMachine.byproductRatio || 0.5;
-        data.quantity = Math.max(1, Math.round(pd.quantity * bpRatio));
-        break;
+        // Check downstreamKeys
+        if (pd.downstreamKeys?.includes(key)) {
+          const parentMachine = registry.get(pd.machine);
+          if (!parentMachine?.byproducts) continue;
+          const bpRatio = parentMachine.byproductRatio || 0.5;
+          data.quantity = Math.max(1, Math.round(pd.quantity * bpRatio));
+          found = true;
+          break;
+        }
+      }
+      // Fallback: find parent by checking who connects to this node via _edgeType
+      if (!found) {
+        for (const [pk, pd] of uniqueNodes) {
+          if (pd.isByproduct) continue;
+          if (pd._edgeType && Object.values(pd._edgeType).includes(data.type)) {
+            const parentMachine = registry.get(pd.machine);
+            if (!parentMachine?.byproducts) continue;
+            const bpRatio = parentMachine.byproductRatio || 0.5;
+            data.quantity = Math.max(1, Math.round(pd.quantity * bpRatio));
+            found = true;
+            break;
+          }
+        }
       }
     }
 
