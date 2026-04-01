@@ -1224,6 +1224,32 @@ class GraphGenerator {
       }
     }
 
+    // Final quantity fix: type-converting machines (smelter: ore→bar) should
+    // match their input producer's quantity, not the accumulated walkChain throughput.
+    // The ore chain processes actualOreCount ores, so the smelter processes that many too.
+    if (actualOreCount > 0) {
+      for (const [key, data] of uniqueNodes) {
+        if (data.isByproduct) continue;
+        const m3 = registry.get(data.machine);
+        if (!m3?.inputs?.length || m3.inputs.length !== 1) continue;
+        const outType = m3.outputs?.[0]?.type;
+        if (!outType || outType === "same") continue; // Not a type converter
+        if (m3.inputs[0] === "any") continue;
+        // This is a type converter (e.g., smelter: ore→bar)
+        // Set qty = ore processors qty (which includes sifter additions)
+        const inputType = m3.inputs[0].split("|")[0];
+        // Find the qty of the input type's last processor
+        let inputQty = actualOreCount;
+        for (const [ik, id] of uniqueNodes) {
+          if (id.isByproduct) continue;
+          if (id.type === inputType && id.machine !== "ore_source" && id.machine !== data.machine) {
+            inputQty = id.quantity;
+          }
+        }
+        data.quantity = inputQty;
+      }
+    }
+
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
     const layerVisited = new Set();
