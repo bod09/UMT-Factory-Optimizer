@@ -1453,11 +1453,9 @@ class GraphGenerator {
             tM?.inputs?.[0]?.split("|")[0] === currentType2 ||
             ((tNode.machine === "ore_smelter" || tNode.machine === "blast_furnace") && currentType2 === "ore");
           if (!isSame) continue;
-          // Skip mixed-input combiners
-          if (tM?.inputs?.length >= 2) {
-            const ut = new Set(tM.inputs.flatMap(i => i.split("|")));
-            if (ut.size > 1) continue;
-          }
+          // Skip ALL multi-input combiners - their qty comes from
+          // floor(inputQty / inputCount), calculated after propagation
+          if (tM?.inputs?.length >= 2) continue;
           tNode.quantity += edgeQty;
           // Track type conversion
           const outT = tM?.outputs?.[0]?.type;
@@ -1467,6 +1465,23 @@ class GraphGenerator {
             if (md.isByproduct || traceVisited2.has(mk)) continue;
             if (md.childKeys?.includes(tk)) traceQueue2.push(mk);
           }
+        }
+      }
+    }
+
+    // Recalculate same-type combine machines from their input quantities
+    // (after all propagation is done)
+    for (const [key, data] of uniqueNodes) {
+      if (data.isByproduct) continue;
+      const m4 = registry.get(data.machine);
+      if (!m4?.inputs || m4.inputs.length < 2) continue;
+      const ut4 = new Set(m4.inputs.flatMap(i => i.split("|")));
+      if (ut4.size > 1) continue; // Mixed inputs handled elsewhere
+      // Same-type combine: qty = floor(inputQty / inputCount)
+      if (data.childKeys?.length > 0) {
+        const childData = uniqueNodes.get(data.childKeys[0]);
+        if (childData) {
+          data.quantity = Math.floor(childData.quantity / m4.inputs.length);
         }
       }
     }
