@@ -1345,6 +1345,26 @@ class GraphGenerator {
       }
     }
 
+    // Simple cross-chain qty: for each side→main downstream edge,
+    // add the edge qty to the main node (if not already done by propagation)
+    // This catches prospector gems → gem_cutter connections missed by propagation
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
+      for (const dsKey of sideData.downstreamKeys) {
+        const dsNode = uniqueNodes.get(dsKey);
+        if (!dsNode || dsNode.isByproduct) continue;
+        const edgeQty = sideData._edgeQty?.[dsKey];
+        if (edgeQty === undefined || edgeQty <= 0) continue;
+        // Check if this was already propagated (by checking if qty already includes it)
+        // Simple: just add it. The propagation system above already handles some,
+        // but the prospector gems get missed. Adding again is safe if we track.
+        const addKey = `add:${sideKey}→${dsKey}`;
+        if (propagated2.has(addKey)) continue;
+        propagated2.add(addKey);
+        dsNode.quantity += edgeQty;
+      }
+    }
+
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
     const layerVisited = new Set();
