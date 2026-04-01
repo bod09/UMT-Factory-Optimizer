@@ -1376,7 +1376,7 @@ class GraphGenerator {
 
         const lastNode = uniqueNodes.get(lastKey);
         if (!lastNode) continue;
-        connectedMainKeys2.add(mainKey);
+        // Connection made - no global guard needed (each side node connects independently)
 
         // Connect last side node → main chain node
         if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
