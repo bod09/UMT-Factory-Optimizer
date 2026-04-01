@@ -1482,8 +1482,35 @@ class GraphGenerator {
         if (childData) {
           const newQty = Math.floor(childData.quantity / m4.inputs.length);
           if (newQty > data.quantity) data.quantity = newQty;
-          // Don't propagate downstream - extra items from propagation
-          // (prospector gems) are sold separately, not converted further
+          // Check for excess: if combine output > downstream consumption, sell extra
+          if (newQty > data.quantity) {
+            // Find downstream machine that consumes this output
+            for (const [dk, dd] of uniqueNodes) {
+              if (dd.isByproduct || dk === key) continue;
+              if (!dd.childKeys?.includes(key)) continue;
+              const excess = data.quantity - dd.quantity;
+              if (excess > 0) {
+                // Route excess to QA → Seller
+                const qaKey = [...uniqueNodes.entries()].find(([k, d]) =>
+                  d.machine === "quality_assurance" && !d.isByproduct
+                )?.[0];
+                const sellerKey = [...uniqueNodes.entries()].find(([k, d]) =>
+                  d.machine === "seller" && !d.isByproduct
+                )?.[0];
+                const target = qaKey || sellerKey;
+                if (target) {
+                  if (!data.downstreamKeys) data.downstreamKeys = [];
+                  if (!data.downstreamKeys.includes(target)) {
+                    data.downstreamKeys.push(target);
+                  }
+                  if (!data._edgeQty) data._edgeQty = {};
+                  data._edgeQty[target] = excess;
+                  data._edgeQty[dk] = dd.quantity; // Show how many go to the next machine
+                }
+              }
+              break;
+            }
+          }
         }
       }
     }
