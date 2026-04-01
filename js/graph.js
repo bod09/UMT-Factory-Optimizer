@@ -1328,6 +1328,76 @@ class GraphGenerator {
       }
     }
 
+    // FINAL: Recalculate stone qty from smelter qty × byproduct ratio
+    // This ensures stone qty is correct regardless of post-processing order
+    for (const [key, data] of uniqueNodes) {
+      if (data.machine !== "secondary_output") continue;
+      // Find the smelter that produces this byproduct
+      const parentKey = data.childKeys?.[0];
+      if (!parentKey) continue;
+      const parentNode = uniqueNodes.get(parentKey);
+      if (!parentNode) continue;
+      // Find which machine produced this byproduct (look for childKeys connection)
+      // The secondary_output's parent is the smelter node
+      for (const [mk, md] of uniqueNodes) {
+        if (md.childKeys?.includes(key) || md.downstreamKeys?.includes(key)) continue;
+        // Alternative: find by checking if any node has this as downstream
+      }
+      // Simpler: find the smelter in the main chain and use its qty × ratio
+      const smelterNode = [...uniqueNodes.entries()].find(([k, d]) =>
+        !d.isByproduct && (d.machine === "ore_smelter" || d.machine === "blast_furnace")
+      );
+      if (smelterNode) {
+        const smelterM = registry.get(smelterNode[1].machine);
+        const bpRatio = smelterM?.byproductRatio || 0.5;
+        data.quantity = Math.round(smelterNode[1].quantity * bpRatio);
+      }
+    }
+
+    // Rerun chance chain quantity fix with corrected stone qty
+    for (const [key, data] of uniqueNodes) {
+      if (data.machine !== "secondary_output" || !data.downstreamKeys) continue;
+      let remainingQty2 = data.quantity;
+      const visited2 = new Set([key]);
+      let current2 = key;
+      // Walk downstream from stone through prospectors, crusher, sifter, clay mixer...
+      while (true) {
+        const currentNode = uniqueNodes.get(current2);
+        if (!currentNode) break;
+        const nextKeys = (currentNode.downstreamKeys || []).filter(dk => !visited2.has(dk) && uniqueNodes.has(dk));
+        if (nextKeys.length === 0) break;
+        // Process ALL branches
+        for (const nextKey of nextKeys) {
+          visited2.add(nextKey);
+          const nextNode = uniqueNodes.get(nextKey);
+          if (!nextNode) continue;
+          const nextM = registry.get(nextNode.machine);
+          if (nextM?.effect === "chance") {
+            const chance = nextM.value || 0.05;
+            const produced = Math.round(remainingQty2 * chance);
+            nextNode.quantity = produced;
+            // Update edge qty for cross-chain connections
+            if (nextNode._edgeQty) {
+              for (const ek of Object.keys(nextNode._edgeQty)) {
+                const targetNode = uniqueNodes.get(ek);
+                if (targetNode && !targetNode.isByproduct) {
+                  // Cross-chain edge: set to produced qty
+                  nextNode._edgeQty[ek] = produced;
+                }
+              }
+            }
+            remainingQty2 -= produced;
+          } else {
+            nextNode.quantity = remainingQty2;
+            if (nextM?.inputs?.length >= 2) {
+              nextNode.quantity = Math.max(1, Math.floor(remainingQty2 / nextM.inputs.length));
+            }
+          }
+        }
+        current2 = nextKeys[0]; // Follow first branch for remaining qty
+      }
+    }
+
     // FINAL: Cross-chain excess handling (runs AFTER all quantity fixes)
     // For each side chain node connecting to a main chain node,
     // check if side produces more than main needs → create sell excess node
@@ -1369,6 +1439,7 @@ class GraphGenerator {
         const dsNode = uniqueNodes.get(dsKey);
         if (!dsNode || dsNode.isByproduct) continue;
         const edgeQty = sideData._edgeQty?.[dsKey] || 0;
+        console.log(`[FINAL-PROP] ${sideData.name || sideData.machine} → ${dsNode.name || dsNode.machine}: edgeQty=${edgeQty}, _edgeQty keys=${Object.keys(sideData._edgeQty || {})}, dsKey=${dsKey}`);
         if (edgeQty <= 0) continue;
         // Skip excess edges (to QA/Seller) - those don't add to main chain qty
         if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
