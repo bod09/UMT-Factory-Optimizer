@@ -1224,6 +1224,37 @@ class GraphGenerator {
       }
     }
 
+    // Final quantity fix: recalculate chance machine quantities from Stone qty
+    // The downstream scaling may not reach all prospectors/sifters correctly
+    for (const [key, data] of uniqueNodes) {
+      if (!data.isByproduct) continue;
+      const m4 = registry.get(data.machine);
+      if (!m4 || m4.effect !== "chance") continue;
+      // Find what feeds this chance machine (its parent via edges)
+      let parentQty = 0;
+      for (const [pk, pd] of uniqueNodes) {
+        if (pd.downstreamKeys?.includes(key)) {
+          parentQty = pd.quantity;
+          break;
+        }
+      }
+      if (parentQty > 0) {
+        data.quantity = parentQty; // Stone passes through
+        const chance = m4.value || 0.05;
+        const produced = Math.round(parentQty * chance);
+        // Update gem/ore output nodes connected to this chance machine
+        for (const dsKey of (data.downstreamKeys || [])) {
+          const dsNode = uniqueNodes.get(dsKey);
+          if (!dsNode) continue;
+          const dsM = registry.get(dsNode.machine);
+          // Next chance machine in chain gets reduced qty
+          if (dsM?.effect === "chance") {
+            dsNode.quantity = parentQty - produced;
+          }
+        }
+      }
+    }
+
     // Final quantity fix: type-converting machines (smelter: ore→bar) should
     // match their input producer's quantity, not the accumulated walkChain throughput.
     // The ore chain processes actualOreCount ores, so the smelter processes that many too.
