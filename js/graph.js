@@ -905,12 +905,23 @@ class GraphGenerator {
               }
             }
           } else {
-            const flowResult = flowMemo.get(data.type);
-            if (flowResult?.oreCount > 0) {
-              data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
-            } else if (data.type === "ore") {
-              data.quantity = actualOreCount;
+            // Skip recalculation for multi-input combine machines with mixed inputs
+            // (e.g., superconductor: alloy_bar + ceramic_casing)
+            // These only use a PORTION of total ores, so dividing total by per-invocation is wrong
+            // Their walkChain accumulated throughput is correct
+            const isMixedCombine = m2?.inputs?.length >= 2 && (() => {
+              const inputTypes = new Set((m2.inputs || []).flatMap(i => i.split("|")));
+              return inputTypes.size > 1;
+            })();
+            if (!isMixedCombine) {
+              const flowResult = flowMemo.get(data.type);
+              if (flowResult?.oreCount > 0) {
+                data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
+              } else if (data.type === "ore") {
+                data.quantity = actualOreCount;
+              }
             }
+            // Mixed combine machines keep their walkChain throughput
           }
         }
       }
@@ -1339,8 +1350,9 @@ class GraphGenerator {
         }
         // Add to target
         dsNode.quantity += edgeQty;
-        // Trace downstream through same-type main chain nodes
-        const itemType = sideData._edgeType?.[dsKey] || sideData.type;
+        // Trace downstream through main chain nodes
+        // When hitting a type converter (smelter: ore→bar), switch itemType and continue
+        let currentItemType = sideData._edgeType?.[dsKey] || sideData.type;
         const traceVisited = new Set([dsKey]);
         const traceQueue = [dsKey];
         while (traceQueue.length > 0) {
@@ -1348,13 +1360,23 @@ class GraphGenerator {
           for (const [mk, md] of uniqueNodes) {
             if (md.isByproduct || traceVisited.has(mk)) continue;
             if (!md.childKeys?.includes(ck)) continue;
-            const isSame = md.type === itemType ||
-              ((md.machine === "ore_smelter" || md.machine === "blast_furnace") && itemType === "ore");
-            if (!isSame) continue;
+            // Check if this node processes the current item type
             const mm = registry.get(md.machine);
+            const mmOutType = mm?.outputs?.[0]?.type;
+            const mmInType = mm?.inputs?.[0]?.split("|")[0];
+            // Match: same type, or type converter that accepts current type
+            const isSame = md.type === currentItemType ||
+              mmInType === currentItemType ||
+              ((md.machine === "ore_smelter" || md.machine === "blast_furnace") && currentItemType === "ore");
+            if (!isSame) continue;
+            // Skip combine machines with mixed inputs
             if (mm?.inputs?.length >= 2) {
               const mt = new Set(mm.inputs.flatMap(i => i.split("|")));
               if (mt.size > 1) continue;
+            }
+            // If this is a type converter, switch to the output type for further tracing
+            if (mmOutType && mmOutType !== "same" && mmOutType !== mmInType && mmInType !== "any") {
+              currentItemType = mmOutType;
             }
             md.quantity += edgeQty;
             traceVisited.add(mk);
