@@ -1469,19 +1469,43 @@ class GraphGenerator {
       }
     }
 
-    // Recalculate same-type combine machines from their input quantities
-    // (after all propagation is done)
+    // Recalculate same-type combine machines ONLY if input increased from propagation
+    // Then propagate the increase downstream through single-input machines
     for (const [key, data] of uniqueNodes) {
       if (data.isByproduct) continue;
       const m4 = registry.get(data.machine);
       if (!m4?.inputs || m4.inputs.length < 2) continue;
       const ut4 = new Set(m4.inputs.flatMap(i => i.split("|")));
-      if (ut4.size > 1) continue; // Mixed inputs handled elsewhere
-      // Same-type combine: qty = floor(inputQty / inputCount)
+      if (ut4.size > 1) continue;
       if (data.childKeys?.length > 0) {
         const childData = uniqueNodes.get(data.childKeys[0]);
         if (childData) {
-          data.quantity = Math.floor(childData.quantity / m4.inputs.length);
+          const newQty = Math.floor(childData.quantity / m4.inputs.length);
+          if (newQty > data.quantity) {
+            data.quantity = newQty;
+            // Propagate increase downstream through single-input machines
+            // e.g., Prismatic x8 → Gem to Bar should also be x8
+            let traceKey3 = key;
+            const traced3 = new Set([key]);
+            while (traceKey3) {
+              let nextKey3 = null;
+              for (const [mk, md] of uniqueNodes) {
+                if (md.isByproduct || traced3.has(mk)) continue;
+                if (md.childKeys?.includes(traceKey3)) {
+                  const mm = registry.get(md.machine);
+                  // Only update single-input machines
+                  if (mm?.inputs?.length === 1) {
+                    md.quantity = uniqueNodes.get(traceKey3).quantity;
+                    nextKey3 = mk;
+                  }
+                  break;
+                }
+              }
+              if (!nextKey3) break;
+              traced3.add(nextKey3);
+              traceKey3 = nextKey3;
+            }
+          }
         }
       }
     }
