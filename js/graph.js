@@ -1326,14 +1326,19 @@ class GraphGenerator {
       }
     }
 
-    // Update ALL cross-chain edge qtys from corrected node quantities
+    // Update edge qtys from corrected node quantities
+    // Only for edges to OTHER SIDE CHAIN nodes (chance machine outputs)
+    // Don't overwrite edges to MAIN CHAIN nodes (those have specific qtys)
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct || !sideData._edgeQty) continue;
       for (const ek of Object.keys(sideData._edgeQty)) {
         const targetNode = uniqueNodes.get(ek);
         if (!targetNode) continue;
-        // Set edge qty = source node's corrected quantity
-        sideData._edgeQty[ek] = sideData.quantity;
+        // Only update edges to side chain nodes
+        if (targetNode.isByproduct) {
+          sideData._edgeQty[ek] = sideData.quantity;
+        }
+        // Main chain edges keep their explicitly set qty (e.g., mainQty=1)
       }
     }
 
