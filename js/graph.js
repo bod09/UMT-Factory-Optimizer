@@ -1309,6 +1309,17 @@ class GraphGenerator {
       }
     }
 
+    // Update ALL cross-chain edge qtys from corrected node quantities
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct || !sideData._edgeQty) continue;
+      for (const ek of Object.keys(sideData._edgeQty)) {
+        const targetNode = uniqueNodes.get(ek);
+        if (!targetNode) continue;
+        // Set edge qty = source node's corrected quantity
+        sideData._edgeQty[ek] = sideData.quantity;
+      }
+    }
+
     // Re-run cross-chain quantity propagation after all fixes
     // (chance chain fix updated edge qtys, type converter fix updated smelter qty)
     const propagated2 = new Set();
