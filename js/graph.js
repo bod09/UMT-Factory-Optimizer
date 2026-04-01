@@ -538,7 +538,7 @@ class GraphGenerator {
                           oreCount: 0,
                           isByproduct: true, // Side chain node for sifted ores
                         });
-                        // Connect upgrader to ore cleaner
+                        // Connect upgrader to ore cleaner with correct qty
                         if (oreCleanerKey) {
                           const upgraderNode = uniqueNodes.get(upgraderKey);
                           upgraderNode.downstreamKeys = [oreCleanerKey];
@@ -687,8 +687,12 @@ class GraphGenerator {
                 if (!prospNode.downstreamKeys.includes(gemTargetKey)) {
                   prospNode.downstreamKeys.push(gemTargetKey);
                 }
+                // Each prospector's own produced qty (not overwriting others)
                 if (!prospNode._edgeQty) prospNode._edgeQty = {};
                 prospNode._edgeQty[gemTargetKey] = gc.qty;
+                // Also set the edge type so the FINAL propagation can find it
+                if (!prospNode._edgeType) prospNode._edgeType = {};
+                prospNode._edgeType[gemTargetKey] = "gem";
               }
               // Gem quantities are added by the global cross-chain propagation step
               // Don't add here to avoid double-counting
@@ -1042,102 +1046,8 @@ class GraphGenerator {
     for (const [k, d] of uniqueNodes) {
     }
 
-    // Post-process: connect side chain outputs to main chain consumers
-    // e.g., Ceramic Furnace (side) → Superconductor Constructor (main)
-    // Connect side chain outputs to main chain consumers + handle excess
-    // Strategy: find the LAST node in each side chain, connect IT to main chain
-    // This ensures items go through ALL processing (polisher, etc.) before entering main chain
-    const connectedMainKeys = new Set(); // Prevent duplicate connections
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct) continue;
-      if (sideData.machine === "sell_excess") continue;
-      if (sideKey.startsWith("excess_")) continue;
-      // Skip chance machines (prospectors/sifters) - their outputs are
-      // already connected to main chain at gem/ore processing points
-      const sideM = registry.get(sideData.machine);
-      if (sideM?.effect === "chance") continue;
-      const sideType = sideData.type;
-
-      // Find main chain nodes that need this type as input
-      for (const [mainKey, mainData] of uniqueNodes) {
-        if (mainData.isByproduct) continue;
-        const mainMachine = registry.get(mainData.machine);
-        if (!mainMachine?.inputs) continue;
-        const acceptsType = mainMachine.inputs.some(inp =>
-          inp === sideType || inp.split("|").includes(sideType)
-        );
-        if (!acceptsType) continue;
-        if (connectedMainKeys.has(mainKey)) continue; // Already connected
-        connectedMainKeys.add(mainKey);
-
-        // Find the LAST node in the side chain that outputs this type
-        // (follow downstreamKeys to the end of the processing chain)
-        let lastSideKey = sideKey;
-        const visited = new Set([sideKey]);
-        while (true) {
-          const lastNode = uniqueNodes.get(lastSideKey);
-          const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
-            !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct &&
-            uniqueNodes.get(dk)?.machine !== "sell_excess"
-          );
-          if (dsKeys.length === 0) break;
-          lastSideKey = dsKeys[0];
-          visited.add(lastSideKey);
-        }
-
-        const lastSideData = uniqueNodes.get(lastSideKey);
-        const lastSideQty = lastSideData?.quantity || sideData.quantity;
-        const mainQty = mainData.quantity || 1;
-        const excess = lastSideQty - mainQty;
-
-        // Connect LAST side chain node → main chain (not the producer)
-        // Skip adding connection if already connected to this SPECIFIC main node
-        // But still handle excess even if already connected
-        if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
-
-        // Check if already connected to THIS main node specifically
-        const alreadyConnectedToThis = lastSideData.downstreamKeys.includes(mainKey);
-
-        // Check if connected to a DIFFERENT main node (e.g., Ore Upgrader → Ore Cleaner)
-        const connectedToDifferentMain = !alreadyConnectedToThis && (lastSideData.downstreamKeys || []).some(dk => {
-          const dkNode = uniqueNodes.get(dk);
-          return dkNode && !dkNode.isByproduct;
-        });
-
-        if (!connectedToDifferentMain && !alreadyConnectedToThis) {
-          lastSideData.downstreamKeys.push(mainKey);
-        }
-        // Always set edge qty to mainQty (how many the main chain actually needs)
-        if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
-        lastSideData._edgeQty[mainKey] = mainQty;
-
-        if (excess > 0) {
-          // Excess items route through shared QA → Seller in the main chain
-          // Find the main chain QA and Seller nodes
-          const lastNode = uniqueNodes.get(lastSideKey);
-          const mainQAEntry = [...uniqueNodes.entries()].find(([k, d]) =>
-            d.machine === "quality_assurance" && !d.isByproduct
-          );
-          const mainSellerEntry = [...uniqueNodes.entries()].find(([k, d]) =>
-            d.machine === "seller" && !d.isByproduct
-          );
-
-          // Connect last side node → QA (if available) or Seller
-          const targetKey = mainQAEntry?.[0] || mainSellerEntry?.[0];
-          if (targetKey && lastNode) {
-            if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
-            if (!lastNode.downstreamKeys.includes(targetKey)) {
-              lastNode.downstreamKeys.push(targetKey);
-            }
-            if (!lastNode._edgeQty) lastNode._edgeQty = {};
-            lastNode._edgeQty[targetKey] = excess;
-          }
-        }
-        break; // Only connect to first matching main node
-      }
-    }
-
-    // (Gem processing connections handled inline during prospector node creation)
+    // (Cross-chain connections and excess handling moved to FINAL section
+    //  after all quantity fixes are done)
 
     // Post-process: connect side chain gem endpoints to QA → Seller
     // Must run AFTER cross-chain connections which may add ring_maker/laser_maker
@@ -1326,21 +1236,7 @@ class GraphGenerator {
       }
     }
 
-    // Update edge qtys from corrected node quantities
-    // Only for edges to OTHER SIDE CHAIN nodes (chance machine outputs)
-    // Don't overwrite edges to MAIN CHAIN nodes (those have specific qtys)
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct || !sideData._edgeQty) continue;
-      for (const ek of Object.keys(sideData._edgeQty)) {
-        const targetNode = uniqueNodes.get(ek);
-        if (!targetNode) continue;
-        // Only update edges to side chain nodes
-        if (targetNode.isByproduct) {
-          sideData._edgeQty[ek] = sideData.quantity;
-        }
-        // Main chain edges keep their explicitly set qty (e.g., mainQty=1)
-      }
-    }
+    // (Edge qty updates moved to FINAL section)
 
     // ONE cross-chain quantity propagation pass
     // For each side→main edge with qty, add to target and trace downstream
@@ -1429,6 +1325,90 @@ class GraphGenerator {
           }
         }
         data.quantity = inputQty;
+      }
+    }
+
+    // FINAL: Cross-chain excess handling (runs AFTER all quantity fixes)
+    // For each side chain node connecting to a main chain node,
+    // check if side produces more than main needs → create sell excess node
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct) continue;
+      for (const dsKey of (sideData.downstreamKeys || [])) {
+        const dsNode = uniqueNodes.get(dsKey);
+        if (!dsNode || dsNode.isByproduct) continue; // Only cross-chain
+        const sideQty = sideData.quantity || 0;
+        const mainQty = dsNode.quantity || 1;
+        const excess = sideQty - mainQty;
+        // Set correct edge qty (how many main chain actually needs)
+        if (!sideData._edgeQty) sideData._edgeQty = {};
+        sideData._edgeQty[dsKey] = Math.min(sideQty, mainQty);
+        if (excess > 0) {
+          // Route excess through QA → Seller
+          const qaEntry = [...uniqueNodes.entries()].find(([k, d]) =>
+            d.machine === "quality_assurance" && !d.isByproduct
+          );
+          const sellerEntry = [...uniqueNodes.entries()].find(([k, d]) =>
+            d.machine === "seller" && !d.isByproduct
+          );
+          const targetKey = qaEntry?.[0] || sellerEntry?.[0];
+          if (targetKey) {
+            if (!sideData.downstreamKeys.includes(targetKey)) {
+              sideData.downstreamKeys.push(targetKey);
+            }
+            sideData._edgeQty[targetKey] = excess;
+          }
+        }
+      }
+    }
+
+    // FINAL: Add sifter ore + prospector gem quantities to main chain
+    // (must run after all quantity fixes are done)
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct) continue;
+      for (const dsKey of (sideData.downstreamKeys || [])) {
+        const dsNode = uniqueNodes.get(dsKey);
+        if (!dsNode || dsNode.isByproduct) continue;
+        const edgeQty = sideData._edgeQty?.[dsKey] || 0;
+        if (edgeQty <= 0) continue;
+        // Skip excess edges (to QA/Seller) - those don't add to main chain qty
+        if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
+        // Only propagate to single-input or same-type machines
+        const dsM = registry.get(dsNode.machine);
+        if (dsM?.inputs?.length >= 2) {
+          const uniqueInputTypes = new Set(dsM.inputs.flatMap(i => i.split("|")));
+          if (uniqueInputTypes.size > 1) continue; // Mixed inputs - don't inflate
+        }
+        // Add to target and trace downstream through same-type machines
+        const traceVisited2 = new Set([sideKey]);
+        const traceQueue2 = [dsKey];
+        let currentType2 = sideData._edgeType?.[dsKey] || sideData.type;
+        while (traceQueue2.length > 0) {
+          const tk = traceQueue2.shift();
+          if (traceVisited2.has(tk)) continue;
+          traceVisited2.add(tk);
+          const tNode = uniqueNodes.get(tk);
+          if (!tNode || tNode.isByproduct) continue;
+          const tM = registry.get(tNode.machine);
+          // Check type match
+          const isSame = tNode.type === currentType2 ||
+            tM?.inputs?.[0]?.split("|")[0] === currentType2 ||
+            ((tNode.machine === "ore_smelter" || tNode.machine === "blast_furnace") && currentType2 === "ore");
+          if (!isSame) continue;
+          // Skip mixed-input combiners
+          if (tM?.inputs?.length >= 2) {
+            const ut = new Set(tM.inputs.flatMap(i => i.split("|")));
+            if (ut.size > 1) continue;
+          }
+          tNode.quantity += edgeQty;
+          // Track type conversion
+          const outT = tM?.outputs?.[0]?.type;
+          if (outT && outT !== "same" && outT !== currentType2) currentType2 = outT;
+          // Find next downstream main chain nodes
+          for (const [mk, md] of uniqueNodes) {
+            if (md.isByproduct || traceVisited2.has(mk)) continue;
+            if (md.childKeys?.includes(tk)) traceQueue2.push(mk);
+          }
+        }
       }
     }
 
