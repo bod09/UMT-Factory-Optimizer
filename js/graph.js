@@ -1255,6 +1255,18 @@ class GraphGenerator {
           const produced = Math.round(remainingQty * chance);
           nextNode.quantity = produced; // Show what it produces
           remainingQty = remainingQty - produced;
+          // Fix edge quantities for chance machine outputs
+          // The ore/gem output edge should show produced qty, not the old value
+          if (nextNode._edgeQty) {
+            for (const ek of Object.keys(nextNode._edgeQty)) {
+              // Any edge that carries the PRODUCED item (not the passthrough)
+              const edgeType = nextNode._edgeType?.[ek];
+              if (edgeType && edgeType !== nextNode.type) {
+                // This edge carries a different type (e.g., ore from dust sifter)
+                nextNode._edgeQty[ek] = produced;
+              }
+            }
+          }
         } else {
           // Non-chance machine (crusher, clay mixer, etc): gets remaining qty
           // UNLESS this node has a specific edgeQty set (e.g., sifter → ore upgrader)
