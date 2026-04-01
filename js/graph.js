@@ -1080,6 +1080,14 @@ class GraphGenerator {
         const excess = lastSideQty - mainQty;
 
         // Connect LAST side chain node → main chain (not the producer)
+        // Skip if this node already connects to a main chain node
+        // (e.g., Ore Upgrader already connects to Ore Cleaner)
+        const alreadyConnectedToMain = (lastSideData.downstreamKeys || []).some(dk => {
+          const dkNode = uniqueNodes.get(dk);
+          return dkNode && !dkNode.isByproduct;
+        });
+        if (alreadyConnectedToMain) continue;
+
         if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
         if (!lastSideData.downstreamKeys.includes(mainKey)) {
           lastSideData.downstreamKeys.push(mainKey);
@@ -1184,16 +1192,31 @@ class GraphGenerator {
       while (currentKey) {
         const currentNode = uniqueNodes.get(currentKey);
         if (!currentNode) break;
-        // Find next downstream node
-        let nextKey = null;
+        // Process ALL downstream byproduct nodes (not just the first)
+        const nextKeys = [];
         for (const dsKey of (currentNode.downstreamKeys || [])) {
           if (chanceVisited.has(dsKey)) continue;
           const dsNode = uniqueNodes.get(dsKey);
           if (!dsNode || !dsNode.isByproduct) continue;
-          nextKey = dsKey;
-          break;
+          nextKeys.push(dsKey);
         }
-        if (!nextKey) break;
+        if (nextKeys.length === 0) break;
+        // Process all but continue main loop with the FIRST
+        // (other branches handled inline)
+        for (let bi = 1; bi < nextKeys.length; bi++) {
+          const branchKey = nextKeys[bi];
+          chanceVisited.add(branchKey);
+          const branchNode = uniqueNodes.get(branchKey);
+          const branchM = registry.get(branchNode?.machine);
+          if (branchNode) {
+            const edgeQty2 = currentNode._edgeQty?.[branchKey];
+            branchNode.quantity = edgeQty2 || remainingQty;
+            if (branchM?.inputs?.length >= 2) {
+              branchNode.quantity = Math.max(1, Math.ceil(branchNode.quantity / branchM.inputs.length));
+            }
+          }
+        }
+        const nextKey = nextKeys[0];
         chanceVisited.add(nextKey);
         const nextNode = uniqueNodes.get(nextKey);
         const nextM = registry.get(nextNode.machine);
