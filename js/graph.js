@@ -1148,64 +1148,8 @@ class GraphGenerator {
       }
     }
 
-    // Global: propagate side chain quantities to connected main chain nodes
-    // Handles ALL cross-chain connections: sifter ores, prospector gems, etc.
-    // ONLY for single-input or same-type-input machines (not combine with mixed inputs)
-    // Also propagates to DOWNSTREAM main chain nodes of the same processing type
-    const propagated = new Set();
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct) continue;
-      for (const dsKey of (sideData.downstreamKeys || [])) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue;
-        const edgeQty = sideData._edgeQty?.[dsKey] || 0;
-        if (edgeQty <= 0) continue;
-        const propKey = `${sideKey}→${dsKey}`;
-        if (propagated.has(propKey)) continue;
-        propagated.add(propKey);
-
-        // Check target: only propagate to single-input or same-type-input machines
-        const targetMachine = registry.get(dsNode.machine);
-        if (targetMachine?.inputs?.length >= 2) {
-          const uniqueInputTypes = new Set(targetMachine.inputs.flatMap(i => i.split("|")));
-          if (uniqueInputTypes.size > 1) continue; // Mixed inputs - don't propagate
-        }
-
-        // Add qty to target
-        dsNode.quantity += edgeQty;
-
-        // Propagate to all downstream main chain nodes that process the same item type
-        // e.g., sifter ore → ore_cleaner → polisher → philo → smelter (all process ore)
-        const itemType = sideData._edgeType?.[dsKey] || sideData.type;
-        const traceVisited = new Set([dsKey]);
-        const traceQueue = [dsKey];
-        while (traceQueue.length > 0) {
-          const currentKey = traceQueue.shift();
-          const currentNode = uniqueNodes.get(currentKey);
-          if (!currentNode) continue;
-          // Find main chain nodes that have this node as a child (= next in chain)
-          for (const [mk, md] of uniqueNodes) {
-            if (md.isByproduct || traceVisited.has(mk)) continue;
-            if (!md.childKeys?.includes(currentKey)) continue;
-            // Only propagate through nodes that process the same item type
-            // (ore → ore → ore → bar stops at the type change to bar)
-            // Exception: smelter (type "bar" but processes ore)
-            const isSameType = md.type === itemType ||
-              (md.machine === "ore_smelter" || md.machine === "blast_furnace") && itemType === "ore";
-            if (!isSameType) continue;
-            // Check it's not a combine machine with mixed inputs
-            const mdMachine = registry.get(md.machine);
-            if (mdMachine?.inputs?.length >= 2) {
-              const mInputTypes = new Set(mdMachine.inputs.flatMap(i => i.split("|")));
-              if (mInputTypes.size > 1) continue;
-            }
-            md.quantity += edgeQty;
-            traceVisited.add(mk);
-            traceQueue.push(mk);
-          }
-        }
-      }
-    }
+    // Cross-chain quantity propagation runs AFTER all qty fixes below
+    // (chance chain, combine machines, type converters)
 
     // MOVED: Global propagation now runs AFTER all quantity fixes (see below)
 
