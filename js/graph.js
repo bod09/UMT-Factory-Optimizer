@@ -1056,6 +1056,31 @@ class GraphGenerator {
       }
     }
 
+    // Global: propagate side chain quantities to connected main chain nodes
+    // When a side chain node connects to a main chain node (cross-chain),
+    // add the side chain's edge qty to the main chain target and its downstream processors
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct) continue;
+      for (const dsKey of (sideData.downstreamKeys || [])) {
+        const dsNode = uniqueNodes.get(dsKey);
+        if (!dsNode || dsNode.isByproduct) continue; // Only cross-chain connections
+        const edgeQty = sideData._edgeQty?.[dsKey] || 0;
+        if (edgeQty <= 0) continue;
+        // Already handled by sifter-specific code? Skip if target already got the qty
+        // Use a flag to prevent double-counting
+        const crossKey = `${sideKey}→${dsKey}`;
+        if (sideData._qtyPropagated?.has(crossKey)) continue;
+        if (!sideData._qtyPropagated) sideData._qtyPropagated = new Set();
+        sideData._qtyPropagated.add(crossKey);
+        // Don't add to nodes that already got it from sifter-specific code
+        // (ore processors already handled above for sifter ores)
+        // Instead, just ensure gem quantities propagate to gem chain nodes
+        if (sideData.type === "ore" || sideData._edgeType?.[dsKey] === "ore") continue; // Already handled
+        // Add qty to target and downstream main chain nodes of same type
+        dsNode.quantity += edgeQty;
+      }
+    }
+
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
     const layerVisited = new Set();
