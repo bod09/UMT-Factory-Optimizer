@@ -1481,9 +1481,10 @@ class GraphGenerator {
         const childData = uniqueNodes.get(data.childKeys[0]);
         if (childData) {
           const newQty = Math.floor(childData.quantity / m4.inputs.length);
-          if (newQty > data.quantity) data.quantity = newQty;
+          const qtyIncreased = newQty > data.quantity;
+          if (qtyIncreased) data.quantity = newQty;
           // Check for excess: if combine output > downstream consumption, sell extra
-          if (newQty > data.quantity) {
+          if (qtyIncreased) {
             // Find downstream machine that consumes this output
             for (const [dk, dd] of uniqueNodes) {
               if (dd.isByproduct || dk === key) continue;
