@@ -1049,7 +1049,7 @@ class FlowOptimizer {
     // Build graph directly from flow chain result - single source of truth
     const graph = GraphGenerator.fromFlowChain(
       chainResult, this.registry, this.config,
-      { dupAt, productQty }, {}, this.memo
+      { dupAt, productQty }, {}, this.memo, totalOres
     );
 
     return {

@@ -111,7 +111,7 @@ class MachineRegistry {
 class GraphGenerator {
   // Build graph directly from FlowOptimizer chain result
   // This is the PRIMARY graph builder - uses flow data as single source of truth
-  static fromFlowChain(chainResult, registry, config, dupInfo = {}, bpValue = {}, flowMemo = null) {
+  static fromFlowChain(chainResult, registry, config, dupInfo = {}, bpValue = {}, flowMemo = null, actualOreCount = 0) {
     const nodes = [];
     const edges = [];
     let nextId = 0;
@@ -154,9 +154,8 @@ class GraphGenerator {
       // In the graph, each machine is a CHILD of the next (reversed for layer assignment)
       // so ore_source gets the highest layer (leftmost) and last machine connects to parent
       if (node.machines && !node.inputs) {
-        // Ore chain: each machine processes all ores from the parent
-        // parentQty carries the parent machine's throughput
-        const qty = parentQty;
+        // Ore chain: use oreCount (how many ores this branch needs)
+        const qty = node.oreCount || 1;
         const machineKeys = [];
 
         // Create all nodes first (skip byproduct placeholders)
@@ -178,6 +177,7 @@ class GraphGenerator {
               oreCount: machineId === "ore_source" ? node.oreCount : 0,
             });
           } else {
+            // Accumulate oreCount from each visit (each branch needs its ores)
             uniqueNodes.get(key).quantity += qty;
           }
           machineKeys.push(key);
@@ -266,8 +266,8 @@ class GraphGenerator {
           value: node.value,
           name: m?.name || machine,
           category: m?.category || "source",
-          // Throughput from flow: how many items this machine outputs
-          quantity: node.throughput || node.oreCount || 1,
+          // Initial quantity from flow throughput, will be corrected in post-processing
+          quantity: node.throughput || 1,
           childKeys: [],
           oreCount: node.oreCount,
           isByproduct: nodeIsSideChain,
@@ -281,19 +281,15 @@ class GraphGenerator {
             return dupKey;
           }
         }
-        // When same node visited from multiple parents, SUM throughput
+        // When same node visited again, SUM throughput from each visit
         existing.quantity += (node.throughput || 1);
       }
 
-      // Pass this node's throughput to children so they know how many items flow through
-      const nodeThru = node.throughput || 1;
-      const qtyMult = m?.outputQtyMultiplier || 1;
-      const childQty = qtyMult > 1 ? Math.ceil(nodeThru / qtyMult) : nodeThru;
-
       // Recurse into inputs
+      // childQty = parentQty (each child runs once per parent invocation)
       if (node.inputs) {
         for (const child of node.inputs) {
-          const childKey = walkChain(child, key, childQty);
+          const childKey = walkChain(child, key, parentQty);
           if (childKey) {
             const n = uniqueNodes.get(key);
             const childNode = uniqueNodes.get(childKey);
@@ -370,7 +366,7 @@ class GraphGenerator {
         const bpRatio = registry.get(machine)?.byproductRatio || 0.5;
         // Accumulate fractional byproduct amount per visit
         // Don't round per-visit (Math.max(1) was forcing 1 per visit even for 0.5 ratio)
-        const bpQtyRaw = nodeThru * bpRatio;
+        const bpQtyRaw = parentQty * bpRatio;
 
         for (const bp of node.byproductOutputs) {
           if (!bp.result || !bp.type) continue;
@@ -849,6 +845,41 @@ class GraphGenerator {
       if (data._rawQty !== undefined) {
         data.quantity = Math.max(1, Math.round(data._rawQty));
         delete data._rawQty;
+      }
+    }
+
+    // Post-process: set correct quantities from flow data
+    // Instead of accumulating from tree walk (unreliable with memoization),
+    // compute each node's quantity directly from the chain's oreCount
+    if (actualOreCount > 0) {
+      for (const [key, data] of uniqueNodes) {
+        if (data.isByproduct) continue;
+        if (data.machine === "seller") {
+          data.quantity = productQty || 1;
+          continue;
+        }
+        if (data.machine === "ore_source") {
+          data.quantity = actualOreCount;
+          continue;
+        }
+        // Ore processing machines (type=ore): process ALL ores
+        if (data.type === "ore") {
+          data.quantity = actualOreCount;
+          continue;
+        }
+        // Smelter/blast furnace: process ALL ores
+        if (data.machine === "ore_smelter" || data.machine === "blast_furnace") {
+          data.quantity = actualOreCount;
+          continue;
+        }
+        // For other machines: quantity = actualOreCount / machine's oreCount per invocation
+        // Use the flow memo to get the machine's oreCount
+        if (flowMemo) {
+          const flowResult = flowMemo.get(data.type);
+          if (flowResult?.oreCount > 0) {
+            data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
+          }
+        }
       }
     }
 
