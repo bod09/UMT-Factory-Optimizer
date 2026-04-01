@@ -581,33 +581,22 @@ class GraphGenerator {
                     if (!sifterNode._edgeType) sifterNode._edgeType = {};
                     sifterNode._edgeType[oreTargetKey] = "ore";
 
-                    // Add sifted ore quantity to target and downstream ore processors
-                    // This shows the total flow including recycled ores
-                    const targetNode = uniqueNodes.get(oreTargetKey);
-                    if (targetNode) targetNode.quantity += producedQty;
-                    // Also add to all ore processors downstream of the target
-                    // (ore cleaner → polisher → philosopher's stone → smelter)
-                    let traceKey = oreTargetKey;
-                    const traced = new Set([traceKey]);
-                    while (traceKey) {
-                      const traceNode = uniqueNodes.get(traceKey);
-                      if (!traceNode) break;
-                      // Find which node has this as a child (= the next machine)
-                      let nextKey = null;
-                      for (const [mk, md] of uniqueNodes) {
-                        if (md.isByproduct || traced.has(mk)) continue;
-                        if (md.childKeys?.includes(traceKey) && md.type === "ore" || md.type === "bar") {
-                          nextKey = mk;
-                          break;
-                        }
-                      }
-                      if (!nextKey) break;
-                      traced.add(nextKey);
-                      const nextNode = uniqueNodes.get(nextKey);
-                      if (nextNode && nextNode.type === "ore") {
-                        nextNode.quantity += producedQty;
-                      }
-                      traceKey = nextKey;
+                    // Add sifted ore quantity to ALL ore processing nodes
+                    // Trace through the main chain: ore_cleaner → polisher → philo → smelter
+                    // Start from the target (may be side chain upgrader) and follow downstream
+                    // then continue through main chain ore processors
+                    const oreProcessors = [...uniqueNodes.entries()]
+                      .filter(([k, d]) => !d.isByproduct && d.type === "ore" && d.machine !== "ore_source")
+                      .map(([k, d]) => k);
+                    for (const opKey of oreProcessors) {
+                      const opNode = uniqueNodes.get(opKey);
+                      if (opNode) opNode.quantity += producedQty;
+                    }
+                    // Also add to smelter (type: bar, but processes ore)
+                    const smelterEntries = [...uniqueNodes.entries()]
+                      .filter(([k, d]) => !d.isByproduct && (d.machine === "ore_smelter" || d.machine === "blast_furnace"));
+                    for (const [sk, sd] of smelterEntries) {
+                      sd.quantity += producedQty;
                     }
                   }
                 }
