@@ -1339,16 +1339,21 @@ class GraphGenerator {
     // FINAL: Find and create cross-chain connections + handle excess
     // For each side chain endpoint (last node before connecting to main chain),
     // find which main chain node needs its output type and connect them
-    const connectedMainKeys2 = new Set();
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
       const sideType = sideData.type;
       if (!sideType) continue;
+      // Skip if this side node already has a main chain connection
+      // (e.g., Ore Upgrader already connects to Ore Cleaner)
+      const alreadyHasMainConnection = (sideData.downstreamKeys || []).some(dk => {
+        const dkNode = uniqueNodes.get(dk);
+        return dkNode && !dkNode.isByproduct;
+      });
+      if (alreadyHasMainConnection) continue;
 
       // Find main chain nodes that accept this type
       for (const [mainKey, mainData] of uniqueNodes) {
         if (mainData.isByproduct) continue;
-        if (connectedMainKeys2.has(mainKey)) continue;
         const mainM = registry.get(mainData.machine);
         if (!mainM?.inputs) continue;
         const accepts = mainM.inputs.some(inp =>
