@@ -885,13 +885,22 @@ class GraphGenerator {
             }
           }
         } else {
-          // Non-modifier machines: use flow memo directly
-          const flowResult = flowMemo.get(data.type);
-          if (flowResult?.oreCount > 0) {
-            data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
-          } else if (data.type === "ore") {
-            data.quantity = actualOreCount;
+          // Non-modifier machines: use flow memo
+          // Skip machines that convert types (smelter: ore→bar) - their accumulated
+          // throughput from walkChain is correct. The flow memo's oreCount for the
+          // OUTPUT type may be inflated by enhancement paths (transmuter doubles bar oreCount)
+          const m2 = registry.get(data.machine);
+          const isTypeConverter = m2?.inputs?.length === 1 && m2.outputs?.[0]?.type &&
+            m2.outputs[0].type !== "same" && m2.inputs[0] !== "any";
+          if (!isTypeConverter) {
+            const flowResult = flowMemo.get(data.type);
+            if (flowResult?.oreCount > 0) {
+              data.quantity = Math.max(1, Math.round(actualOreCount / flowResult.oreCount));
+            } else if (data.type === "ore") {
+              data.quantity = actualOreCount;
+            }
           }
+          // Type converters keep their accumulated throughput from walkChain
         }
       }
     }
@@ -900,11 +909,9 @@ class GraphGenerator {
     for (const [key, data] of uniqueNodes) {
       if (data.machine !== "secondary_output") continue;
       // Find parent node that has an edge TO this secondary output
-      // Check both downstreamKeys AND edges (parent may connect via edge without downstreamKeys)
       let found = false;
       for (const [pk, pd] of uniqueNodes) {
         if (pd.isByproduct) continue;
-        // Check downstreamKeys
         if (pd.downstreamKeys?.includes(key)) {
           const parentMachine = registry.get(pd.machine);
           if (!parentMachine?.byproducts) continue;
