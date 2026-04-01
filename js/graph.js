@@ -1417,7 +1417,17 @@ class GraphGenerator {
       for (const dsKey of (sideData.downstreamKeys || [])) {
         const dsNode = uniqueNodes.get(dsKey);
         if (!dsNode || dsNode.isByproduct) continue;
-        const edgeQty = sideData._edgeQty?.[dsKey] || 0;
+        // Use edge qty if set, otherwise use node quantity (for chance machines)
+        let edgeQty = sideData._edgeQty?.[dsKey];
+        if (edgeQty === undefined || edgeQty === null) edgeQty = 0;
+        // For chance machines, the node quantity IS the produced amount
+        const sideM2 = registry.get(sideData.machine);
+        if (sideM2?.effect === "chance" && sideData.quantity > 0) {
+          edgeQty = sideData.quantity;
+          // Also update the edge qty for display
+          if (!sideData._edgeQty) sideData._edgeQty = {};
+          sideData._edgeQty[dsKey] = edgeQty;
+        }
         if (edgeQty <= 0) continue;
         // Skip excess edges (to QA/Seller) - those don't add to main chain qty
         if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
