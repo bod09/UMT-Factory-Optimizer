@@ -893,8 +893,6 @@ class GraphGenerator {
           const isTypeConverter = m2?.inputs?.length === 1 && m2.outputs?.[0]?.type &&
             m2.outputs[0].type !== "same" && m2.inputs[0] !== "any";
           if (isTypeConverter) {
-            // Type converters (smelter: ore→bar): qty = input items processed
-            // Use input type's oreCount, not output type's (which may be inflated by enhancement)
             const inputType = m2.inputs[0].split("|")[0];
             if (inputType === "ore") {
               data.quantity = actualOreCount;
