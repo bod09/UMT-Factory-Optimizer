@@ -22,7 +22,13 @@
       "Bash(node -c js/data.js)",
       "Bash(node -c js/visualizer.js)",
       "Bash(npx kill-port:*)",
-      "Bash(xargs -r kill -9)"
+      "Bash(xargs -r kill -9)",
+      "Bash(grep -r \"phase-card\\\\|speedrun-steps\" /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson --include=*.js --include=*.html)",
+      "Bash(grep -n \"/\\\\*\\\\|^\\\\s*//.*\" /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson/js/app.js)",
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(wc -l /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson/js/*.js /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson/css/style.css)",
+      "Bash(grep -rn \"renderProgressionGraph\\\\|getFreshPrestigePath\\\\|optimizeDuplicators\\\\|injectDuplicatorNodes\\\\|renderSpeedrun\\\\|initSpeedrun\\\\|initPrestigeCosts\" /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson --include=*.js)",
+      "Bash(awk 'NR>=1304' css/style.css)"
     ]
   }
 }
