@@ -1091,20 +1091,24 @@ class GraphGenerator {
         const excess = lastSideQty - mainQty;
 
         // Connect LAST side chain node → main chain (not the producer)
-        // Skip if this node already connects to a main chain node
-        // (e.g., Ore Upgrader already connects to Ore Cleaner)
-        const alreadyConnectedToMain = (lastSideData.downstreamKeys || []).some(dk => {
+        // Skip adding connection if already connected to this SPECIFIC main node
+        // But still handle excess even if already connected
+        if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
+
+        // Check if already connected to THIS main node specifically
+        const alreadyConnectedToThis = lastSideData.downstreamKeys.includes(mainKey);
+
+        // Check if connected to a DIFFERENT main node (e.g., Ore Upgrader → Ore Cleaner)
+        const connectedToDifferentMain = !alreadyConnectedToThis && (lastSideData.downstreamKeys || []).some(dk => {
           const dkNode = uniqueNodes.get(dk);
           return dkNode && !dkNode.isByproduct;
         });
-        if (alreadyConnectedToMain) continue;
 
-        if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
-        if (!lastSideData.downstreamKeys.includes(mainKey)) {
+        if (!connectedToDifferentMain && !alreadyConnectedToThis) {
           lastSideData.downstreamKeys.push(mainKey);
+          if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
+          lastSideData._edgeQty[mainKey] = mainQty;
         }
-        if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
-        lastSideData._edgeQty[mainKey] = mainQty;
 
         if (excess > 0) {
           // Excess items route through shared QA → Seller in the main chain
@@ -1304,13 +1308,16 @@ class GraphGenerator {
         if (!outType || outType === "same") continue; // Not a type converter
         if (m3.inputs[0] === "any") continue;
         // This is a type converter (e.g., smelter: ore→bar)
-        // Set qty = ore processors qty (which includes sifter additions)
+        // Skip enhancement path machines (bar_to_gem, gem_to_bar) - their qty
+        // is set correctly by the enhancement path code
+        if (data.machine === "bar_to_gem" || data.machine === "gem_to_bar") continue;
+        // Set qty from input type's FIRST processor (not last, which might be gem_to_bar)
         const inputType = m3.inputs[0].split("|")[0];
-        // Find the qty of the input type's last processor
         let inputQty = actualOreCount;
         for (const [ik, id] of uniqueNodes) {
           if (id.isByproduct) continue;
-          if (id.type === inputType && id.machine !== "ore_source" && id.machine !== data.machine) {
+          if (id.type === inputType && id.machine !== "ore_source" && id.machine !== data.machine
+              && id.machine !== "bar_to_gem" && id.machine !== "gem_to_bar") {
             inputQty = id.quantity;
           }
         }
