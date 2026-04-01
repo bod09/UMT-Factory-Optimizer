@@ -1057,26 +1057,24 @@ class GraphGenerator {
     }
 
     // Global: propagate side chain quantities to connected main chain nodes
-    // When a side chain node connects to a main chain node (cross-chain),
-    // add the side chain's edge qty to the main chain target and its downstream processors
+    // ONLY for single-input or same-type-input machines (modifiers/processors)
+    // NOT for combine machines with different input types (superconductor, power core, etc.)
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
       for (const dsKey of (sideData.downstreamKeys || [])) {
         const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue; // Only cross-chain connections
+        if (!dsNode || dsNode.isByproduct) continue;
         const edgeQty = sideData._edgeQty?.[dsKey] || 0;
         if (edgeQty <= 0) continue;
-        // Already handled by sifter-specific code? Skip if target already got the qty
-        // Use a flag to prevent double-counting
-        const crossKey = `${sideKey}→${dsKey}`;
-        if (sideData._qtyPropagated?.has(crossKey)) continue;
-        if (!sideData._qtyPropagated) sideData._qtyPropagated = new Set();
-        sideData._qtyPropagated.add(crossKey);
-        // Don't add to nodes that already got it from sifter-specific code
-        // (ore processors already handled above for sifter ores)
-        // Instead, just ensure gem quantities propagate to gem chain nodes
-        if (sideData.type === "ore" || sideData._edgeType?.[dsKey] === "ore") continue; // Already handled
-        // Add qty to target and downstream main chain nodes of same type
+        // Skip if already handled (sifter ores)
+        if (sideData._edgeType?.[dsKey] === "ore") continue;
+        // Check target machine: only propagate qty to single-input or same-type-input machines
+        const targetMachine = registry.get(dsNode.machine);
+        if (targetMachine?.inputs?.length >= 2) {
+          // Multi-input: only propagate if ALL inputs are the same type
+          const uniqueInputTypes = new Set(targetMachine.inputs.flatMap(i => i.split("|")));
+          if (uniqueInputTypes.size > 1) continue; // Mixed inputs (combine) - don't propagate
+        }
         dsNode.quantity += edgeQty;
       }
     }
