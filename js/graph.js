@@ -896,6 +896,21 @@ class GraphGenerator {
       }
     }
 
+    // Recalculate secondary output quantities from parent's final quantity × ratio
+    for (const [key, data] of uniqueNodes) {
+      if (data.machine !== "secondary_output") continue;
+      // Find parent (smelter/blast furnace) that produces this byproduct
+      for (const [pk, pd] of uniqueNodes) {
+        if (pd.isByproduct) continue;
+        if (!pd.downstreamKeys?.includes(key)) continue;
+        const parentMachine = registry.get(pd.machine);
+        if (!parentMachine?.byproducts) continue;
+        const bpRatio = parentMachine.byproductRatio || 0.5;
+        data.quantity = Math.max(1, Math.round(pd.quantity * bpRatio));
+        break;
+      }
+    }
+
     // Post-process: scale side chain quantities proportionally
     for (const [key, data] of uniqueNodes) {
       if (data.machine === "secondary_output" && data.downstreamKeys) {
