@@ -1266,43 +1266,43 @@ class GraphGenerator {
       }
     }
 
-    // Re-run cross-chain quantity propagation after all fixes
-    // (chance chain fix updated edge qtys, type converter fix updated smelter qty)
+    // ONE cross-chain quantity propagation pass
+    // For each side→main edge with qty, add to target and trace downstream
     const propagated2 = new Set();
     for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct) continue;
-      for (const dsKey of (sideData.downstreamKeys || [])) {
+      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
+      for (const dsKey of sideData.downstreamKeys) {
         const dsNode = uniqueNodes.get(dsKey);
         if (!dsNode || dsNode.isByproduct) continue;
-        const edgeQty = sideData._edgeQty?.[dsKey] || 0;
-        if (edgeQty <= 0) continue;
+        const edgeQty = sideData._edgeQty?.[dsKey];
+        if (edgeQty === undefined || edgeQty <= 0) continue;
         const propKey = `${sideKey}→${dsKey}`;
         if (propagated2.has(propKey)) continue;
         propagated2.add(propKey);
+        // Skip combine machines with mixed inputs
         const targetMachine = registry.get(dsNode.machine);
         if (targetMachine?.inputs?.length >= 2) {
-          const uniqueInputTypes = new Set(targetMachine.inputs.flatMap(i => i.split("|")));
-          if (uniqueInputTypes.size > 1) continue;
+          const uTypes = new Set(targetMachine.inputs.flatMap(i => i.split("|")));
+          if (uTypes.size > 1) continue;
         }
+        // Add to target
         dsNode.quantity += edgeQty;
-        // Propagate downstream
+        // Trace downstream through same-type main chain nodes
         const itemType = sideData._edgeType?.[dsKey] || sideData.type;
         const traceVisited = new Set([dsKey]);
         const traceQueue = [dsKey];
         while (traceQueue.length > 0) {
-          const currentKey = traceQueue.shift();
-          const currentNode = uniqueNodes.get(currentKey);
-          if (!currentNode) continue;
+          const ck = traceQueue.shift();
           for (const [mk, md] of uniqueNodes) {
             if (md.isByproduct || traceVisited.has(mk)) continue;
-            if (!md.childKeys?.includes(currentKey)) continue;
-            const isSameType = md.type === itemType ||
-              (md.machine === "ore_smelter" || md.machine === "blast_furnace") && itemType === "ore";
-            if (!isSameType) continue;
-            const mdMachine = registry.get(md.machine);
-            if (mdMachine?.inputs?.length >= 2) {
-              const mInputTypes = new Set(mdMachine.inputs.flatMap(i => i.split("|")));
-              if (mInputTypes.size > 1) continue;
+            if (!md.childKeys?.includes(ck)) continue;
+            const isSame = md.type === itemType ||
+              ((md.machine === "ore_smelter" || md.machine === "blast_furnace") && itemType === "ore");
+            if (!isSame) continue;
+            const mm = registry.get(md.machine);
+            if (mm?.inputs?.length >= 2) {
+              const mt = new Set(mm.inputs.flatMap(i => i.split("|")));
+              if (mt.size > 1) continue;
             }
             md.quantity += edgeQty;
             traceVisited.add(mk);
@@ -1312,7 +1312,7 @@ class GraphGenerator {
       }
     }
 
-    // Re-fix combine machines after propagation
+    // Fix combine machines after propagation
     for (const [key, data] of uniqueNodes) {
       const m = registry.get(data.machine);
       if (!m?.inputs || m.inputs.length < 2) continue;
@@ -1324,44 +1324,24 @@ class GraphGenerator {
       }
     }
 
-    // Re-fix type converters after propagation
+    // Fix type converters after propagation
     if (actualOreCount > 0) {
       for (const [key, data] of uniqueNodes) {
         if (data.isByproduct) continue;
         const m3 = registry.get(data.machine);
         if (!m3?.inputs?.length || m3.inputs.length !== 1) continue;
-        const outType = m3.outputs?.[0]?.type;
-        if (!outType || outType === "same") continue;
+        const outType2 = m3.outputs?.[0]?.type;
+        const inType2 = m3.inputs[0].split("|")[0];
+        if (!outType2 || outType2 === "same" || outType2 === inType2) continue;
         if (m3.inputs[0] === "any") continue;
-        const inputType = m3.inputs[0].split("|")[0];
         let inputQty = actualOreCount;
         for (const [ik, id] of uniqueNodes) {
           if (id.isByproduct) continue;
-          if (id.type === inputType && id.machine !== "ore_source" && id.machine !== data.machine) {
+          if (id.type === inType2 && id.machine !== "ore_source" && id.machine !== data.machine) {
             inputQty = id.quantity;
           }
         }
         data.quantity = inputQty;
-      }
-    }
-
-    // Simple cross-chain qty: for each side→main downstream edge,
-    // add the edge qty to the main node (if not already done by propagation)
-    // This catches prospector gems → gem_cutter connections missed by propagation
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
-      for (const dsKey of sideData.downstreamKeys) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue;
-        const edgeQty = sideData._edgeQty?.[dsKey];
-        if (edgeQty === undefined || edgeQty <= 0) continue;
-        // Check if this was already propagated (by checking if qty already includes it)
-        // Simple: just add it. The propagation system above already handles some,
-        // but the prospector gems get missed. Adding again is safe if we track.
-        const addKey = `add:${sideKey}→${dsKey}`;
-        if (propagated2.has(addKey)) continue;
-        propagated2.add(addKey);
-        dsNode.quantity += edgeQty;
       }
     }
 
