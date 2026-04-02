@@ -1348,21 +1348,8 @@ class GraphGenerator {
       }
     }
 
-    // FINAL: Add sifter ore + prospector gem quantities to main chain
-    // (must run after all quantity fixes are done)
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct) continue;
-      // Set edge qty for side→main connections (for label display only)
-      // Don't modify main chain node quantities
-      for (const dsKey of (sideData.downstreamKeys || [])) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue;
-        if (!sideData._edgeQty) sideData._edgeQty = {};
-        if (!sideData._edgeQty[dsKey] && sideData.quantity > 0) {
-          sideData._edgeQty[dsKey] = sideData.quantity;
-        }
-      }
-    }
+    // Edge qty for side→main connections should already be set explicitly
+    // by the code that created the connection. Don't auto-set from node qty.
 
     // Recalculate same-type combine machines ONLY if input increased from propagation
     // Then propagate the increase downstream through single-input machines
