@@ -1246,64 +1246,17 @@ class GraphGenerator {
 
     // (Edge qty updates moved to FINAL section)
 
-    // ONE cross-chain quantity propagation pass
-    // For each side→main edge with qty, add to target and trace downstream
-    const propagated2 = new Set();
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
-      for (const dsKey of sideData.downstreamKeys) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue;
-        const edgeQty = sideData._edgeQty?.[dsKey];
-        if (edgeQty === undefined || edgeQty <= 0) continue;
-        const propKey = `${sideKey}→${dsKey}`;
-        if (propagated2.has(propKey)) continue;
-        propagated2.add(propKey);
-        // Skip combine machines with mixed inputs
-        const targetMachine = registry.get(dsNode.machine);
-        if (targetMachine?.inputs?.length >= 2) {
-          const uTypes = new Set(targetMachine.inputs.flatMap(i => i.split("|")));
-          if (uTypes.size > 1) continue;
-        }
-        // Add to target
-        dsNode.quantity += edgeQty;
-        // Trace downstream through main chain nodes
-        // When hitting a type converter (smelter: ore→bar), switch itemType and continue
-        let currentItemType = sideData._edgeType?.[dsKey] || sideData.type;
-        const traceVisited = new Set([dsKey]);
-        const traceQueue = [dsKey];
-        while (traceQueue.length > 0) {
-          const ck = traceQueue.shift();
-          for (const [mk, md] of uniqueNodes) {
-            if (md.isByproduct || traceVisited.has(mk)) continue;
-            if (!md.childKeys?.includes(ck)) continue;
-            // Check if this node processes the current item type
-            const mm = registry.get(md.machine);
-            const mmOutType = mm?.outputs?.[0]?.type;
-            const mmInType = mm?.inputs?.[0]?.split("|")[0];
-            // Match: same type, or type converter that accepts current type
-            const isSame = md.type === currentItemType ||
-              mmInType === currentItemType ||
-              ((md.machine === "ore_smelter" || md.machine === "blast_furnace") && currentItemType === "ore");
-            if (!isSame) continue;
-            // Skip combine machines with mixed inputs
-            if (mm?.inputs?.length >= 2) {
-              const mt = new Set(mm.inputs.flatMap(i => i.split("|")));
-              if (mt.size > 1) continue;
-            }
-            // If this is a type converter, switch to the output type for further tracing
-            if (mmOutType && mmOutType !== "same" && mmOutType !== mmInType && mmInType !== "any") {
-              currentItemType = mmOutType;
-            }
-            md.quantity += edgeQty;
-            traceVisited.add(mk);
-            traceQueue.push(mk);
-          }
-        }
-      }
-    }
+    // Cross-chain connections: DON'T modify main chain quantities
+    // The flow already accounts for sifted ores and prospector gems in value calculations.
+    // Main chain quantities represent the PRIMARY flow from mined ores.
+    // Side chain connections are shown via edges with qty labels only.
+    // No quantity propagation needed - it keeps breaking things by cascading
+    // through type converters and inflating every downstream machine.
+    //
+    // The edge qty labels (set by _edgeQty) show how many items flow
+    // from side → main at each connection point. That's sufficient.
 
-    // Fix combine machines after propagation
+    // Fix combine machines (same-type inputs like Prismatic gem+gem)
     for (const [key, data] of uniqueNodes) {
       const m = registry.get(data.machine);
       if (!m?.inputs || m.inputs.length < 2) continue;

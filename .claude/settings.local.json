@@ -28,7 +28,9 @@
       "Bash(grep -v \"^\\\\s*$\")",
       "Bash(wc -l /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson/js/*.js /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson/css/style.css)",
       "Bash(grep -rn \"renderProgressionGraph\\\\|getFreshPrestigePath\\\\|optimizeDuplicators\\\\|injectDuplicatorNodes\\\\|renderSpeedrun\\\\|initSpeedrun\\\\|initPrestigeCosts\" /c/Users/bodps/Desktop/Projects/UMT/.claude/worktrees/musing-jackson --include=*.js)",
-      "Bash(awk 'NR>=1304' css/style.css)"
+      "Bash(awk 'NR>=1304' css/style.css)",
+      "Bash(netstat -ano)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object OwningProcess | ForEach-Object { Get-Process -Id $_OwningProcess -ErrorAction SilentlyContinue } | Select-Object Id, ProcessName\")"
     ]
   }
 }
