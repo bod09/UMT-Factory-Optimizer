@@ -1401,18 +1401,41 @@ class GraphGenerator {
       }
     }
 
-    // LAST fix: combine machines (same-type inputs like Prismatic gem+gem, Alloy bar+bar)
-    // Must run AFTER all other quantity fixes to use final child quantities
+    // LAST fix: combine machines + downstream propagation
+    // 1. Set combine qty = floor(input/inputCount)
+    // 2. Propagate to downstream single-input machines
     for (const [key, data] of uniqueNodes) {
       if (data.isByproduct) continue;
       const m = registry.get(data.machine);
       if (!m?.inputs || m.inputs.length < 2) continue;
       const inputTypes = new Set(m.inputs.flatMap(i => i.split("|")));
-      if (inputTypes.size > 1) continue; // Mixed-type combine, skip
-      if (data.childKeys?.length > 0) {
-        const childData = uniqueNodes.get(data.childKeys[0]);
-        if (childData) {
-          data.quantity = Math.floor(childData.quantity / m.inputs.length);
+      if (inputTypes.size > 1) continue;
+      const childKey = data.childKeys?.[0];
+      const childData = childKey ? uniqueNodes.get(childKey) : null;
+      if (childData) {
+        const newQty = Math.floor(childData.quantity / m.inputs.length);
+        data.quantity = newQty;
+        // Propagate: find single-input machines that have THIS as their child
+        // and set their qty to match (e.g., gem_to_bar after prismatic)
+        for (const [pk, pd] of uniqueNodes) {
+          if (pd.isByproduct || pk === key) continue;
+          if (!pd.childKeys?.includes(key)) continue;
+          const pm = registry.get(pd.machine);
+          if (pm?.inputs?.length === 1) {
+            pd.quantity = newQty;
+            // Continue one more level (e.g., alloy_furnace after gem_to_bar)
+            for (const [pk2, pd2] of uniqueNodes) {
+              if (pd2.isByproduct || pk2 === pk) continue;
+              if (!pd2.childKeys?.includes(pk)) continue;
+              const pm2 = registry.get(pd2.machine);
+              if (pm2?.inputs?.length >= 2) {
+                const it2 = new Set(pm2.inputs.flatMap(i => i.split("|")));
+                if (it2.size <= 1) {
+                  pd2.quantity = Math.floor(newQty / pm2.inputs.length);
+                }
+              }
+            }
+          }
         }
       }
     }
