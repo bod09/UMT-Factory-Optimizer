@@ -1367,57 +1367,14 @@ class GraphGenerator {
     // (must run after all quantity fixes are done)
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
+      // Set edge qty for side→main connections (for label display only)
+      // Don't modify main chain node quantities
       for (const dsKey of (sideData.downstreamKeys || [])) {
         const dsNode = uniqueNodes.get(dsKey);
         if (!dsNode || dsNode.isByproduct) continue;
-        // Use edge qty if set, otherwise use node quantity (for chance machines)
-        let edgeQty = sideData._edgeQty?.[dsKey];
-        if (edgeQty === undefined || edgeQty === null) edgeQty = 0;
-        // For side chain nodes, use the node's quantity as edge qty
-        // This handles: chance machines (prospectors: produced gems),
-        // sifter ore upgrader (processed ores), and any other side→main flow
-        if (edgeQty <= 0 && sideData.quantity > 0) {
-          edgeQty = sideData.quantity;
-          if (!sideData._edgeQty) sideData._edgeQty = {};
-          sideData._edgeQty[dsKey] = edgeQty;
-        }
-        if (edgeQty <= 0) continue;
-        // Skip excess edges (to QA/Seller) - those don't add to main chain qty
-        if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
-        // Only propagate to single-input or same-type machines
-        const dsM = registry.get(dsNode.machine);
-        if (dsM?.inputs?.length >= 2) {
-          const uniqueInputTypes = new Set(dsM.inputs.flatMap(i => i.split("|")));
-          if (uniqueInputTypes.size > 1) continue; // Mixed inputs - don't inflate
-        }
-        // Add to target and trace downstream through same-type machines
-        const traceVisited2 = new Set([sideKey]);
-        const traceQueue2 = [dsKey];
-        let currentType2 = sideData._edgeType?.[dsKey] || sideData.type;
-        while (traceQueue2.length > 0) {
-          const tk = traceQueue2.shift();
-          if (traceVisited2.has(tk)) continue;
-          traceVisited2.add(tk);
-          const tNode = uniqueNodes.get(tk);
-          if (!tNode || tNode.isByproduct) continue;
-          const tM = registry.get(tNode.machine);
-          // Check type match
-          const isSame = tNode.type === currentType2 ||
-            tM?.inputs?.[0]?.split("|")[0] === currentType2 ||
-            ((tNode.machine === "ore_smelter" || tNode.machine === "blast_furnace") && currentType2 === "ore");
-          if (!isSame) continue;
-          // Skip ALL multi-input combiners - their qty comes from
-          // floor(inputQty / inputCount), calculated after propagation
-          if (tM?.inputs?.length >= 2) continue;
-          tNode.quantity += edgeQty;
-          // Track type conversion
-          const outT = tM?.outputs?.[0]?.type;
-          if (outT && outT !== "same" && outT !== currentType2) currentType2 = outT;
-          // Find next downstream main chain nodes
-          for (const [mk, md] of uniqueNodes) {
-            if (md.isByproduct || traceVisited2.has(mk)) continue;
-            if (md.childKeys?.includes(tk)) traceQueue2.push(mk);
-          }
+        if (!sideData._edgeQty) sideData._edgeQty = {};
+        if (!sideData._edgeQty[dsKey] && sideData.quantity > 0) {
+          sideData._edgeQty[dsKey] = sideData.quantity;
         }
       }
     }
