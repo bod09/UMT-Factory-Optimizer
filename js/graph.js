@@ -1089,22 +1089,7 @@ class GraphGenerator {
 
     // MOVED: Global propagation now runs AFTER all quantity fixes (see below)
 
-    // Fix combine machine quantities based on actual input quantities
-    // e.g., Prismatic (2 gems → 1) should be floor(gem_cutter_qty / 2)
-    for (const [key, data] of uniqueNodes) {
-      const m = registry.get(data.machine);
-      if (!m?.inputs || m.inputs.length < 2) continue;
-      // Same-type combine (like prismatic: gem+gem)
-      const inputTypes = new Set(m.inputs.flatMap(i => i.split("|")));
-      if (inputTypes.size > 1) continue; // Mixed-type combine, skip
-      // Find the child node (input) and derive qty from it
-      if (data.childKeys?.length > 0) {
-        const childData = uniqueNodes.get(data.childKeys[0]);
-        if (childData) {
-          data.quantity = Math.floor(childData.quantity / m.inputs.length);
-        }
-      }
-    }
+    // (Combine fix moved to after all other quantity fixes - see below)
 
     // Final quantity fix: recalculate chance machine chain quantities
     // Walk from Stone → Prospector1 → Prospector2 → ... → Crusher
@@ -1412,6 +1397,22 @@ class GraphGenerator {
               break;
             }
           }
+        }
+      }
+    }
+
+    // LAST fix: combine machines (same-type inputs like Prismatic gem+gem, Alloy bar+bar)
+    // Must run AFTER all other quantity fixes to use final child quantities
+    for (const [key, data] of uniqueNodes) {
+      if (data.isByproduct) continue;
+      const m = registry.get(data.machine);
+      if (!m?.inputs || m.inputs.length < 2) continue;
+      const inputTypes = new Set(m.inputs.flatMap(i => i.split("|")));
+      if (inputTypes.size > 1) continue; // Mixed-type combine, skip
+      if (data.childKeys?.length > 0) {
+        const childData = uniqueNodes.get(data.childKeys[0]);
+        if (childData) {
+          data.quantity = Math.floor(childData.quantity / m.inputs.length);
         }
       }
     }
