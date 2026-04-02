@@ -1209,7 +1209,9 @@ class GraphGenerator {
         const m3 = registry.get(data.machine);
         if (!m3?.inputs?.length || m3.inputs.length !== 1) continue;
         const outType = m3.outputs?.[0]?.type;
+        const inType = m3.inputs[0].split("|")[0];
         if (!outType || outType === "same") continue; // Not a type converter
+        if (outType === inType) continue; // Same type in/out = modifier, not converter
         if (m3.inputs[0] === "any") continue;
         // This is a type converter (e.g., smelter: ore→bar)
         // Skip enhancement path machines (bar_to_gem, gem_to_bar) - their qty
@@ -1231,15 +1233,27 @@ class GraphGenerator {
 
     // (Edge qty updates moved to FINAL section)
 
-    // Cross-chain connections: DON'T modify main chain quantities
-    // The flow already accounts for sifted ores and prospector gems in value calculations.
-    // Main chain quantities represent the PRIMARY flow from mined ores.
-    // Side chain connections are shown via edges with qty labels only.
-    // No quantity propagation needed - it keeps breaking things by cascading
-    // through type converters and inflating every downstream machine.
-    //
-    // The edge qty labels (set by _edgeQty) show how many items flow
-    // from side → main at each connection point. That's sufficient.
+    // Add side chain quantities to DIRECT main chain targets only (no cascading)
+    // The type converter fix and combine fix below will cascade correctly
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
+      for (const dsKey of sideData.downstreamKeys) {
+        const dsNode = uniqueNodes.get(dsKey);
+        if (!dsNode || dsNode.isByproduct) continue; // Only side→main
+        const edgeQty = sideData._edgeQty?.[dsKey];
+        if (!edgeQty || edgeQty <= 0) continue;
+        // Skip QA/Seller (excess routing, not additional items)
+        if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
+        // Skip mixed-input combines (ceramic→superconductor doesn't increase super qty)
+        const dsM = registry.get(dsNode.machine);
+        if (dsM?.inputs?.length >= 2) {
+          const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
+          if (ut.size > 1) continue;
+        }
+        // Add directly to target - type converter and combine fixes handle the rest
+        dsNode.quantity += edgeQty;
+      }
+    }
 
     // (Combine fix already ran above at line 1092 - removed duplicate)
 
