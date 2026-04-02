@@ -1233,27 +1233,7 @@ class GraphGenerator {
 
     // (Edge qty updates moved to FINAL section)
 
-    // Add side chain quantities to DIRECT main chain targets only (no cascading)
-    // The type converter fix and combine fix below will cascade correctly
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
-      for (const dsKey of sideData.downstreamKeys) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue; // Only side→main
-        const edgeQty = sideData._edgeQty?.[dsKey];
-        if (!edgeQty || edgeQty <= 0) continue;
-        // Skip QA/Seller (excess routing, not additional items)
-        if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
-        // Skip mixed-input combines (ceramic→superconductor doesn't increase super qty)
-        const dsM = registry.get(dsNode.machine);
-        if (dsM?.inputs?.length >= 2) {
-          const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
-          if (ut.size > 1) continue;
-        }
-        // Add directly to target - type converter and combine fixes handle the rest
-        dsNode.quantity += edgeQty;
-      }
-    }
+    // (Side chain qty additions moved to after all fixes - see LAST section below)
 
     // (Combine fix already ran above at line 1092 - removed duplicate)
 
@@ -1451,6 +1431,25 @@ class GraphGenerator {
             }
           }
         }
+      }
+    }
+
+    // VERY LAST: Add side chain quantities to direct main chain targets
+    // Runs AFTER all other fixes so additions don't get amplified
+    for (const [sideKey, sideData] of uniqueNodes) {
+      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
+      for (const dsKey of sideData.downstreamKeys) {
+        const dsNode = uniqueNodes.get(dsKey);
+        if (!dsNode || dsNode.isByproduct) continue;
+        const edgeQty = sideData._edgeQty?.[dsKey];
+        if (!edgeQty || edgeQty <= 0) continue;
+        if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
+        const dsM = registry.get(dsNode.machine);
+        if (dsM?.inputs?.length >= 2) {
+          const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
+          if (ut.size > 1) continue;
+        }
+        dsNode.quantity += edgeQty;
       }
     }
 
