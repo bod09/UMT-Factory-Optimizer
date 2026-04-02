@@ -1256,17 +1256,7 @@ class GraphGenerator {
     // The edge qty labels (set by _edgeQty) show how many items flow
     // from side → main at each connection point. That's sufficient.
 
-    // Fix combine machines (same-type inputs like Prismatic gem+gem)
-    for (const [key, data] of uniqueNodes) {
-      const m = registry.get(data.machine);
-      if (!m?.inputs || m.inputs.length < 2) continue;
-      const inputTypes = new Set(m.inputs.flatMap(i => i.split("|")));
-      if (inputTypes.size > 1) continue;
-      if (data.childKeys?.length > 0) {
-        const childData = uniqueNodes.get(data.childKeys[0]);
-        if (childData) data.quantity = Math.floor(childData.quantity / m.inputs.length);
-      }
-    }
+    // (Combine fix already ran above at line 1092 - removed duplicate)
 
     // Fix type converters after propagation
     if (actualOreCount > 0) {
