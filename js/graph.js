@@ -1235,7 +1235,23 @@ class GraphGenerator {
 
     // (Side chain qty additions moved to after all fixes - see LAST section below)
 
-    // (Combine fix already ran above at line 1092 - removed duplicate)
+    // Fix enhancement path quantities directly
+    // walkChain accumulates throughput×visits which inflates enhancement nodes
+    // Set them from the actual input count: bar_to_gem = tempering qty, etc.
+    const barToGemNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
+    const gemCutterNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
+    const prismaticNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
+    const gemToBarNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
+    if (barToGemNode && gemCutterNode) {
+      const btgQty = barToGemNode[1].quantity;
+      gemCutterNode[1].quantity = btgQty; // 1:1 with bar_to_gem
+      if (prismaticNode) {
+        prismaticNode[1].quantity = Math.floor(btgQty / 2); // 2 gems → 1
+        if (gemToBarNode) {
+          gemToBarNode[1].quantity = prismaticNode[1].quantity; // 1:1 with prismatic
+        }
+      }
+    }
 
     // Fix type converters after propagation
     if (actualOreCount > 0) {
