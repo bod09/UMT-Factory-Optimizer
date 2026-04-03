@@ -550,8 +550,9 @@ class GraphVisualizer {
 
     document.addEventListener("mousemove", (e) => {
       if (!isPanning) return;
-      const dx = (e.clientX - startPoint.x) * (viewBox.width / wrapper.offsetWidth);
-      const dy = (e.clientY - startPoint.y) * (viewBox.height / wrapper.offsetHeight);
+      const dragSpeed = 0.5;
+      const dx = (e.clientX - startPoint.x) * (viewBox.width / wrapper.offsetWidth) * dragSpeed;
+      const dy = (e.clientY - startPoint.y) * (viewBox.height / wrapper.offsetHeight) * dragSpeed;
       viewBox.x -= dx;
       viewBox.y -= dy;
       clampViewBox();

@@ -516,7 +516,7 @@ main {
 }
 
 .config-item:last-child {
-  justify-content: flex-end;
+  align-self: center;
 }
 
 .theoretical-toggle {
@@ -527,7 +527,6 @@ main {
   color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
-  height: 32px;
 }
 
 .theoretical-toggle input { accent-color: var(--cyan); width: 14px; height: 14px; cursor: pointer; }
