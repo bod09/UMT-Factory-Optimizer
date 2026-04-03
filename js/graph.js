@@ -1106,25 +1106,10 @@ class GraphGenerator {
       const oreSourceEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source");
       if (oreSourceEntry) oreSourceEntry[1].quantity = actualOreCount;
 
-      // 2. Fix enhancement path quantities
-      // bar_to_gem qty from walkChain = ALL bars going through enhancement (correct!)
-      // gem_cutter = same as bar_to_gem (1:1)
-      // prismatic = floor(bar_to_gem / 2) (combines 2 gems)
-      // gem_to_bar = prismatic qty (1:1)
-      const btgEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
-      const gcEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
-      const prEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
-      const g2bEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
-      if (btgEntry && gcEntry) {
-        const btgQty = btgEntry[1].quantity; // Keep walkChain value (all bars)
-        gcEntry[1].quantity = btgQty;
-        if (prEntry) {
-          prEntry[1].quantity = Math.floor(btgQty / 2);
-          if (g2bEntry) g2bEntry[1].quantity = prEntry[1].quantity;
-        }
-      }
+      // 2. Enhancement fix moved to after Step D (needs cascade +1 first)
 
       // 3. Fix single-input machines consuming from alloy/gem_to_bar
+      const btgEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
       // Their walkChain qty is inflated by enhancement oreCount doubling
       // Set them = their parent machine's qty (they process 1 item per parent invocation)
       if (btgEntry) {
@@ -1355,7 +1340,45 @@ class GraphGenerator {
       }
     }
 
-    // (All old post-processing removed - replaced by single forward pass above)
+    // Step E: Fix enhancement path (AFTER cascade and side chain additions)
+    // bar_to_gem now has correct qty including +1 from sifted ore cascade
+    {
+      const btgNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
+      const gcNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
+      const prNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
+      const g2bNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
+      if (btgNode && gcNode) {
+        const btgQty = btgNode[1].quantity; // Includes cascade +1
+        // Add prospector gems on top of bar_to_gem qty
+        let gemAdditions = 0;
+        for (const [sk, sd] of uniqueNodes) {
+          if (!sd.isByproduct) continue;
+          const edgeQty = sd._edgeQty?.[gcNode[0]];
+          if (edgeQty && edgeQty > 0) gemAdditions += edgeQty;
+        }
+        gcNode[1].quantity = btgQty + gemAdditions;
+        if (prNode) {
+          // Prismatic only processes main chain gems (not prospector extras)
+          prNode[1].quantity = Math.floor(btgQty / 2);
+          if (g2bNode) g2bNode[1].quantity = prNode[1].quantity;
+        }
+      }
+    }
+
+    // Step F: Recalculate same-type combines after enhancement fix
+    // (Alloy needs updated gem_to_bar qty)
+    for (const [key, data] of uniqueNodes) {
+      if (data.isByproduct) continue;
+      const m = registry.get(data.machine);
+      if (!m?.inputs || m.inputs.length < 2) continue;
+      const uTypes = new Set(m.inputs.flatMap(i => i.split("|")));
+      if (uTypes.size > 1) continue;
+      if (data.childKeys?.length > 0) {
+        const childData = uniqueNodes.get(data.childKeys[0]);
+        if (childData) data.quantity = Math.floor(childData.quantity / m.inputs.length);
+      }
+    }
+
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
     const layerVisited = new Set();
