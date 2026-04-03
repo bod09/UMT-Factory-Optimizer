@@ -1155,12 +1155,17 @@ class GraphGenerator {
           data.quantity = inputQty * 2;
         } else {
           // Single-input machine
-          // Check if parent has multiple consumers (fan-out)
-          // If so, use walkChain throughput (recipe-based visit count)
-          const parentConsumers = parentKeys.length === 1 ? (children.get(parentKeys[0]) || []).length : 0;
-          if (parentConsumers > 1) {
-            // Fan-out: keep walkChain value (e.g., Bolt x2 from recipe tree)
-            // Don't inherit parent's full qty
+          // Check if parent has multiple consumers (fan-out from alloy etc.)
+          const parentConsumerCount = parentKeys.length === 1 ? (children.get(parentKeys[0]) || []).length : 0;
+          if (parentConsumerCount > 1) {
+            // Fan-out: count how many downstream machines reference THIS node
+            // Each reference = 1 item needed from this machine
+            let refCount = 0;
+            for (const [mk, md] of uniqueNodes) {
+              if (md.isByproduct || mk === key) continue;
+              if ((md.childKeys || []).includes(key)) refCount += md.quantity;
+            }
+            data.quantity = refCount || 1;
           } else {
             // Single consumer: inherit parent qty
             data.quantity = inputQty;
