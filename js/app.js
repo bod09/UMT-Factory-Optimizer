@@ -105,7 +105,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load saved config BEFORE rendering content that depends on it
   loadConfig();
-  updateDepthLabels();
   updateStartMoneyDisplay();
 
   // Now render content that reads checkbox/input state
@@ -233,12 +232,10 @@ function attachEvents() {
   // Switch to "Custom" when manually editing depths
   $("#depth-min").addEventListener("input", () => {
     $("#zone-select").value = "custom";
-    updateDepthLabels();
     saveConfig();
   });
   $("#depth-max").addEventListener("input", () => {
     $("#zone-select").value = "custom";
-    updateDepthLabels();
     saveConfig();
   });
 
@@ -276,7 +273,6 @@ function runOptimizer(scrollToResults = false) {
   if (maxDepth < minDepth) {
     maxDepth = minDepth;
     $("#depth-max").value = maxDepth;
-    updateDepthLabels();
   }
 
   // Read prestige item quantities (>0 means owned)
