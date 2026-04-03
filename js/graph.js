@@ -1124,19 +1124,39 @@ class GraphGenerator {
         }
       }
 
-      // 3. Fix oreCount=2 inflation for machines consuming enhanced bars
-      // Bolt, Plate, Coiler all show 2x because each bar has oreCount=2
-      // If a machine's child is alloy_furnace or gem_to_bar, halve its qty
+      // 3. Fix single-input machines consuming from alloy/gem_to_bar
+      // Their walkChain qty is inflated by enhancement oreCount doubling
+      // Set them = their parent machine's qty (they process 1 item per parent invocation)
       if (btgEntry) {
+        // Build parent→children map
+        const parentOf = new Map();
+        for (const [k, d] of uniqueNodes) {
+          for (const ck of (d.childKeys || [])) {
+            if (!parentOf.has(ck)) parentOf.set(ck, []);
+            parentOf.get(ck).push(k);
+          }
+        }
+        // For each single-input machine whose child is alloy_furnace,
+        // set qty = alloy qty (they each consume 1 alloy bar per invocation)
         for (const [key, data] of uniqueNodes) {
           if (data.isByproduct) continue;
           const m = registry.get(data.machine);
           if (!m?.inputs || m.inputs.length !== 1) continue;
-          // Check if this machine consumes from alloy_furnace (enhanced bars)
           if (data.childKeys?.length > 0) {
             const childData = uniqueNodes.get(data.childKeys[0]);
-            if (childData?.machine === "alloy_furnace" || childData?.machine === "gem_to_bar") {
-              data.quantity = Math.floor(data.quantity / 2);
+            if (childData?.machine === "alloy_furnace") {
+              // Count how many times THIS specific machine appears as child of its parents
+              // e.g., bolt_machine appears in frame_maker AND casing_machine
+              const parents = parentOf.get(key) || [];
+              let totalNeeded = 0;
+              for (const pk of parents) {
+                const pd = uniqueNodes.get(pk);
+                if (pd && !pd.isByproduct) {
+                  // Each parent needs 1 of this item per invocation
+                  totalNeeded += pd.quantity;
+                }
+              }
+              data.quantity = totalNeeded || childData.quantity;
             }
           }
         }
@@ -1183,8 +1203,10 @@ class GraphGenerator {
           if (nextM?.effect === "chance") {
             const chance = nextM.value || 0.05;
             const produced = Math.round(currentRemaining * chance);
-            nextNode.quantity = produced;
             currentRemaining -= produced;
+            // Sifters show dust output (passthrough), prospectors show gems (produced)
+            const isSifter = nextNode.machine === "sifter" || nextNode.machine === "nano_sifter";
+            nextNode.quantity = isSifter ? currentRemaining : produced;
             // Set edge qty for produced item outputs
             if (!nextNode._edgeQty) nextNode._edgeQty = {};
             for (const dk of (nextNode.downstreamKeys || [])) {
