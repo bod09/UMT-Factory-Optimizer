@@ -1130,7 +1130,6 @@ class GraphGenerator {
           if (!nextNode) continue;
 
           if (nextM?.effect === "chance") {
-            // Chance machine: qty = items PRODUCED (gems/ores), not throughput
             const chance = nextM.value || 0.05;
             const produced = Math.round(remainingQty * chance);
             nextNode.quantity = produced;
@@ -1141,6 +1140,16 @@ class GraphGenerator {
                 const edgeType = nextNode._edgeType?.[ek];
                 if (edgeType && edgeType !== nextNode.type) {
                   nextNode._edgeQty[ek] = produced;
+                }
+              }
+            } else if (nextNode.downstreamKeys) {
+              // _edgeQty might not exist yet - create it for gem/ore outputs
+              for (const dk of nextNode.downstreamKeys) {
+                const dkNode = uniqueNodes.get(dk);
+                if (dkNode && !dkNode.isByproduct) {
+                  // Cross-chain output (gem → main chain)
+                  if (!nextNode._edgeQty) nextNode._edgeQty = {};
+                  nextNode._edgeQty[dk] = produced;
                 }
               }
             }
