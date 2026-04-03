@@ -45,7 +45,6 @@ function saveConfig() {
     zoneSelect: $("#zone-select").value,
     depthMin: $("#depth-min").value,
     depthMax: $("#depth-max").value,
-    outputBelts: $("#output-belts").value,
     oreQuantity: $("#ore-quantity").value,
     oreSelect: $("#ore-select").value,
     doubleSeller: $("#double-seller").checked,
@@ -69,7 +68,6 @@ function loadConfig() {
     if (config.budget) $("#budget").value = config.budget;
     if (config.depthMin) $("#depth-min").value = config.depthMin;
     if (config.depthMax) $("#depth-max").value = config.depthMax;
-    if (config.outputBelts) $("#output-belts").value = config.outputBelts;
     if (config.oreQuantity) $("#ore-quantity").value = config.oreQuantity;
     if (config.oreSelect && config.oreSelect !== "all") {
       $("#ore-select").value = config.oreSelect;
@@ -206,16 +204,6 @@ function applyZone(value) {
   const [min, max] = value.split("-").map(Number);
   $("#depth-min").value = min;
   $("#depth-max").value = max;
-  updateDepthLabels();
-}
-
-function updateDepthLabels() {
-  const minDepth = parseInt($("#depth-min").value) || 0;
-  const maxDepth = parseInt($("#depth-max").value) || 0;
-  const minLabel = $("#depth-min-layer");
-  if (minLabel) minLabel.textContent = getLayerName(minDepth);
-  const maxLabel = $("#depth-max-layer");
-  if (maxLabel) maxLabel.textContent = getLayerName(maxDepth);
 }
 
 function attachEvents() {
@@ -229,7 +217,6 @@ function attachEvents() {
     applyZone(e.target.value);
     saveConfig();
   });
-  $("#output-belts").addEventListener("change", saveConfig);
   $("#ore-quantity").addEventListener("input", saveConfig);
   $("#double-seller").addEventListener("change", () => {
     saveConfig();
@@ -281,7 +268,7 @@ function runOptimizer(scrollToResults = false) {
   const budget = theoreticalMax ? 999999999 : (parseInt($("#budget").value) || 0);
   const minDepth = parseInt($("#depth-min").value) || 0;
   let maxDepth = parseInt($("#depth-max").value) || 0;
-  const outputBelts = parseInt($("#output-belts").value) || 1;
+  // outputBelts removed - income estimate was inaccurate
   const oreQuantity = parseInt($("#ore-quantity")?.value) || 0;
   const hasDoubleSeller = theoreticalMax ? true : $("#double-seller").checked;
 
@@ -313,7 +300,6 @@ function runOptimizer(scrollToResults = false) {
   const oreSelectVal = $("#ore-select")?.value || "";
   if (!oreSelectVal || oreSelectVal === "all") {
     $("#chain-results").innerHTML = '<div class="chain-card">Select an ore to optimize.</div>';
-    $("#income-grid").innerHTML = "";
     $("#optimizer-results").classList.remove("hidden");
     return;
   }
@@ -474,44 +460,7 @@ function toggleGraph(graphId, btn) {
 
 // Dead code removed: _unused_getChainBreakdown, flowLegend, isBackpackItem, initPrestigeCosts
 
-function renderIncomeEstimate(results, outputBelts, oreCount) {
-  const grid = $("#income-grid");
-  grid.innerHTML = "";
-
-  if (results.length === 0) return;
-
-  const best = results[0];
-  // Estimate ~8 items/min per belt as a reasonable conveyor speed
-  const itemsPerMin = outputBelts * 8;
-  const perMin = best.avgPerOre * itemsPerMin;
-  const perHour = perMin * 60;
-
-  const nextPrestigeCost = getPrestigeCost(1); // First prestige = $20M
-
-  const cards = [
-    { label: "Avg Per Ore", value: formatMoney(best.avgPerOre), note: `${best.chain}` },
-    { label: "Per Minute", value: formatMoney(perMin), note: `${outputBelts} belt${outputBelts > 1 ? "s" : ""} (~${itemsPerMin} items/min)` },
-    { label: "Per Hour", value: formatMoney(perHour), note: `${oreCount} ore types in range` },
-    { label: `Time to ${formatMoney(nextPrestigeCost)}`, value: perHour > 0 ? formatTime(nextPrestigeCost / perHour * 60) : "N/A", note: "Next prestige" },
-  ];
-
-  cards.forEach(c => {
-    const div = document.createElement("div");
-    div.className = "income-card";
-    div.innerHTML = `
-      <div class="income-label">${c.label}</div>
-      <div class="income-value">${c.value}</div>
-      <div class="income-note">${c.note}</div>
-    `;
-    grid.appendChild(div);
-  });
-}
-
-function formatTime(minutes) {
-  if (minutes < 60) return `${minutes.toFixed(0)} min`;
-  if (minutes < 1440) return `${(minutes / 60).toFixed(1)} hrs`;
-  return `${(minutes / 1440).toFixed(1)} days`;
-}
+// renderIncomeEstimate and formatTime removed - income estimates were inaccurate
 
 // Database rendering
 function initDatabase() {

@@ -455,54 +455,6 @@ main {
   font-weight: 600;
 }
 
-/* Income Summary */
-.income-summary {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem;
-  margin-top: 1rem;
-}
-
-.income-summary h3 {
-  color: var(--accent);
-  margin-bottom: 0.75rem;
-  font-size: 1rem;
-}
-
-.income-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.income-card {
-  background: var(--bg-primary);
-  border-radius: var(--radius);
-  padding: 1rem;
-  text-align: center;
-}
-
-.income-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.income-value {
-  font-size: 1.4rem;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--success);
-  margin: 0.25rem 0;
-}
-
-.income-note {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
 /* Info Panel */
 .info-panel {
   background: var(--bg-card);
@@ -564,38 +516,7 @@ main {
 
 .theoretical-toggle input { accent-color: var(--cyan); width: 13px; height: 13px; }
 
-.prestige-upgrades-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.5rem;
-}
-
-.prestige-upgrade-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  padding: 0.4rem 0.5rem;
-  background: var(--bg-primary);
-  border-radius: var(--radius);
-}
-
-.prestige-upgrade-row span { color: var(--text-secondary); }
-
-.prestige-upgrade-row input {
-  width: 50px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  padding: 0.25rem 0.4rem;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  text-align: center;
-}
-
-/* Speedrun / Progression */
+/* Progression */
 .section-desc {
   color: var(--text-secondary);
   margin-bottom: 1.5rem;
