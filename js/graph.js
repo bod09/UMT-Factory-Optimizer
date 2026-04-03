@@ -1259,7 +1259,8 @@ class GraphGenerator {
       }
     }
 
-    // Step D: Add side chain quantities to main chain targets (direct only)
+    // Step D: Add side chain quantities to main chain targets and cascade
+    // through same-type single-input machines (ore → polisher → philo → smelter)
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
       for (const dsKey of sideData.downstreamKeys) {
@@ -1268,7 +1269,35 @@ class GraphGenerator {
         const edgeQty = sideData._edgeQty?.[dsKey];
         if (!edgeQty || edgeQty <= 0) continue;
         if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
+        // Skip mixed-input combines
+        const dsM = registry.get(dsNode.machine);
+        if (dsM?.inputs?.length >= 2) {
+          const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
+          if (ut.size > 1) continue;
+        }
         dsNode.quantity += edgeQty;
+        // Cascade through same-type single-input consumers
+        // (ore_cleaner +1 → polisher +1 → philosopher +1 → smelter +1)
+        // Stop at type converters (smelter: ore→bar) or multi-input machines
+        let cascadeKey = dsKey;
+        const cascaded = new Set([cascadeKey]);
+        while (cascadeKey) {
+          let nextCascade = null;
+          for (const [mk, md] of uniqueNodes) {
+            if (md.isByproduct || cascaded.has(mk)) continue;
+            if (!md.childKeys?.includes(cascadeKey)) continue;
+            const mm = registry.get(md.machine);
+            // Only cascade through single-input same-type machines
+            if (mm?.inputs?.length !== 1) break;
+            const outType = mm.outputs?.[0]?.type;
+            if (outType && outType !== "same" && outType !== mm.inputs[0]) break; // Type converter, stop
+            md.quantity += edgeQty;
+            cascaded.add(mk);
+            nextCascade = mk;
+            break;
+          }
+          cascadeKey = nextCascade;
+        }
       }
     }
 
