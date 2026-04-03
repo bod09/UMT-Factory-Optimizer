@@ -258,8 +258,24 @@ class GraphGenerator {
       // Create or update node
       // Side chain = secondary output processing (stone, dust, clay, ceramic, glass)
       // These come from machine secondary outputs, not directly from mined ores
-      const nodeIsSideChain = node.isByproduct ||
-        (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance");
+      // Side chain = byproduct processing (stone, dust, clay, ceramic, glass)
+      // NOT side chain if: the machine is a direct input to a combine/multiplicative recipe
+      // (e.g., BPC makes blasting_powder which is a direct input to explosives_maker)
+      const isDirectRecipeInput = node.oreCount === 0 && (() => {
+        // Check if any combine/multiplicative machine in the chain needs this machine's output
+        const outputType = registry.get(machine)?.outputs?.[0]?.type;
+        if (!outputType || outputType === "same") return false;
+        for (const [mId, mData] of registry.machines) {
+          if (!mData.inputs || mData.inputs.length < 2) continue;
+          if (mData.effect !== "combine" && mData.effect !== "multiplicative") continue;
+          if (mData.inputs.some(inp => inp === outputType || inp.split("|").includes(outputType))) {
+            return true;
+          }
+        }
+        return false;
+      })();
+      const nodeIsSideChain = !isDirectRecipeInput && (node.isByproduct ||
+        (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance"));
       if (!uniqueNodes.has(key)) {
         uniqueNodes.set(key, {
           machine,
@@ -1080,6 +1096,25 @@ class GraphGenerator {
           if (!data.downstreamKeys) data.downstreamKeys = [];
           if (!data.downstreamKeys.includes(sellTarget)) {
             data.downstreamKeys.push(sellTarget);
+          }
+        }
+      }
+    }
+
+    // Promote side chain nodes to main chain if their output feeds a main chain node
+    // e.g., BPC (oreCount=0, makes blasting_powder) → Explosives Maker (main chain)
+    let promoted = true;
+    while (promoted) {
+      promoted = false;
+      for (const [key, data] of uniqueNodes) {
+        if (!data.isByproduct) continue;
+        // Check if ANY main chain node has this as a child (input)
+        for (const [mk, md] of uniqueNodes) {
+          if (md.isByproduct || mk === key) continue;
+          if ((md.childKeys || []).includes(key)) {
+            data.isByproduct = false; // Promote to main chain
+            promoted = true;
+            break;
           }
         }
       }
