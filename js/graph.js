@@ -1096,56 +1096,40 @@ class GraphGenerator {
     //   - Enhancement path: bar_to_gem = tempering qty, gem_cutter = bar_to_gem, etc.
     //   - Side chain additions: add to main chain targets AFTER main chain is calculated
 
-    // Step A: Set main chain quantities by walking from ore_source forward
+    // Step A: Fix quantities from walkChain throughput
+    // walkChain throughput is mostly correct. Only fix:
+    // 1. ore_source = actualOreCount
+    // 2. Enhancement path: gem_cutter = bar_to_gem, prismatic = floor(btg/2), etc.
+    // 3. Same-type combines: floor(input/2)
     {
-      // Build adjacency: for each node, find which nodes consume its output
-      // (which nodes have this node in their childKeys)
-      const consumers = new Map(); // key → [keys of nodes that consume this]
-      for (const [key, data] of uniqueNodes) {
-        for (const ck of (data.childKeys || [])) {
-          if (!consumers.has(ck)) consumers.set(ck, []);
-          consumers.get(ck).push(key);
+      // 1. Fix ore_source
+      const oreSourceEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source");
+      if (oreSourceEntry) oreSourceEntry[1].quantity = actualOreCount;
+
+      // 2. Fix enhancement path
+      const btgEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
+      const gcEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
+      const prEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
+      const g2bEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
+      if (btgEntry && gcEntry) {
+        const btgQty = btgEntry[1].quantity;
+        gcEntry[1].quantity = btgQty;
+        if (prEntry) {
+          prEntry[1].quantity = Math.floor(btgQty / 2);
+          if (g2bEntry) g2bEntry[1].quantity = prEntry[1].quantity;
         }
       }
 
-      // Walk from ore_source forward through consumers
-      const oreSourceKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source")?.[0];
-      if (oreSourceKey) {
-        const visited = new Set();
-        const queue = [oreSourceKey];
-        // Set ore_source qty
-        uniqueNodes.get(oreSourceKey).quantity = actualOreCount;
-
-        while (queue.length > 0) {
-          const key = queue.shift();
-          if (visited.has(key)) continue;
-          visited.add(key);
-          const data = uniqueNodes.get(key);
-          if (!data || data.isByproduct) continue;
-          const myQty = data.quantity;
-
-          // Find all nodes that consume this node's output
-          const myConsumers = consumers.get(key) || [];
-          for (const cKey of myConsumers) {
-            if (visited.has(cKey)) continue;
-            const cData = uniqueNodes.get(cKey);
-            if (!cData || cData.isByproduct) continue;
-            const cM = registry.get(cData.machine);
-
-            if (cM?.inputs?.length >= 2) {
-              // Combine machine
-              const inputTypes = new Set(cM.inputs.flatMap(i => i.split("|")));
-              if (inputTypes.size === 1) {
-                // Same-type combine (Prismatic, Alloy): divide
-                cData.quantity = Math.floor(myQty / cM.inputs.length);
-              }
-              // Mixed-type: keep walkChain value (usually 1)
-            } else {
-              // Single-input: inherits parent qty
-              cData.quantity = myQty;
-            }
-            queue.push(cKey);
-          }
+      // 3. Fix same-type combines (Alloy: floor(gem_to_bar / 2))
+      for (const [key, data] of uniqueNodes) {
+        if (data.isByproduct) continue;
+        const m = registry.get(data.machine);
+        if (!m?.inputs || m.inputs.length < 2) continue;
+        const uTypes = new Set(m.inputs.flatMap(i => i.split("|")));
+        if (uTypes.size > 1) continue;
+        if (data.childKeys?.length > 0) {
+          const childData = uniqueNodes.get(data.childKeys[0]);
+          if (childData) data.quantity = Math.floor(childData.quantity / m.inputs.length);
         }
       }
     }
