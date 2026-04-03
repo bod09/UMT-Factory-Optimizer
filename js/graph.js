@@ -1134,24 +1134,10 @@ class GraphGenerator {
             const produced = Math.round(remainingQty * chance);
             nextNode.quantity = produced;
             remainingQty = remainingQty - produced;
-            // Update edge quantities for produced items
-            if (nextNode._edgeQty) {
-              for (const ek of Object.keys(nextNode._edgeQty)) {
-                const edgeType = nextNode._edgeType?.[ek];
-                if (edgeType && edgeType !== nextNode.type) {
-                  nextNode._edgeQty[ek] = produced;
-                }
-              }
-            } else if (nextNode.downstreamKeys) {
-              // _edgeQty might not exist yet - create it for gem/ore outputs
-              for (const dk of nextNode.downstreamKeys) {
-                const dkNode = uniqueNodes.get(dk);
-                if (dkNode && !dkNode.isByproduct) {
-                  // Cross-chain output (gem → main chain)
-                  if (!nextNode._edgeQty) nextNode._edgeQty = {};
-                  nextNode._edgeQty[dk] = produced;
-                }
-              }
+            // Set edge qty for ALL downstream connections that carry produced items
+            if (!nextNode._edgeQty) nextNode._edgeQty = {};
+            for (const dk of (nextNode.downstreamKeys || [])) {
+              nextNode._edgeQty[dk] = produced;
             }
           } else {
             // Non-chance: gets remaining qty or specific edge qty
