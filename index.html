@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>UMT Factory Optimizer - Ultimate Mining Tycoon</title>
-  <link rel="stylesheet" href="css/style.css?v=327">
+  <link rel="stylesheet" href="css/style.css?v=328">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
@@ -87,33 +87,28 @@
   <main>
     <!-- FACTORY OPTIMIZER TAB -->
     <section id="tab-optimizer" class="tab-content active">
-      <div class="config-panel">
-        <h2>Configuration</h2>
-        <div class="config-grid">
-          <div class="config-group">
-            <label for="ore-select">Ore</label>
-            <select id="ore-select">
-              <option value="" disabled selected>Select an ore...</option>
-            </select>
-            <span class="hint" id="ore-info"></span>
-          </div>
-          <div class="config-group">
-            <label for="budget">Factory Budget ($)</label>
-            <input type="number" id="budget" value="1000000" min="0" step="10000">
-            <span class="hint" id="budget-display">$1.00M</span>
-          </div>
-          <div class="config-group">
-            <label for="ore-quantity">Ore Batch Size</label>
-            <input type="number" id="ore-quantity" value="0" min="0" step="50">
-            <span class="hint">0 = rank by per-ore value</span>
-          </div>
-          <div class="config-group">
-            <label>&nbsp;</label>
-            <button class="btn-primary" id="btn-optimize">Optimize Factory</button>
-            <label class="theoretical-toggle">
-              <input type="checkbox" id="theoretical-max"> Best Possible
-            </label>
-          </div>
+      <div class="config-bar">
+        <div class="config-item">
+          <label for="ore-select">Ore</label>
+          <select id="ore-select">
+            <option value="" disabled selected>Select an ore...</option>
+          </select>
+          <span class="hint" id="ore-info"></span>
+        </div>
+        <div class="config-item">
+          <label for="budget">Budget</label>
+          <input type="number" id="budget" value="1000000" min="0" step="10000">
+          <span class="hint" id="budget-display">$1.00M</span>
+        </div>
+        <div class="config-item">
+          <label for="ore-quantity">Batch</label>
+          <input type="number" id="ore-quantity" value="0" min="0" step="50">
+          <span class="hint">0 = per-ore</span>
+        </div>
+        <div class="config-item">
+          <label class="theoretical-toggle">
+            <input type="checkbox" id="theoretical-max"> Best Possible
+          </label>
         </div>
         <!-- Hidden depth inputs (used internally by zone/ore selection) -->
         <input type="hidden" id="depth-min" value="0">
@@ -251,11 +246,11 @@
     <p>Community fan project - not affiliated with Innovation Inc. | <a href="https://miraheze.org/donate" target="_blank" rel="noopener">Support the wiki (donate to Miraheze)</a> | <a href="https://github.com/bod09/UMT-Factory-Optimizer" target="_blank" rel="noopener">GitHub</a></p>
   </footer>
 
-  <script src="js/data.js?v=327"></script>
-  <script src="js/graph.js?v=327"></script>
-  <script src="js/flow.js?v=327"></script>
-  <script src="js/visualizer.js?v=327"></script>
-  <script src="js/optimizer.js?v=327"></script>
-  <script src="js/app.js?v=327"></script>
+  <script src="js/data.js?v=328"></script>
+  <script src="js/graph.js?v=328"></script>
+  <script src="js/flow.js?v=328"></script>
+  <script src="js/visualizer.js?v=328"></script>
+  <script src="js/optimizer.js?v=328"></script>
+  <script src="js/app.js?v=328"></script>
 </body>
 </html>

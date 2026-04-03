@@ -207,7 +207,7 @@ function applyZone(value) {
 }
 
 function attachEvents() {
-  $("#btn-optimize").addEventListener("click", () => runOptimizer(true));
+  // Optimize button removed - all inputs auto-update
   $("#budget").addEventListener("input", () => {
     $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
     saveConfig();
@@ -221,7 +221,10 @@ function attachEvents() {
     applyZone(e.target.value);
     saveConfig();
   });
-  $("#ore-quantity").addEventListener("input", saveConfig);
+  $("#ore-quantity").addEventListener("input", () => {
+    saveConfig();
+    if (machineRegistry) runOptimizer(false);
+  });
   $("#double-seller").addEventListener("change", () => {
     saveConfig();
     if (machineRegistry) { runOptimizer(false); renderProgression(); }
