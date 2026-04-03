@@ -189,7 +189,16 @@ function initZoneSelect() {
     });
     oreSelect.appendChild(gemGroup);
   }
-  oreSelect.addEventListener("change", saveConfig);
+  oreSelect.addEventListener("change", () => {
+    saveConfig();
+    // Show ore info immediately when selected
+    const val = oreSelect.value;
+    if (val) {
+      const [type, name] = val.split(":");
+      const ore = type === "ore" ? ORES.find(o => o.name === name) : GEMS?.find(g => g.name === name);
+      if (ore) renderOreSummary(ore);
+    }
+  });
 }
 
 function applyZone(value) {
