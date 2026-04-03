@@ -194,6 +194,7 @@ function initZoneSelect() {
       const [type, name] = val.split(":");
       const ore = type === "ore" ? ORES.find(o => o.name === name) : GEMS?.find(g => g.name === name);
       if (ore) renderOreSummary(ore);
+      if (machineRegistry) runOptimizer(false);
     }
   });
 }
@@ -210,8 +211,12 @@ function attachEvents() {
   $("#budget").addEventListener("input", () => {
     $("#budget-display").textContent = formatMoney(parseInt($("#budget").value) || 0);
     saveConfig();
+    if (machineRegistry) runOptimizer(false);
   });
-  $("#theoretical-max").addEventListener("change", saveConfig);
+  $("#theoretical-max").addEventListener("change", () => {
+    saveConfig();
+    if (machineRegistry) runOptimizer(false);
+  });
   $("#zone-select").addEventListener("change", (e) => {
     applyZone(e.target.value);
     saveConfig();
@@ -219,14 +224,14 @@ function attachEvents() {
   $("#ore-quantity").addEventListener("input", saveConfig);
   $("#double-seller").addEventListener("change", () => {
     saveConfig();
-    if (machineRegistry) renderProgression();
+    if (machineRegistry) { runOptimizer(false); renderProgression(); }
   });
-  // Header prestige items - save on change + re-render progression
+  // Header prestige items - save on change + re-render all
   $$(".prestige-header-item input").forEach(inp => {
     inp.addEventListener("change", () => {
       saveConfig();
       updateStartMoneyDisplay();
-      if (machineRegistry) renderProgression();
+      if (machineRegistry) { runOptimizer(false); renderProgression(); }
     });
   });
   // Switch to "Custom" when manually editing depths
