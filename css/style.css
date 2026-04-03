@@ -515,6 +515,10 @@ main {
   text-align: center;
 }
 
+.config-item:last-child {
+  justify-content: flex-end;
+}
+
 .theoretical-toggle {
   display: flex;
   align-items: center;
@@ -523,7 +527,7 @@ main {
   color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
-  padding: 0.45rem 0;
+  height: 32px;
 }
 
 .theoretical-toggle input { accent-color: var(--cyan); width: 14px; height: 14px; cursor: pointer; }

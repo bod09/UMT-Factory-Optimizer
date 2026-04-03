@@ -75,7 +75,13 @@ function loadConfig() {
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
     if (config.theoreticalMax) {
       $("#theoretical-max").checked = config.theoreticalMax;
-      $("#budget").disabled = config.theoreticalMax;
+      $("#budget").disabled = true;
+      $("#double-seller").disabled = true;
+      $$(".prestige-header-item input").forEach(inp => inp.disabled = true);
+      $$(".prestige-header-item button").forEach(btn => btn.disabled = true);
+      $$(".prestige-header-item").forEach(el => el.style.opacity = "0.4");
+      const robux = $(".robux-toggle");
+      if (robux) robux.style.opacity = "0.4";
     }
     if (config.startingMoneyLevel) {
       const sml = $("#starting-money-level");
@@ -218,8 +224,14 @@ function attachEvents() {
   });
   $("#theoretical-max").addEventListener("change", () => {
     const checked = $("#theoretical-max").checked;
-    // Grey out budget when Best Possible is ticked (uses unlimited)
+    // Grey out budget and prestige items when Best Possible is ticked
     $("#budget").disabled = checked;
+    $("#double-seller").disabled = checked;
+    $$(".prestige-header-item input").forEach(inp => inp.disabled = checked);
+    $$(".prestige-header-item button").forEach(btn => btn.disabled = checked);
+    // Visual feedback on header
+    $$(".prestige-header-item").forEach(el => el.style.opacity = checked ? "0.4" : "1");
+    $(".robux-toggle").style.opacity = checked ? "0.4" : "1";
     saveConfig();
     if (machineRegistry) runOptimizer(false);
   });
