@@ -1407,6 +1407,26 @@
       ],
       "effect": "gate",
       "desc": "Can be opened/closed to allow or prevent items from passing through"
+    },
+    "metal_dust_crusher": {
+      "name": "Crusher",
+      "cost": 1750,
+      "category": "stonework",
+      "inputs": [
+        "bar|alloy_bar"
+      ],
+      "outputs": [
+        {
+          "type": "metal_dust",
+          "chance": 1.0,
+          "desc": "Metal Dust from crushing bars"
+        }
+      ],
+      "effect": "set",
+      "value": 1,
+      "desc": "Crushes metal bars into metal dust worth $1. Used for Blasting Powder Chamber.",
+      "size": "1x1",
+      "_isVariant": true
     }
   },
   "_tagRules": {
