@@ -1106,17 +1106,17 @@ class GraphGenerator {
       const oreSourceEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source");
       if (oreSourceEntry) oreSourceEntry[1].quantity = actualOreCount;
 
-      // 2. Fix enhancement path
-      // bar_to_gem walkChain qty is inflated by 2x (each bar has oreCount=2 with enhancement)
-      // Actual bars entering enhancement = walkChain qty / 2
+      // 2. Fix enhancement path quantities
+      // bar_to_gem qty from walkChain = ALL bars going through enhancement (correct!)
+      // gem_cutter = same as bar_to_gem (1:1)
+      // prismatic = floor(bar_to_gem / 2) (combines 2 gems)
+      // gem_to_bar = prismatic qty (1:1)
       const btgEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
       const gcEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
       const prEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
       const g2bEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
       if (btgEntry && gcEntry) {
-        // Halve bar_to_gem qty (oreCount=2 inflation)
-        const btgQty = Math.floor(btgEntry[1].quantity / 2);
-        btgEntry[1].quantity = btgQty;
+        const btgQty = btgEntry[1].quantity; // Keep walkChain value (all bars)
         gcEntry[1].quantity = btgQty;
         if (prEntry) {
           prEntry[1].quantity = Math.floor(btgQty / 2);
