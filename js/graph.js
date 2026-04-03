@@ -1340,10 +1340,11 @@ class GraphGenerator {
             const mm = registry.get(md.machine);
             // Only cascade through single-input same-type machines
             if (mm?.inputs?.length !== 1) break;
-            // Stop cascade at enhancement path machines (bar_to_gem etc.)
-            // Sifted ore goes through smelter/tempering but not through the enhancement detour
-            if (md.machine === "bar_to_gem" || md.machine === "gem_cutter" ||
-                md.machine === "prismatic_crucible" || md.machine === "gem_to_bar") break;
+            // Stop cascade AFTER bar_to_gem (the rest is handled by enhancement fix)
+            // Sifted ore enters bar_to_gem but gem_cutter/prismatic/gem_to_bar
+            // get their qty from the enhancement fix which reads bar_to_gem
+            if (md.machine === "gem_cutter" || md.machine === "prismatic_crucible" ||
+                md.machine === "gem_to_bar") break;
             md.quantity += edgeQty;
             cascaded.add(mk);
             nextCascade = mk;
