@@ -350,7 +350,6 @@ function runOptimizer(scrollToResults = false) {
   }
 
   renderChainResults(chainResults, [selectedOre]);
-  renderIncomeEstimate(chainResults, outputBelts, 1);
 
   $("#optimizer-results").classList.remove("hidden");
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>UMT Factory Optimizer - Ultimate Mining Tycoon</title>
-  <link rel="stylesheet" href="css/style.css?v=317">
+  <link rel="stylesheet" href="css/style.css?v=318">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
@@ -102,15 +102,6 @@
             <span class="hint" id="budget-display">$1.00M</span>
           </div>
           <div class="config-group">
-            <label for="output-belts">Output Belts</label>
-            <select id="output-belts">
-              <option value="1">1 Belt (Free)</option>
-              <option value="2">2 Belts ($100K)</option>
-              <option value="3">3 Belts ($1M)</option>
-              <option value="4">4 Belts ($5M)</option>
-            </select>
-          </div>
-          <div class="config-group">
             <label for="ore-quantity">Ore Batch Size</label>
             <input type="number" id="ore-quantity" value="0" min="0" step="50">
             <span class="hint">0 = rank by per-ore value</span>
@@ -119,7 +110,7 @@
             <label>&nbsp;</label>
             <button class="btn-primary" id="btn-optimize">Optimize Factory</button>
             <label class="theoretical-toggle">
-              <input type="checkbox" id="theoretical-max"> Theoretical Max
+              <input type="checkbox" id="theoretical-max"> Best Possible
             </label>
           </div>
         </div>
@@ -127,6 +118,7 @@
         <input type="hidden" id="depth-min" value="0">
         <input type="hidden" id="depth-max" value="3000">
         <input type="hidden" id="zone-select" value="custom">
+        <input type="hidden" id="output-belts" value="1">
       </div>
 
       <div id="optimizer-results" class="results-panel hidden">
@@ -136,10 +128,7 @@
         <p class="results-subtitle">Best processing chains for your selected ore, ranked by profit</p>
         <div id="chain-results"></div>
 
-        <div class="income-summary" id="income-summary">
-          <h3>Estimated Income</h3>
-          <div class="income-grid" id="income-grid"></div>
-        </div>
+        <!-- Income estimate removed: throughput assumptions were inaccurate -->
       </div>
 
       <!-- Prestige items moved to header bar -->
@@ -267,11 +256,11 @@
     <p>Community fan project - not affiliated with Innovation Inc. | <a href="https://miraheze.org/donate" target="_blank" rel="noopener">Support the wiki (donate to Miraheze)</a> | <a href="https://github.com/bod09/UMT-Factory-Optimizer" target="_blank" rel="noopener">GitHub</a></p>
   </footer>
 
-  <script src="js/data.js?v=317"></script>
-  <script src="js/graph.js?v=317"></script>
-  <script src="js/flow.js?v=317"></script>
-  <script src="js/visualizer.js?v=317"></script>
-  <script src="js/optimizer.js?v=317"></script>
-  <script src="js/app.js?v=317"></script>
+  <script src="js/data.js?v=318"></script>
+  <script src="js/graph.js?v=318"></script>
+  <script src="js/flow.js?v=318"></script>
+  <script src="js/visualizer.js?v=318"></script>
+  <script src="js/optimizer.js?v=318"></script>
+  <script src="js/app.js?v=318"></script>
 </body>
 </html>
