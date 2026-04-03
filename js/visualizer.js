@@ -280,13 +280,24 @@ class GraphVisualizer {
     rect.setAttribute("stroke-width", node.selected ? "2" : "1");
     g.appendChild(rect);
 
-    // Color accent top bar (flat, no rounding - sits inside the rounded rect)
+    // Color accent top bar (clipped to node's rounded shape)
+    const clipId = `clip-${node.id}`;
+    const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+    clipPath.setAttribute("id", clipId);
+    const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    clipRect.setAttribute("width", this.nodeWidth);
+    clipRect.setAttribute("height", actualHeight);
+    clipRect.setAttribute("rx", "6");
+    clipPath.appendChild(clipRect);
+    g.appendChild(clipPath);
+
     const accent = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    accent.setAttribute("x", "1");
-    accent.setAttribute("y", "1");
-    accent.setAttribute("width", this.nodeWidth - 2);
-    accent.setAttribute("height", "3");
+    accent.setAttribute("x", "0");
+    accent.setAttribute("y", "0");
+    accent.setAttribute("width", this.nodeWidth);
+    accent.setAttribute("height", "4");
     accent.setAttribute("fill", color);
+    accent.setAttribute("clip-path", `url(#${clipId})`);
     g.appendChild(accent);
 
     // Machine name
