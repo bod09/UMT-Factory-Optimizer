@@ -1288,6 +1288,34 @@ class GraphGenerator {
         }
       }
 
+      // 5a2: Connect disconnected side chain nodes to their input sources
+      // e.g., Blasting Powder Chamber takes dust → connect from Crusher/Sifter dust output
+      for (const [key, data] of uniqueNodes) {
+        if (!data.isByproduct) continue;
+        // Check if this node has any incoming edges
+        const hasIncoming = [...uniqueNodes.values()].some(d =>
+          (d.childKeys || []).includes(key) || (d.downstreamKeys || []).includes(key)
+        );
+        if (hasIncoming) continue; // Already connected
+
+        // Find what input type this machine needs
+        const m = registry.get(data.machine);
+        if (!m?.inputs?.length) continue;
+        const inputType = m.inputs[0].split("|")[0];
+
+        // Find a side chain node that produces this type
+        for (const [srcKey, srcData] of uniqueNodes) {
+          if (srcKey === key || !srcData.isByproduct) continue;
+          if (srcData.type === inputType) {
+            if (!srcData.downstreamKeys) srcData.downstreamKeys = [];
+            if (!srcData.downstreamKeys.includes(key)) {
+              srcData.downstreamKeys.push(key);
+            }
+            break;
+          }
+        }
+      }
+
       // 5b: Add side chain extras to main chain and re-propagate forward
       // Collect all additions: sifter ores → ore_cleaner, prospector gems → gem_cutter
       const additions = new Map(); // mainKey → qty to add
