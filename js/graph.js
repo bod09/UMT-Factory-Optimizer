@@ -1366,9 +1366,10 @@ class GraphGenerator {
     }
 
     // Step F: Recalculate same-type combines after enhancement fix
-    // (Alloy needs updated gem_to_bar qty)
+    // Skip Prismatic (already set correctly by Step E from main chain gems only)
     for (const [key, data] of uniqueNodes) {
       if (data.isByproduct) continue;
+      if (data.machine === "prismatic_crucible") continue; // Set by Step E
       const m = registry.get(data.machine);
       if (!m?.inputs || m.inputs.length < 2) continue;
       const uTypes = new Set(m.inputs.flatMap(i => i.split("|")));
