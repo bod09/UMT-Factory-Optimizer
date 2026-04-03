@@ -285,16 +285,18 @@ class GraphVisualizer {
     const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
     clipPath.setAttribute("id", clipId);
     const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    clipRect.setAttribute("width", this.nodeWidth);
-    clipRect.setAttribute("height", actualHeight);
-    clipRect.setAttribute("rx", "6");
+    clipRect.setAttribute("x", "1");
+    clipRect.setAttribute("y", "1");
+    clipRect.setAttribute("width", this.nodeWidth - 2);
+    clipRect.setAttribute("height", actualHeight - 2);
+    clipRect.setAttribute("rx", "5");
     clipPath.appendChild(clipRect);
     g.appendChild(clipPath);
 
     const accent = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    accent.setAttribute("x", "0");
-    accent.setAttribute("y", "0");
-    accent.setAttribute("width", this.nodeWidth);
+    accent.setAttribute("x", "1");
+    accent.setAttribute("y", "1");
+    accent.setAttribute("width", this.nodeWidth - 2);
     accent.setAttribute("height", "4");
     accent.setAttribute("fill", color);
     accent.setAttribute("clip-path", `url(#${clipId})`);
