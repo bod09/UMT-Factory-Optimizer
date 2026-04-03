@@ -1,0 +1,11 @@
+{
+  "name": "umt-wiki-updater",
+  "version": "1.0.0",
+  "description": "Automated wiki-to-JSON updater for UMT Factory Optimizer",
+  "type": "module",
+  "scripts": {
+    "update": "node index.js",
+    "discover": "node discover.js"
+  },
+  "dependencies": {}
+}

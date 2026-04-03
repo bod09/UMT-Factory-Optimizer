@@ -1,0 +1,47 @@
+name: Wiki Data Update
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'  # Weekly Monday 6:17 AM UTC
+  workflow_dispatch:       # Manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run wiki updater
+        id: update
+        continue-on-error: true
+        run: node scripts/wiki-updater/index.js
+        working-directory: ${{ github.workspace }}
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet data/machines.json; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Update machine data from wiki'
+          title: 'Wiki Update: Machine data changes detected'
+          body-path: wiki-update-report.md
+          branch: wiki-update
+          delete-branch: true
+          labels: wiki-update, automated
