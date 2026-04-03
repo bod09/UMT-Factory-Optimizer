@@ -1371,6 +1371,55 @@ class GraphGenerator {
           }
         }
       }
+
+      // Step G: Detect excess in main chain and route to QA → Seller
+      // For any main chain node where output > total downstream demand, sell excess
+      for (const [key, data] of uniqueNodes) {
+        if (data.isByproduct) continue;
+        if (data.machine === "seller" || data.machine === "quality_assurance") continue;
+        const myConsumers = children.get(key) || [];
+        const mainConsumers = myConsumers.filter(ck => !uniqueNodes.get(ck)?.isByproduct);
+        if (mainConsumers.length === 0) continue; // No consumers = end of chain
+
+        // Sum what downstream actually needs
+        let totalDemand = 0;
+        for (const ck of mainConsumers) {
+          const cd = uniqueNodes.get(ck);
+          if (!cd) continue;
+          const cm = registry.get(cd.machine);
+          if (cm?.inputs?.length >= 2) {
+            // Combine machine: needs 1 of this type per product
+            totalDemand += cd.quantity;
+          } else {
+            // Single-input: passes through everything
+            totalDemand += cd.quantity;
+          }
+        }
+
+        const excess = data.quantity - totalDemand;
+        if (excess > 0) {
+          // Route excess to QA → Seller
+          const qaKey = [...uniqueNodes.entries()].find(([k, d]) =>
+            d.machine === "quality_assurance" && !d.isByproduct
+          )?.[0];
+          const sellerKey = [...uniqueNodes.entries()].find(([k, d]) =>
+            d.machine === "seller" && !d.isByproduct
+          )?.[0];
+          const target = qaKey || sellerKey;
+          if (target) {
+            if (!data.downstreamKeys) data.downstreamKeys = [];
+            if (!data.downstreamKeys.includes(target)) {
+              data.downstreamKeys.push(target);
+            }
+            if (!data._edgeQty) data._edgeQty = {};
+            data._edgeQty[target] = excess;
+            // Also set edge qty for the main consumers
+            for (const ck of mainConsumers) {
+              data._edgeQty[ck] = uniqueNodes.get(ck)?.quantity || 0;
+            }
+          }
+        }
+      }
     }
 
     // Step 2: Assign layers (depth from leaves)
