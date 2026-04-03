@@ -71,14 +71,8 @@ function loadConfig() {
     if (config.depthMax) $("#depth-max").value = config.depthMax;
     if (config.outputBelts) $("#output-belts").value = config.outputBelts;
     if (config.oreQuantity) $("#ore-quantity").value = config.oreQuantity;
-    if (config.oreSelect) {
+    if (config.oreSelect && config.oreSelect !== "all") {
       $("#ore-select").value = config.oreSelect;
-      // Trigger the change handler to update UI state
-      const depthDisabled = config.oreSelect !== "all";
-      $("#depth-min").disabled = depthDisabled;
-      $("#depth-max").disabled = depthDisabled;
-      $("#zone-select").disabled = depthDisabled;
-      $("#ore-select-hint").textContent = depthDisabled ? "Overrides depth" : "Uses depth range";
     }
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
     if (config.theoreticalMax) $("#theoretical-max").checked = config.theoreticalMax;
@@ -162,31 +156,40 @@ function initZoneSelect() {
   select.value = "550-849";
   applyZone("550-849");
 
-  // Populate ore selector
+  // Populate ore selector grouped by zone
   const oreSelect = $("#ore-select");
+  // Group ores by zone
+  const zones = {};
   ORES.forEach(ore => {
-    const opt = document.createElement("option");
-    opt.value = `ore:${ore.name}`;
-    opt.textContent = `${ore.name} ($${ore.value.toLocaleString()})`;
-    oreSelect.appendChild(opt);
+    const zone = getLayerName(ore.depthMin) || "Unknown";
+    if (!zones[zone]) zones[zone] = [];
+    zones[zone].push(ore);
   });
-  if (typeof GEMS !== "undefined") {
-    GEMS.forEach(gem => {
+  // Add ores grouped by zone
+  for (const [zone, ores] of Object.entries(zones)) {
+    const group = document.createElement("optgroup");
+    group.label = zone;
+    ores.sort((a, b) => a.value - b.value).forEach(ore => {
+      const opt = document.createElement("option");
+      opt.value = `ore:${ore.name}`;
+      opt.textContent = `${ore.name} ($${ore.value.toLocaleString()})`;
+      group.appendChild(opt);
+    });
+    oreSelect.appendChild(group);
+  }
+  // Add gems in separate group
+  if (typeof GEMS !== "undefined" && GEMS.length > 0) {
+    const gemGroup = document.createElement("optgroup");
+    gemGroup.label = "Gems";
+    GEMS.sort((a, b) => a.value - b.value).forEach(gem => {
       const opt = document.createElement("option");
       opt.value = `gem:${gem.name}`;
       opt.textContent = `${gem.name} ($${gem.value.toLocaleString()})`;
-      oreSelect.appendChild(opt);
+      gemGroup.appendChild(opt);
     });
+    oreSelect.appendChild(gemGroup);
   }
-  oreSelect.addEventListener("change", () => {
-    const val = oreSelect.value;
-    const depthDisabled = val !== "all";
-    $("#depth-min").disabled = depthDisabled;
-    $("#depth-max").disabled = depthDisabled;
-    $("#zone-select").disabled = depthDisabled;
-    $("#ore-select-hint").textContent = depthDisabled ? "Overrides depth" : "Uses depth range";
-    saveConfig();
-  });
+  oreSelect.addEventListener("change", saveConfig);
 }
 
 function applyZone(value) {
@@ -295,89 +298,43 @@ function runOptimizer(scrollToResults = false) {
 
   optimizer.configure({ prestigeLevel: 0, budget, hasDoubleSeller, prestigeItems });
 
-  // Check if specific ore is selected
-  const oreSelectVal = $("#ore-select")?.value || "all";
-  let oresAtDepth, gemsAtDepth;
-
-  if (oreSelectVal !== "all") {
-    const [type, name] = oreSelectVal.split(":");
-    if (type === "ore") {
-      const ore = ORES.find(o => o.name === name);
-      oresAtDepth = ore ? [ore] : [];
-      gemsAtDepth = [];
-    } else {
-      const gem = GEMS?.find(g => g.name === name);
-      oresAtDepth = gem ? [gem] : [];
-      gemsAtDepth = [];
-    }
-  } else {
-    oresAtDepth = getOresAtDepth(minDepth, maxDepth);
-    gemsAtDepth = getGemsAtDepth(minDepth, maxDepth);
-  }
-
-  // Render depth summary
-  renderDepthSummary(minDepth, maxDepth, oresAtDepth, gemsAtDepth);
-
-  if (oresAtDepth.length === 0) {
-    $("#chain-results").innerHTML = '<div class="chain-card">No ores found at this depth range.</div>';
+  // Get selected ore
+  const oreSelectVal = $("#ore-select")?.value || "";
+  if (!oreSelectVal || oreSelectVal === "all") {
+    $("#chain-results").innerHTML = '<div class="chain-card">Select an ore to optimize.</div>';
     $("#income-grid").innerHTML = "";
     $("#optimizer-results").classList.remove("hidden");
     return;
   }
 
-  // Calculate weighted average across all ores at depth
-  // Each chain gets an average value based on all ores that appear
-  const chainMap = new Map();
+  const [type, name] = oreSelectVal.split(":");
+  const selectedOre = type === "ore"
+    ? ORES.find(o => o.name === name)
+    : GEMS?.find(g => g.name === name);
 
-  for (const ore of oresAtDepth) {
-    const results = optimizer.getBestChain(ore, budget);
-    for (const result of results) {
-      if (!chainMap.has(result.chain)) {
-        chainMap.set(result.chain, {
-          chain: result.chain,
-          cost: result.cost,
-          medals: result.medals || 0,
-          oresNeeded: result.oresNeeded,
-          productQty: result.productQty || 1,
-          graph: result.graph || null,
-          usesDup: result.usesDup || false,
-          oreBreakdown: [],
-          totalValue: 0,
-          totalPerOre: 0,
-        });
-      }
-      const entry = chainMap.get(result.chain);
-      // Use the graph with the most nodes (most complete chain)
-      // Earlier ores might skip machines (e.g., max tier ore skips Ore Upgrader)
-      if (result.graph && (!entry.graph || result.graph.nodes.length > entry.graph.nodes.length)) {
-        entry.graph = result.graph;
-        // Also update productQty and oresNeeded to match this graph's source
-        if (result.productQty) entry.productQty = result.productQty;
-        if (result.oresNeeded) entry.oresNeeded = result.oresNeeded;
-      }
-      entry.oreBreakdown.push({ ore: ore.name, value: result.value || result.totalValue, perOre: result.perOre, baseValue: ore.value });
-      entry.totalValue += (result.value || result.totalValue || 0);
-      entry.totalPerOre += result.perOre;
-    }
+  if (!selectedOre) {
+    $("#chain-results").innerHTML = '<div class="chain-card">Ore not found.</div>';
+    $("#optimizer-results").classList.remove("hidden");
+    return;
   }
 
-  // Calculate averages and sort
-  const aggregated = [...chainMap.values()].map(entry => {
-    const avgPerOre = entry.totalPerOre / entry.oreBreakdown.length;
-    // If ore quantity set, calculate total profit for that many ores
-    // Total batches = floor(oreQuantity / oresNeeded), total profit = batches * value per batch
-    const batches = oreQuantity > 0 && entry.oresNeeded > 0
-      ? Math.floor(oreQuantity / entry.oresNeeded)
+  // Show selected ore info
+  renderOreSummary(selectedOre);
+
+  // Run optimizer for this specific ore
+  const results = optimizer.getBestChain(selectedOre, budget);
+
+  // Calculate batch profit if ore quantity set
+  const chainResults = results.map(result => {
+    const batches = oreQuantity > 0 && result.oresNeeded > 0
+      ? Math.floor(oreQuantity / result.oresNeeded)
       : 0;
-    const totalBatchProfit = batches * (entry.totalValue / entry.oreBreakdown.length);
+    const batchProfit = batches * (result.value || result.totalValue || 0);
 
     return {
-      ...entry,
-      avgValue: entry.totalValue / entry.oreBreakdown.length,
-      avgPerOre,
-      minValue: Math.min(...entry.oreBreakdown.map(o => o.perOre)),
-      maxValue: Math.max(...entry.oreBreakdown.map(o => o.perOre)),
-      batchProfit: totalBatchProfit,
+      ...result,
+      avgPerOre: result.perOre,
+      batchProfit,
       batches,
       oreQuantity,
     };
@@ -385,13 +342,13 @@ function runOptimizer(scrollToResults = false) {
 
   // Sort by total batch profit if ore quantity set, otherwise per-ore
   if (oreQuantity > 0) {
-    aggregated.sort((a, b) => b.batchProfit - a.batchProfit);
+    chainResults.sort((a, b) => b.batchProfit - a.batchProfit);
   } else {
-    aggregated.sort((a, b) => b.avgPerOre - a.avgPerOre);
+    chainResults.sort((a, b) => b.perOre - a.perOre);
   }
 
-  renderChainResults(aggregated, oresAtDepth);
-  renderIncomeEstimate(aggregated, outputBelts, oresAtDepth.length);
+  renderChainResults(chainResults, [selectedOre]);
+  renderIncomeEstimate(chainResults, outputBelts, 1);
 
   $("#optimizer-results").classList.remove("hidden");
 
@@ -433,6 +390,24 @@ function renderDepthSummary(minDepth, maxDepth, ores, gems) {
   `;
 }
 
+function renderOreSummary(ore) {
+  const container = $("#depth-ore-summary");
+  const depthRange = ore.depthMin !== undefined ? `${ore.depthMin}m - ${ore.depthMax}m` : '';
+  const layer = ore.depthMin !== undefined ? getLayerName(ore.depthMin) : '';
+  const pickaxe = ore.depthMin !== undefined ? getRequiredPickaxe(ore.depthMax) : null;
+
+  container.innerHTML = `
+    <div class="depth-summary-content">
+      <div class="depth-info">
+        <h3>${ore.name}</h3>
+        <span class="ore-tag" style="font-size:1rem"><em>${formatMoney(ore.value)}</em> base value</span>
+        ${depthRange ? `<span class="depth-layers">${layer} (${depthRange})</span>` : ''}
+        ${pickaxe ? `<span class="depth-pickaxe">Requires: ${pickaxe.name}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderChainResults(results, oresAtDepth) {
   const container = $("#chain-results");
   container.innerHTML = "";
@@ -440,14 +415,6 @@ function renderChainResults(results, oresAtDepth) {
   results.forEach((result, idx) => {
     const card = document.createElement("div");
     card.className = `chain-card${idx === 0 ? " best" : ""}`;
-
-    // Per-ore breakdown tags
-    const oreBreakdownHtml = result.oreBreakdown
-      ? result.oreBreakdown
-          .sort((a, b) => b.perOre - a.perOre)
-          .map(ob => `<span class="ore-breakdown-item"><strong>${ob.ore}</strong> ${formatMoney(ob.perOre)}</span>`)
-          .join("")
-      : "";
 
     const graphId = `graph-${idx}`;
 
@@ -459,13 +426,12 @@ function renderChainResults(results, oresAtDepth) {
     card.innerHTML = `
       <div class="chain-header">
         <span class="chain-name">${result.chain}</span>
-        <span class="chain-value">${showBatch ? formatMoney(result.batchProfit) + ' <small>total</small>' : formatMoney(result.avgPerOre || result.perOre) + ' <small>avg/ore</small>'}</span>
+        <span class="chain-value">${showBatch ? formatMoney(result.batchProfit) + ' <small>total</small>' : formatMoney(result.perOre) + ' <small>/ore</small>'}</span>
       </div>
       <div class="chain-details">
-        <div class="chain-detail">Per Ore: <strong>${formatMoney(result.avgPerOre || result.perOre)}</strong></div>
-        <div class="chain-detail">Range: <strong>${result.minValue ? formatMoney(result.minValue) + " - " + formatMoney(result.maxValue) : formatMoney(result.perOre)}</strong></div>
+        <div class="chain-detail">Per Ore: <strong>${formatMoney(result.perOre)}</strong></div>
         <div class="chain-detail">Setup Cost: <strong>${formatMoney(result.cost)}</strong></div>
-        <div class="chain-detail">Ores/Product: <strong>${result.productQty > 1 ? (result.oresNeeded / result.productQty) + " (" + result.oresNeeded + " ores → " + result.productQty + " products)" : result.oresNeeded}</strong></div>
+        <div class="chain-detail">Ores/Product: <strong>${result.productQty > 1 ? Math.round(result.oresNeeded / result.productQty) + " (" + result.oresNeeded + " ores → " + result.productQty + " products)" : result.oresNeeded}</strong></div>
         ${result.usesDup ? '<div class="chain-detail" style="color:#f472b6">Duplicator active</div>' : ""}
         ${batchHtml}
       </div>
@@ -473,7 +439,6 @@ function renderChainResults(results, oresAtDepth) {
         <button class="chain-breakdown-toggle" onclick="toggleGraph('${graphId}', this)">View Graph</button>
         <div class="graph-container hidden" id="${graphId}"></div>
       ` : ""}
-      ${oreBreakdownHtml ? `<div class="ore-breakdown">${oreBreakdownHtml}</div>` : ""}
     `;
     container.appendChild(card);
 

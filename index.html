@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>UMT Factory Optimizer - Ultimate Mining Tycoon</title>
-  <link rel="stylesheet" href="css/style.css?v=310">
+  <link rel="stylesheet" href="css/style.css?v=315">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
@@ -91,32 +91,15 @@
         <h2>Configuration</h2>
         <div class="config-grid">
           <div class="config-group">
+            <label for="ore-select">Ore</label>
+            <select id="ore-select">
+              <option value="" disabled selected>Select an ore...</option>
+            </select>
+          </div>
+          <div class="config-group">
             <label for="budget">Factory Budget ($)</label>
             <input type="number" id="budget" value="1000000" min="0" step="10000">
             <span class="hint" id="budget-display">$1.00M</span>
-          </div>
-          <div class="config-group">
-            <label for="zone-select">Mining Zone</label>
-            <select id="zone-select">
-              <option value="custom">Custom Depth</option>
-            </select>
-          </div>
-          <div class="config-group">
-            <label for="ore-select">Specific Ore</label>
-            <select id="ore-select">
-              <option value="all">All at Depth</option>
-            </select>
-            <span class="hint" id="ore-select-hint">Uses depth range</span>
-          </div>
-          <div class="config-group">
-            <label for="depth-min">Depth Min (m)</label>
-            <input type="number" id="depth-min" value="550" min="0" max="3000" step="50">
-            <span class="hint" id="depth-min-layer">Bedrock</span>
-          </div>
-          <div class="config-group">
-            <label for="depth-max">Depth Max (m)</label>
-            <input type="number" id="depth-max" value="1200" min="0" max="3000" step="50">
-            <span class="hint" id="depth-max-layer">Tectonic Zone</span>
           </div>
           <div class="config-group">
             <label for="output-belts">Output Belts</label>
@@ -126,12 +109,11 @@
               <option value="3">3 Belts ($1M)</option>
               <option value="4">4 Belts ($5M)</option>
             </select>
-            <span class="hint">&nbsp;</span>
           </div>
           <div class="config-group">
             <label for="ore-quantity">Ore Batch Size</label>
             <input type="number" id="ore-quantity" value="0" min="0" step="50">
-            <span class="hint">0 = rank by per-ore</span>
+            <span class="hint">0 = rank by per-ore value</span>
           </div>
           <div class="config-group">
             <label>&nbsp;</label>
@@ -141,6 +123,10 @@
             </label>
           </div>
         </div>
+        <!-- Hidden depth inputs (used internally by zone/ore selection) -->
+        <input type="hidden" id="depth-min" value="0">
+        <input type="hidden" id="depth-max" value="3000">
+        <input type="hidden" id="zone-select" value="custom">
       </div>
 
       <div id="optimizer-results" class="results-panel hidden">
@@ -281,11 +267,11 @@
     <p>Community fan project - not affiliated with Innovation Inc. | <a href="https://miraheze.org/donate" target="_blank" rel="noopener">Support the wiki (donate to Miraheze)</a> | <a href="https://github.com/bod09/UMT-Factory-Optimizer" target="_blank" rel="noopener">GitHub</a></p>
   </footer>
 
-  <script src="js/data.js?v=310"></script>
-  <script src="js/graph.js?v=310"></script>
-  <script src="js/flow.js?v=310"></script>
-  <script src="js/visualizer.js?v=310"></script>
-  <script src="js/optimizer.js?v=310"></script>
-  <script src="js/app.js?v=310"></script>
+  <script src="js/data.js?v=315"></script>
+  <script src="js/graph.js?v=315"></script>
+  <script src="js/flow.js?v=315"></script>
+  <script src="js/visualizer.js?v=315"></script>
+  <script src="js/optimizer.js?v=315"></script>
+  <script src="js/app.js?v=315"></script>
 </body>
 </html>
