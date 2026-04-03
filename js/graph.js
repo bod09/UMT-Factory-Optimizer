@@ -1084,299 +1084,278 @@ class GraphGenerator {
       }
     }
 
-    // === SINGLE FORWARD PASS: Calculate ALL quantities ===
-    // Replace 6+ post-processing patches with one clean traversal.
-    // Walk each chain (main + side) from source to sink.
-    // Rules:
-    //   - Source nodes (ore_source, secondary_output): qty = actualOreCount or byproductRatio
-    //   - Single-input machines: output qty = input qty (1:1)
-    //   - Same-type combine (Prismatic, Alloy): output = floor(input / inputCount)
-    //   - Mixed-type combine (Power Core, Super, etc.): output = min of available inputs (usually 1)
-    //   - Chance machines: output = round(input × chance), passthrough = input - output
-    //   - Enhancement path: bar_to_gem = tempering qty, gem_cutter = bar_to_gem, etc.
-    //   - Side chain additions: add to main chain targets AFTER main chain is calculated
-
-    // Step A: Fix quantities from walkChain throughput
-    // walkChain throughput is mostly correct. Only fix:
-    // 1. ore_source = actualOreCount
-    // 2. Enhancement path: gem_cutter = bar_to_gem, prismatic = floor(btg/2), etc.
-    // 3. Same-type combines: floor(input/2)
+    // === TOPOLOGICAL FORWARD PROPAGATION ===
+    // One clean pass: build adjacency, topo sort, propagate quantities left→right.
+    // No patches, no ordering dependencies, no machine-specific conditions.
     {
-      // 1. Fix ore_source
-      const oreSourceEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source");
-      if (oreSourceEntry) oreSourceEntry[1].quantity = actualOreCount;
-
-      // 2. Enhancement fix moved to after Step D (needs cascade +1 first)
-
-      // 3. Fix single-input machines consuming from alloy/gem_to_bar
-      const btgEntry = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
-      // Their walkChain qty is inflated by enhancement oreCount doubling
-      // Set them = their parent machine's qty (they process 1 item per parent invocation)
-      if (btgEntry) {
-        // Build parent→children map
-        const parentOf = new Map();
-        for (const [k, d] of uniqueNodes) {
-          for (const ck of (d.childKeys || [])) {
-            if (!parentOf.has(ck)) parentOf.set(ck, []);
-            parentOf.get(ck).push(k);
-          }
-        }
-        // For each single-input machine whose child is alloy_furnace,
-        // set qty = alloy qty (they each consume 1 alloy bar per invocation)
-        for (const [key, data] of uniqueNodes) {
-          if (data.isByproduct) continue;
-          const m = registry.get(data.machine);
-          if (!m?.inputs || m.inputs.length !== 1) continue;
-          if (data.childKeys?.length > 0) {
-            const childData = uniqueNodes.get(data.childKeys[0]);
-            if (childData?.machine === "alloy_furnace") {
-              // Count how many times THIS specific machine appears as child of its parents
-              // e.g., bolt_machine appears in frame_maker AND casing_machine
-              const parents = parentOf.get(key) || [];
-              let totalNeeded = 0;
-              for (const pk of parents) {
-                const pd = uniqueNodes.get(pk);
-                if (pd && !pd.isByproduct) {
-                  // Each parent needs 1 of this item per invocation
-                  totalNeeded += pd.quantity;
-                }
-              }
-              data.quantity = totalNeeded || childData.quantity;
-            }
-          }
+      // Phase 1: Build adjacency (parent→children map)
+      const children = new Map(); // key → [keys that consume this node's output]
+      for (const [key, data] of uniqueNodes) {
+        for (const ck of (data.childKeys || [])) {
+          if (!children.has(ck)) children.set(ck, []);
+          children.get(ck).push(key);
         }
       }
 
-      // 4. Fix same-type combines (Alloy: floor(gem_to_bar / 2))
+      // Phase 2: Topological sort (Kahn's algorithm) - main chain only
+      const inDegree = new Map();
       for (const [key, data] of uniqueNodes) {
         if (data.isByproduct) continue;
+        inDegree.set(key, (data.childKeys || []).filter(ck => !uniqueNodes.get(ck)?.isByproduct).length);
+      }
+      const topoOrder = [];
+      const topoQueue = [];
+      for (const [key, deg] of inDegree) {
+        if (deg === 0) topoQueue.push(key);
+      }
+      while (topoQueue.length > 0) {
+        const key = topoQueue.shift();
+        topoOrder.push(key);
+        for (const consumerKey of (children.get(key) || [])) {
+          if (!inDegree.has(consumerKey)) continue;
+          inDegree.set(consumerKey, inDegree.get(consumerKey) - 1);
+          if (inDegree.get(consumerKey) === 0) topoQueue.push(consumerKey);
+        }
+      }
+
+      // Phase 3: Forward propagate main chain quantities in topo order
+      for (const key of topoOrder) {
+        const data = uniqueNodes.get(key);
+        if (!data) continue;
         const m = registry.get(data.machine);
-        if (!m?.inputs || m.inputs.length < 2) continue;
-        const uTypes = new Set(m.inputs.flatMap(i => i.split("|")));
-        if (uTypes.size > 1) continue;
-        if (data.childKeys?.length > 0) {
-          const childData = uniqueNodes.get(data.childKeys[0]);
-          if (childData) data.quantity = Math.floor(childData.quantity / m.inputs.length);
+
+        if (data.machine === "ore_source") {
+          data.quantity = actualOreCount;
+          continue;
         }
-      }
-    }
 
-    // Step B: Side chain chance scaling using BFS queue
-    // Process ALL branches, not just one path
-    for (const [key, data] of uniqueNodes) {
-      if (data.machine !== "secondary_output") continue;
-      const chanceVisited = new Set([key]);
-      // Queue: [key, remainingQty] pairs
-      const queue = [[key, data.quantity]];
+        // Calculate input quantity (sum from all parents feeding this node)
+        let inputQty = 0;
+        const parentKeys = (data.childKeys || []).filter(ck => !uniqueNodes.get(ck)?.isByproduct);
+        for (const pk of parentKeys) {
+          const parentData = uniqueNodes.get(pk);
+          if (parentData) inputQty += parentData.quantity;
+        }
+        if (inputQty === 0) inputQty = data.quantity; // Fallback to walkChain value
 
-      while (queue.length > 0) {
-        const [currentKey, remainingQty] = queue.shift();
-        const currentNode = uniqueNodes.get(currentKey);
-        if (!currentNode) continue;
-        const nextKeys = (currentNode.downstreamKeys || []).filter(dk =>
-          !chanceVisited.has(dk) && uniqueNodes.get(dk)?.isByproduct
-        );
-
-        let currentRemaining = remainingQty;
-
-        for (const nextKey of nextKeys) {
-          chanceVisited.add(nextKey);
-          const nextNode = uniqueNodes.get(nextKey);
-          const nextM = registry.get(nextNode?.machine);
-          if (!nextNode) continue;
-
-          if (nextM?.effect === "chance") {
-            const chance = nextM.value || 0.05;
-            const produced = Math.round(currentRemaining * chance);
-            currentRemaining -= produced;
-            // Sifters show dust output (passthrough), prospectors show gems (produced)
-            const isSifter = nextNode.machine === "sifter" || nextNode.machine === "nano_sifter";
-            nextNode.quantity = isSifter ? currentRemaining : produced;
-            // Set edge qty for produced item outputs
-            if (!nextNode._edgeQty) nextNode._edgeQty = {};
-            for (const dk of (nextNode.downstreamKeys || [])) {
-              const dkNode = uniqueNodes.get(dk);
-              if (!dkNode) continue;
-              const edgeType = nextNode._edgeType?.[dk];
-              const isDifferentType = edgeType && edgeType !== nextNode.type;
-              if (!dkNode.isByproduct || isDifferentType) {
-                nextNode._edgeQty[dk] = produced;
-              }
-            }
-            // Queue this chance machine for further traversal (next prospector etc.)
-            queue.push([nextKey, currentRemaining]);
+        if (m?.inputs?.length >= 2) {
+          // Combine machine
+          const inputTypes = new Set(m.inputs.flatMap(i => i.split("|")));
+          if (inputTypes.size === 1) {
+            // Same-type combine (Prismatic: 2 gems → 1, Alloy: 2 bars → 1)
+            data.quantity = Math.floor(inputQty / m.inputs.length);
           } else {
-            // Non-chance: gets remaining qty or specific edge qty
-            const edgeQty = currentNode._edgeQty?.[nextKey];
-            let nodeQty = edgeQty !== undefined ? edgeQty : currentRemaining;
-            if (nextM?.inputs?.length >= 2) {
-              nodeQty = Math.max(1, Math.ceil(currentRemaining / nextM.inputs.length));
-            }
-            nextNode.quantity = nodeQty;
-            // Propagate to downstream
-            for (const dk of (nextNode.downstreamKeys || [])) {
+            // Mixed-type combine (Power Core, Casing, etc.)
+            // Keep product qty (usually 1 per product, set by walkChain)
+            data.quantity = productQty || 1;
+          }
+        } else if (data.machine === "seller" || data.machine === "quality_assurance") {
+          data.quantity = productQty || 1;
+        } else if (data.machine === "duplicator") {
+          data.quantity = inputQty * 2;
+        } else {
+          // Single-input: output = input (modifiers, type converters)
+          data.quantity = inputQty;
+        }
+      }
+
+      // Phase 4: Side chain BFS propagation (Stone → Prospectors → Crusher → ...)
+      for (const [key, data] of uniqueNodes) {
+        if (data.machine !== "secondary_output") continue;
+        const visited = new Set([key]);
+        const queue = [[key, data.quantity]]; // [nodeKey, remainingQty]
+
+        while (queue.length > 0) {
+          const [currentKey, remaining] = queue.shift();
+          const currentNode = uniqueNodes.get(currentKey);
+          if (!currentNode) continue;
+
+          const nextKeys = (currentNode.downstreamKeys || []).filter(dk =>
+            !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct
+          );
+          let currentRemaining = remaining;
+
+          for (const nextKey of nextKeys) {
+            visited.add(nextKey);
+            const nextNode = uniqueNodes.get(nextKey);
+            const nextM = registry.get(nextNode?.machine);
+            if (!nextNode) continue;
+
+            if (nextM?.effect === "chance") {
+              const chance = nextM.value || 0.05;
+              const produced = Math.round(currentRemaining * chance);
+              currentRemaining -= produced;
+              // Sifters show dust passthrough, prospectors show gem produced
+              const isSifter = nextNode.machine === "sifter" || nextNode.machine === "nano_sifter";
+              nextNode.quantity = isSifter ? currentRemaining : produced;
+              // Set edge qty for cross-chain/different-type outputs
               if (!nextNode._edgeQty) nextNode._edgeQty = {};
-              nextNode._edgeQty[dk] = nodeQty;
+              for (const dk of (nextNode.downstreamKeys || [])) {
+                const dkNode = uniqueNodes.get(dk);
+                if (!dkNode) continue;
+                const edgeType = nextNode._edgeType?.[dk];
+                const isDiffType = edgeType && edgeType !== nextNode.type;
+                if (!dkNode.isByproduct || isDiffType) {
+                  nextNode._edgeQty[dk] = produced;
+                }
+              }
+              queue.push([nextKey, currentRemaining]);
+            } else {
+              // Non-chance: check if parent has specific edgeQty for this key
+              // (set by chance machine for cross-chain/different-type outputs)
+              let nodeQty = currentRemaining;
+              // Check all possible edgeQty sources
+              if (currentNode._edgeQty) {
+                for (const ek of Object.keys(currentNode._edgeQty)) {
+                  // Match by key directly or by finding the downstream key
+                  if (ek === nextKey) { nodeQty = currentNode._edgeQty[ek]; break; }
+                }
+              }
+              if (nextM?.inputs?.length >= 2) {
+                nodeQty = Math.max(1, Math.ceil(currentRemaining / nextM.inputs.length));
+              }
+              nextNode.quantity = nodeQty;
+              for (const dk of (nextNode.downstreamKeys || [])) {
+                if (!nextNode._edgeQty) nextNode._edgeQty = {};
+                nextNode._edgeQty[dk] = nodeQty;
+              }
+              queue.push([nextKey, nodeQty]);
             }
-            // Queue this node for further traversal
-            queue.push([nextKey, nodeQty]);
           }
         }
       }
-    }
 
-    // Step C: Cross-chain connections + excess handling
-    const connectedMainKeys = new Set();
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct) continue;
-      if (sideData.machine === "sell_excess") continue;
-      const sideType = sideData.type;
-      if (!sideType) continue;
-      const alreadyHasMainConnection = (sideData.downstreamKeys || []).some(dk => {
-        const dkNode = uniqueNodes.get(dk);
-        return dkNode && !dkNode.isByproduct;
-      });
-      if (alreadyHasMainConnection) continue;
+      // Phase 5: Cross-chain connections, side chain additions, and re-propagation
+      // 5a: Connect side chain endpoints to main chain consumers + handle excess
+      const connectedMainKeys = new Set();
+      for (const [sideKey, sideData] of uniqueNodes) {
+        if (!sideData.isByproduct || sideData.machine === "sell_excess") continue;
+        const sideType = sideData.type;
+        if (!sideType) continue;
+        if ((sideData.downstreamKeys || []).some(dk => !uniqueNodes.get(dk)?.isByproduct)) continue;
 
-      for (const [mainKey, mainData] of uniqueNodes) {
-        if (mainData.isByproduct || connectedMainKeys.has(mainKey)) continue;
-        const mainMachine = registry.get(mainData.machine);
-        if (!mainMachine?.inputs) continue;
-        const acceptsType = mainMachine.inputs.some(inp =>
-          inp === sideType || inp.split("|").includes(sideType)
-        );
-        if (!acceptsType) continue;
-        connectedMainKeys.add(mainKey);
+        for (const [mainKey, mainData] of uniqueNodes) {
+          if (mainData.isByproduct || connectedMainKeys.has(mainKey)) continue;
+          const mainM = registry.get(mainData.machine);
+          if (!mainM?.inputs?.some(inp => inp === sideType || inp.split("|").includes(sideType))) continue;
+          connectedMainKeys.add(mainKey);
 
-        // Find LAST side chain node
-        let lastSideKey = sideKey;
-        const visited = new Set([sideKey]);
-        while (true) {
-          const lastNode = uniqueNodes.get(lastSideKey);
-          const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
-            !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct &&
-            uniqueNodes.get(dk)?.machine !== "sell_excess"
-          );
-          if (dsKeys.length === 0) break;
-          lastSideKey = dsKeys[0];
-          visited.add(lastSideKey);
-        }
+          // Find LAST side chain node
+          let lastKey = sideKey;
+          const vis = new Set([sideKey]);
+          while (true) {
+            const n = uniqueNodes.get(lastKey);
+            const ds = (n?.downstreamKeys || []).filter(dk =>
+              !vis.has(dk) && uniqueNodes.get(dk)?.isByproduct && uniqueNodes.get(dk)?.machine !== "sell_excess"
+            );
+            if (ds.length === 0) break;
+            lastKey = ds[0]; vis.add(lastKey);
+          }
+          const lastData = uniqueNodes.get(lastKey);
+          const lastQty = lastData?.quantity || 0;
+          const mainQty = mainData.quantity || 1;
+          const excess = lastQty - mainQty;
 
-        const lastSideData = uniqueNodes.get(lastSideKey);
-        const lastSideQty = lastSideData?.quantity || 0;
-        const mainQty = mainData.quantity || 1;
-        const excess = lastSideQty - mainQty;
+          if (!lastData.downstreamKeys) lastData.downstreamKeys = [];
+          if (!lastData.downstreamKeys.includes(mainKey)) lastData.downstreamKeys.push(mainKey);
+          if (!lastData._edgeQty) lastData._edgeQty = {};
+          lastData._edgeQty[mainKey] = Math.min(lastQty, mainQty);
 
-        // Connect last → main
-        if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
-        if (!lastSideData.downstreamKeys.includes(mainKey)) {
-          lastSideData.downstreamKeys.push(mainKey);
-        }
-        if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
-        lastSideData._edgeQty[mainKey] = Math.min(lastSideQty, mainQty);
-
-        // Handle excess
-        if (excess > 0) {
-          const qaEntry = [...uniqueNodes.entries()].find(([k, d]) =>
-            d.machine === "quality_assurance" && !d.isByproduct
-          );
-          const sellerEntry = [...uniqueNodes.entries()].find(([k, d]) =>
-            d.machine === "seller" && !d.isByproduct
-          );
-          const targetKey = qaEntry?.[0] || sellerEntry?.[0];
-          if (targetKey) {
-            if (!lastSideData.downstreamKeys.includes(targetKey)) {
-              lastSideData.downstreamKeys.push(targetKey);
+          if (excess > 0) {
+            const target = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "quality_assurance" && !d.isByproduct)?.[0]
+              || [...uniqueNodes.entries()].find(([k, d]) => d.machine === "seller" && !d.isByproduct)?.[0];
+            if (target) {
+              if (!lastData.downstreamKeys.includes(target)) lastData.downstreamKeys.push(target);
+              lastData._edgeQty[target] = excess;
             }
-            lastSideData._edgeQty[targetKey] = excess;
+          }
+          break;
+        }
+      }
+
+      // 5b: Add side chain extras to main chain and re-propagate forward
+      // Collect all additions: sifter ores → ore_cleaner, prospector gems → gem_cutter
+      const additions = new Map(); // mainKey → qty to add
+      for (const [sideKey, sideData] of uniqueNodes) {
+        if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
+        for (const dsKey of sideData.downstreamKeys) {
+          const dsNode = uniqueNodes.get(dsKey);
+          if (!dsNode || dsNode.isByproduct) continue;
+          if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
+          const edgeQty = sideData._edgeQty?.[dsKey];
+          if (!edgeQty || edgeQty <= 0) continue;
+          const dsM = registry.get(dsNode.machine);
+          if (dsM?.inputs?.length >= 2) {
+            const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
+            if (ut.size > 1) continue; // Skip mixed-type combines
+          }
+          additions.set(dsKey, (additions.get(dsKey) || 0) + edgeQty);
+        }
+      }
+
+      // Re-propagate from each addition point through the main chain
+      if (additions.size > 0) {
+        // Process additions in topo order
+        for (const key of topoOrder) {
+          const extra = additions.get(key);
+          if (!extra) continue;
+          const data = uniqueNodes.get(key);
+          if (!data) continue;
+          data.quantity += extra;
+
+          // Propagate the addition forward through single-input machines
+          // Stop at same-type combines (they need recalculation, not addition)
+          let cascadeExtra = extra;
+          let cascadeKey = key;
+          const cascaded = new Set([cascadeKey]);
+          while (cascadeKey) {
+            let nextKey = null;
+            for (const ck of (children.get(cascadeKey) || [])) {
+              if (cascaded.has(ck)) continue;
+              const cd = uniqueNodes.get(ck);
+              if (!cd || cd.isByproduct) continue;
+              const cm = registry.get(cd.machine);
+              if (cm?.inputs?.length !== 1) break; // Stop at combines
+              cd.quantity += cascadeExtra;
+              cascaded.add(ck);
+              nextKey = ck;
+              break;
+            }
+            cascadeKey = nextKey;
           }
         }
-        break;
-      }
-    }
 
-    // Step D: Add side chain quantities to main chain targets and cascade
-    // through same-type single-input machines (ore → polisher → philo → smelter)
-    for (const [sideKey, sideData] of uniqueNodes) {
-      if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
-      for (const dsKey of sideData.downstreamKeys) {
-        const dsNode = uniqueNodes.get(dsKey);
-        if (!dsNode || dsNode.isByproduct) continue;
-        const edgeQty = sideData._edgeQty?.[dsKey];
-        if (!edgeQty || edgeQty <= 0) continue;
-        if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
-        // Skip mixed-input combines
-        const dsM = registry.get(dsNode.machine);
-        if (dsM?.inputs?.length >= 2) {
-          const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
+        // Recalculate same-type combines and enhancement path with updated values
+        const btgNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
+        const gcNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
+        const prNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
+        const g2bNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
+
+        if (btgNode && gcNode) {
+          const btgQty = btgNode[1].quantity;
+          // Gem cutter = bar_to_gem + prospector gem additions
+          const gemExtra = additions.get(gcNode[0]) || 0;
+          gcNode[1].quantity = btgQty + gemExtra;
+          if (prNode) {
+            // Prismatic uses main chain gems only (bar_to_gem, not prospector extras)
+            prNode[1].quantity = Math.floor(btgQty / 2);
+            if (g2bNode) g2bNode[1].quantity = prNode[1].quantity;
+          }
+        }
+
+        // Final: recalculate same-type combines from updated children
+        for (const [key, data] of uniqueNodes) {
+          if (data.isByproduct) continue;
+          if (data.machine === "prismatic_crucible") continue; // Already set above
+          const m = registry.get(data.machine);
+          if (!m?.inputs || m.inputs.length < 2) continue;
+          const ut = new Set(m.inputs.flatMap(i => i.split("|")));
           if (ut.size > 1) continue;
-        }
-        dsNode.quantity += edgeQty;
-        // Cascade through same-type single-input consumers
-        // (ore_cleaner +1 → polisher +1 → philosopher +1 → smelter +1)
-        // Stop at type converters (smelter: ore→bar) or multi-input machines
-        let cascadeKey = dsKey;
-        const cascaded = new Set([cascadeKey]);
-        while (cascadeKey) {
-          let nextCascade = null;
-          for (const [mk, md] of uniqueNodes) {
-            if (md.isByproduct || cascaded.has(mk)) continue;
-            if (!md.childKeys?.includes(cascadeKey)) continue;
-            const mm = registry.get(md.machine);
-            // Only cascade through single-input same-type machines
-            if (mm?.inputs?.length !== 1) break;
-            // Stop cascade AFTER bar_to_gem (the rest is handled by enhancement fix)
-            // Sifted ore enters bar_to_gem but gem_cutter/prismatic/gem_to_bar
-            // get their qty from the enhancement fix which reads bar_to_gem
-            if (md.machine === "gem_cutter" || md.machine === "prismatic_crucible" ||
-                md.machine === "gem_to_bar") break;
-            md.quantity += edgeQty;
-            cascaded.add(mk);
-            nextCascade = mk;
-            break;
+          if (data.childKeys?.length > 0) {
+            const childData = uniqueNodes.get(data.childKeys[0]);
+            if (childData) data.quantity = Math.floor(childData.quantity / m.inputs.length);
           }
-          cascadeKey = nextCascade;
         }
-      }
-    }
-
-    // Step E: Fix enhancement path (AFTER cascade and side chain additions)
-    // bar_to_gem now has correct qty including +1 from sifted ore cascade
-    {
-      const btgNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
-      const gcNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
-      const prNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
-      const g2bNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
-      if (btgNode && gcNode) {
-        const btgQty = btgNode[1].quantity; // Includes cascade +1
-        // Add prospector gems on top of bar_to_gem qty
-        let gemAdditions = 0;
-        for (const [sk, sd] of uniqueNodes) {
-          if (!sd.isByproduct) continue;
-          const edgeQty = sd._edgeQty?.[gcNode[0]];
-          if (edgeQty && edgeQty > 0) gemAdditions += edgeQty;
-        }
-        gcNode[1].quantity = btgQty + gemAdditions;
-        if (prNode) {
-          // Prismatic only processes main chain gems (not prospector extras)
-          prNode[1].quantity = Math.floor(btgQty / 2);
-          if (g2bNode) g2bNode[1].quantity = prNode[1].quantity;
-        }
-      }
-    }
-
-    // Step F: Recalculate same-type combines after enhancement fix
-    // Skip Prismatic (already set correctly by Step E from main chain gems only)
-    for (const [key, data] of uniqueNodes) {
-      if (data.isByproduct) continue;
-      if (data.machine === "prismatic_crucible") continue; // Set by Step E
-      const m = registry.get(data.machine);
-      if (!m?.inputs || m.inputs.length < 2) continue;
-      const uTypes = new Set(m.inputs.flatMap(i => i.split("|")));
-      if (uTypes.size > 1) continue;
-      if (data.childKeys?.length > 0) {
-        const childData = uniqueNodes.get(data.childKeys[0]);
-        if (childData) data.quantity = Math.floor(childData.quantity / m.inputs.length);
       }
     }
 
