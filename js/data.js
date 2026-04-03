@@ -8,7 +8,7 @@ const ITEM_TYPES = {
   bolts: "Bolts", plate: "Plate", pipe: "Pipe", coil: "Coil",
   frame: "Frame", casing: "Casing", mech_parts: "Mech Parts",
   filigree: "Filigree", engine: "Engine",
-  stone: "Stone", dust: "Dust", clay: "Clay",
+  stone: "Stone", dust: "Dust", metal_dust: "Metal Dust", gem_dust: "Gem Dust", clay: "Clay",
   ceramic_casing: "Ceramic Casing", bricks: "Bricks", cement: "Cement",
   glass: "Glass Sheet", lens: "Lens", optic: "Optic",
   circuit: "Circuit", electromagnet: "Electromagnet",

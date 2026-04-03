@@ -419,7 +419,7 @@
       "cost": 4000,
       "category": "stonework",
       "inputs": [
-        "dust"
+        "dust|metal_dust|gem_dust"
       ],
       "outputs": [
         {
@@ -471,7 +471,7 @@
       "medals": 1,
       "category": "prestige",
       "inputs": [
-        "dust"
+        "dust|metal_dust|gem_dust"
       ],
       "outputs": [
         {
@@ -546,7 +546,7 @@
       "cost": 2500,
       "category": "stonework",
       "inputs": [
-        "dust"
+        "dust|metal_dust|gem_dust"
       ],
       "outputs": [
         {
@@ -564,7 +564,7 @@
       "cost": 10000,
       "category": "stonework",
       "inputs": [
-        "dust",
+        "dust|metal_dust|gem_dust",
         "stone"
       ],
       "outputs": [
@@ -583,8 +583,8 @@
       "cost": 20000,
       "category": "stonework",
       "inputs": [
-        "dust",
-        "dust"
+        "dust|metal_dust|gem_dust",
+        "dust|metal_dust|gem_dust"
       ],
       "outputs": [
         {
@@ -620,7 +620,7 @@
       "cost": 4750,
       "category": "multipurpose",
       "inputs": [
-        "dust"
+        "dust|metal_dust|gem_dust"
       ],
       "outputs": [
         {
@@ -1035,7 +1035,7 @@
       "cost": 19000,
       "category": "explosives",
       "inputs": [
-        "dust",
+        "metal_dust",
         "dust"
       ],
       "outputs": [
@@ -1048,7 +1048,7 @@
       ],
       "effect": "set",
       "value": 2,
-      "desc": "Combines metal dust + stone dust into blasting powder at $2."
+      "desc": "Combines metal dust + stone dust into blasting powder worth $2. Blasting powder's value can only be improved by machines specific to it."
     },
     "explosives_maker": {
       "name": "Explosives Maker",

@@ -72,6 +72,8 @@ class FlowOptimizer {
     this.prevPassValues = new Map([
       ["stone", 0],
       ["dust", 1],
+      ["metal_dust", 1],
+      ["gem_dust", 1],
       ["clay", 50],
       ["ceramic_casing", 150],
       ["glass", 30],
@@ -282,7 +284,7 @@ class FlowOptimizer {
         // For free items, use the RAW sell value (not processed)
         // This prevents compounding multipliers across passes
         // Raw values: what the item is worth BEFORE any machine processes it
-        const rawValues = { stone: 0, dust: 1, clay: 50, ceramic_casing: 150, glass: 30, gem: 0, bricks: 25, blasting_powder: 2 };
+        const rawValues = { stone: 0, dust: 1, metal_dust: 1, gem_dust: 1, clay: 50, ceramic_casing: 150, glass: 30, gem: 0, bricks: 25, blasting_powder: 2 };
         const inputItemValue = rawValues[itemType] ?? (this.prevPassValues?.get(itemType) || 0);
         let machineOutputValue = 0;
         if (m.effect === "set") machineOutputValue = m.value || 0;
