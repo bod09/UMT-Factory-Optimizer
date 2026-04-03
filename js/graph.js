@@ -1182,16 +1182,20 @@ class GraphGenerator {
             const produced = Math.round(remainingQty * chance);
             nextNode.quantity = produced;
             remainingQty -= produced;
-            // Set edge qty ONLY for cross-chain connections (gem → main chain)
-            // NOT for continuation path (next prospector, crusher)
+            // Set edge qty for PRODUCED item outputs (not continuation path)
+            // Cross-chain: gem → gem_cutter (main chain)
+            // Different-type side: ore → ore_upgrader (from dust sifter)
             if (!nextNode._edgeQty) nextNode._edgeQty = {};
             for (const dk of (nextNode.downstreamKeys || [])) {
               const dkNode = uniqueNodes.get(dk);
-              if (dkNode && !dkNode.isByproduct) {
-                // Cross-chain: gem → gem_cutter (main chain)
+              if (!dkNode) continue;
+              // Set edgeQty if: cross-chain OR different type output
+              const edgeType = nextNode._edgeType?.[dk];
+              const isDifferentType = edgeType && edgeType !== nextNode.type;
+              if (!dkNode.isByproduct || isDifferentType) {
                 nextNode._edgeQty[dk] = produced;
               }
-              // Side chain continuation: don't set edgeQty, let remainingQty handle it
+              // Same-type side chain continuation: don't set, let remainingQty handle
             }
           } else {
             // Non-chance: gets remaining qty
