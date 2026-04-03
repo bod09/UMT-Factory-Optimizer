@@ -1075,7 +1075,7 @@
       "category": "explosives",
       "inputs": [
         "blasting_powder",
-        "dust"
+        "dust|metal_dust|gem_dust"
       ],
       "outputs": [
         {
@@ -1087,7 +1087,7 @@
       "effect": "flat",
       "value": 1,
       "size": "3x3",
-      "desc": "Adds $1 to blasting powder. Only works ONCE per powder."
+      "desc": "Combines blasting powder with any dust to add $1. Only works once per powder."
     },
     "ore_upgrader": {
       "name": "Ore Upgrader",

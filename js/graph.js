@@ -1289,29 +1289,31 @@ class GraphGenerator {
       }
 
       // 5a2: Connect disconnected side chain nodes to their input sources
-      // e.g., Blasting Powder Chamber takes dust → connect from Crusher/Sifter dust output
+      // e.g., Blasting Powder Chamber needs metal_dust + dust → connect from appropriate sources
       for (const [key, data] of uniqueNodes) {
         if (!data.isByproduct) continue;
         // Check if this node has any incoming edges
         const hasIncoming = [...uniqueNodes.values()].some(d =>
           (d.childKeys || []).includes(key) || (d.downstreamKeys || []).includes(key)
         );
-        if (hasIncoming) continue; // Already connected
+        if (hasIncoming) continue;
 
-        // Find what input type this machine needs
+        // Find ALL input types this machine needs and connect each
         const m = registry.get(data.machine);
         if (!m?.inputs?.length) continue;
-        const inputType = m.inputs[0].split("|")[0];
 
-        // Find a side chain node that produces this type
-        for (const [srcKey, srcData] of uniqueNodes) {
-          if (srcKey === key || !srcData.isByproduct) continue;
-          if (srcData.type === inputType) {
-            if (!srcData.downstreamKeys) srcData.downstreamKeys = [];
-            if (!srcData.downstreamKeys.includes(key)) {
-              srcData.downstreamKeys.push(key);
+        for (const inputSpec of m.inputs) {
+          const inputTypes = inputSpec.split("|");
+          // Find a side chain node that produces any of these types
+          for (const [srcKey, srcData] of uniqueNodes) {
+            if (srcKey === key || !srcData.isByproduct) continue;
+            if (inputTypes.includes(srcData.type)) {
+              if (!srcData.downstreamKeys) srcData.downstreamKeys = [];
+              if (!srcData.downstreamKeys.includes(key)) {
+                srcData.downstreamKeys.push(key);
+              }
+              break; // Found source for this input, move to next input
             }
-            break;
           }
         }
       }
