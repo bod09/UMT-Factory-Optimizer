@@ -1156,20 +1156,23 @@ class GraphGenerator {
       }
     }
 
-    // Step B: Side chain chance scaling (Stone → Prospectors → Crusher → Sifter → ...)
+    // Step B: Side chain chance scaling using BFS queue
+    // Process ALL branches, not just one path
     for (const [key, data] of uniqueNodes) {
       if (data.machine !== "secondary_output") continue;
-      let remainingQty = data.quantity;
       const chanceVisited = new Set([key]);
-      let currentKey = key;
+      // Queue: [key, remainingQty] pairs
+      const queue = [[key, data.quantity]];
 
-      while (currentKey) {
+      while (queue.length > 0) {
+        const [currentKey, remainingQty] = queue.shift();
         const currentNode = uniqueNodes.get(currentKey);
-        if (!currentNode) break;
+        if (!currentNode) continue;
         const nextKeys = (currentNode.downstreamKeys || []).filter(dk =>
           !chanceVisited.has(dk) && uniqueNodes.get(dk)?.isByproduct
         );
-        if (nextKeys.length === 0) break;
+
+        let currentRemaining = remainingQty;
 
         for (const nextKey of nextKeys) {
           chanceVisited.add(nextKey);
@@ -1179,47 +1182,39 @@ class GraphGenerator {
 
           if (nextM?.effect === "chance") {
             const chance = nextM.value || 0.05;
-            const produced = Math.round(remainingQty * chance);
+            const produced = Math.round(currentRemaining * chance);
             nextNode.quantity = produced;
-            remainingQty -= produced;
-            // Set edge qty for PRODUCED item outputs (not continuation path)
-            // Cross-chain: gem → gem_cutter (main chain)
-            // Different-type side: ore → ore_upgrader (from dust sifter)
+            currentRemaining -= produced;
+            // Set edge qty for produced item outputs
             if (!nextNode._edgeQty) nextNode._edgeQty = {};
             for (const dk of (nextNode.downstreamKeys || [])) {
               const dkNode = uniqueNodes.get(dk);
               if (!dkNode) continue;
-              // Set edgeQty if: cross-chain OR different type output
               const edgeType = nextNode._edgeType?.[dk];
               const isDifferentType = edgeType && edgeType !== nextNode.type;
               if (!dkNode.isByproduct || isDifferentType) {
                 nextNode._edgeQty[dk] = produced;
               }
-              // Same-type side chain continuation: don't set, let remainingQty handle
             }
+            // Queue this chance machine for further traversal (next prospector etc.)
+            queue.push([nextKey, currentRemaining]);
           } else {
-            // Non-chance: gets remaining qty
+            // Non-chance: gets remaining qty or specific edge qty
             const edgeQty = currentNode._edgeQty?.[nextKey];
-            nextNode.quantity = edgeQty !== undefined ? edgeQty : remainingQty;
+            let nodeQty = edgeQty !== undefined ? edgeQty : currentRemaining;
             if (nextM?.inputs?.length >= 2) {
-              const newQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
-              nextNode.quantity = newQty;
-              remainingQty = newQty;
+              nodeQty = Math.max(1, Math.ceil(currentRemaining / nextM.inputs.length));
             }
-            // Propagate to downstream connections
+            nextNode.quantity = nodeQty;
+            // Propagate to downstream
             for (const dk of (nextNode.downstreamKeys || [])) {
               if (!nextNode._edgeQty) nextNode._edgeQty = {};
-              nextNode._edgeQty[dk] = nextNode.quantity;
+              nextNode._edgeQty[dk] = nodeQty;
             }
+            // Queue this node for further traversal
+            queue.push([nextKey, nodeQty]);
           }
         }
-        // Follow the non-chance key for continuation (e.g., Crusher after prospectors)
-        // If all are chance machines, follow the first one
-        const nonChanceKey = nextKeys.find(nk => {
-          const nkM = registry.get(uniqueNodes.get(nk)?.machine);
-          return nkM?.effect !== "chance";
-        });
-        currentKey = nonChanceKey || nextKeys[nextKeys.length - 1];
       }
     }
 
