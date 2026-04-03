@@ -1413,7 +1413,7 @@
       "cost": 1750,
       "category": "stonework",
       "inputs": [
-        "bar"
+        "ore"
       ],
       "outputs": [
         {
@@ -1424,7 +1424,7 @@
       ],
       "effect": "set",
       "value": 1,
-      "desc": "Crushes a raw metal bar into metal dust worth $1. Bar goes straight from smelter to crusher - no processing needed since it gets crushed anyway.",
+      "desc": "Ore \u2192 Smelter \u2192 Crusher \u2192 Metal Dust ($1). Dedicated crusher for making metal dust from raw ore (no bar processing needed).",
       "size": "1x1",
       "_isVariant": true
     }
