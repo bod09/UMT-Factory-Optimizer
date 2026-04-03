@@ -574,8 +574,18 @@ class GraphVisualizer {
       const newWidth = viewBox.width * scale;
       const newHeight = viewBox.height * scale;
 
-      // Limit zoom-out: can't zoom out further than showing all nodes
-      if (newWidth > origW || newHeight > origH) return;
+      // Zoom-out limit: snap back to original view
+      if (newWidth >= origW || newHeight >= origH) {
+        viewBox.x = origX;
+        viewBox.y = origY;
+        viewBox.width = origW;
+        viewBox.height = origH;
+        return;
+      }
+
+      // Zoom-in limit: stop when ~1 node fills the viewport
+      const minWidth = 250;
+      if (newWidth < minWidth) return;
 
       viewBox.x += (viewBox.width - newWidth) * mx;
       viewBox.y += (viewBox.height - newHeight) * my;
