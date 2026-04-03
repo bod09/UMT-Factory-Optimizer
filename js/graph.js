@@ -1154,8 +1154,17 @@ class GraphGenerator {
         } else if (data.machine === "duplicator") {
           data.quantity = inputQty * 2;
         } else {
-          // Single-input: output = input (modifiers, type converters)
-          data.quantity = inputQty;
+          // Single-input machine
+          // Check if parent has multiple consumers (fan-out)
+          // If so, use walkChain throughput (recipe-based visit count)
+          const parentConsumers = parentKeys.length === 1 ? (children.get(parentKeys[0]) || []).length : 0;
+          if (parentConsumers > 1) {
+            // Fan-out: keep walkChain value (e.g., Bolt x2 from recipe tree)
+            // Don't inherit parent's full qty
+          } else {
+            // Single consumer: inherit parent qty
+            data.quantity = inputQty;
+          }
         }
       }
 
