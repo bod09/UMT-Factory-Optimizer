@@ -1347,12 +1347,12 @@ class GraphGenerator {
 
         if (btgNode && gcNode) {
           const btgQty = btgNode[1].quantity;
-          // Gem cutter = bar_to_gem + prospector gem additions
           const gemExtra = additions.get(gcNode[0]) || 0;
-          gcNode[1].quantity = btgQty + gemExtra;
+          const totalGems = btgQty + gemExtra;
+          gcNode[1].quantity = totalGems;
           if (prNode) {
-            // Prismatic uses main chain gems only (bar_to_gem, not prospector extras)
-            prNode[1].quantity = Math.floor(btgQty / 2);
+            // Prismatic processes ALL gems (main chain + prospector extras)
+            prNode[1].quantity = Math.floor(totalGems / 2);
             if (g2bNode) g2bNode[1].quantity = prNode[1].quantity;
           }
         }
