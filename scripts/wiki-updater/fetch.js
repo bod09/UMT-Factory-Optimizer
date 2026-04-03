@@ -22,18 +22,23 @@ export async function fetchMachineList() {
   const data = await apiRequest({ action: 'parse', page: 'Machines', prop: 'wikitext' });
   const wikitext = data.parse?.wikitext?.['*'] || '';
 
+  // Detect event section boundary
+  const eventSectionStart = wikitext.indexOf('=== Event ===');
+
   // Extract ItemTile templates: {{ItemTile|name=...|value=...}}
   const machines = [];
   const regex = /\{\{ItemTile\|name=([^|]+)\|[^}]*value=\{\{Credits\|(\d+)\}\}/g;
   let match;
   while ((match = regex.exec(wikitext)) !== null) {
-    machines.push({ name: match[1].trim(), cost: parseInt(match[2]) });
+    const isEvent = eventSectionStart >= 0 && match.index > eventSectionStart;
+    machines.push({ name: match[1].trim(), cost: parseInt(match[2]), event: isEvent });
   }
 
   // Also check for medal-cost items (prestige)
   const medalRegex = /\{\{ItemTile\|name=([^|]+)\|[^}]*value=\{\{Medals\|(\d+)\}\}/g;
   while ((match = medalRegex.exec(wikitext)) !== null) {
-    machines.push({ name: match[1].trim(), medals: parseInt(match[2]) });
+    const isEvent = eventSectionStart >= 0 && match.index > eventSectionStart;
+    machines.push({ name: match[1].trim(), medals: parseInt(match[2]), event: isEvent });
   }
 
   return machines;

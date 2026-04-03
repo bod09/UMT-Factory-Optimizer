@@ -33,7 +33,8 @@
       "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object OwningProcess | ForEach-Object { Get-Process -Id $_OwningProcess -ErrorAction SilentlyContinue } | Select-Object Id, ProcessName\")",
       "WebSearch",
       "Bash(node scripts/wiki-updater/discover.js)",
-      "Bash(node scripts/wiki-updater/index.js --dry-run)"
+      "Bash(node scripts/wiki-updater/index.js --dry-run)",
+      "Bash(node -e \":*)"
     ]
   }
 }

@@ -61,6 +61,7 @@ export function mergeWikiData(existingMachines, wikiMachines) {
         _needsSetup: true,
       };
       if (wiki.medals) result[id].medals = wiki.medals;
+      if (wiki.event) result[id].event = true;
       changes.added.push({ id, name: wiki.name });
     }
   }
