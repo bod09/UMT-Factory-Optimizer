@@ -1146,6 +1146,13 @@ class GraphGenerator {
             if (nextM?.inputs?.length >= 2) {
               remainingQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
             }
+            // Propagate qty to this node's downstream connections
+            // (e.g., Ore Upgrader → Ore Cleaner gets the sifter's produced qty)
+            const nodeQty = nextNode.quantity;
+            for (const dk of (nextNode.downstreamKeys || [])) {
+              if (!nextNode._edgeQty) nextNode._edgeQty = {};
+              nextNode._edgeQty[dk] = nodeQty;
+            }
           }
         }
         // Follow the MAIN path (first key) for the next iteration
