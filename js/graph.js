@@ -1124,7 +1124,25 @@ class GraphGenerator {
         }
       }
 
-      // 3. Fix same-type combines (Alloy: floor(gem_to_bar / 2))
+      // 3. Fix oreCount=2 inflation for machines consuming enhanced bars
+      // Bolt, Plate, Coiler all show 2x because each bar has oreCount=2
+      // If a machine's child is alloy_furnace or gem_to_bar, halve its qty
+      if (btgEntry) {
+        for (const [key, data] of uniqueNodes) {
+          if (data.isByproduct) continue;
+          const m = registry.get(data.machine);
+          if (!m?.inputs || m.inputs.length !== 1) continue;
+          // Check if this machine consumes from alloy_furnace (enhanced bars)
+          if (data.childKeys?.length > 0) {
+            const childData = uniqueNodes.get(data.childKeys[0]);
+            if (childData?.machine === "alloy_furnace" || childData?.machine === "gem_to_bar") {
+              data.quantity = Math.floor(data.quantity / 2);
+            }
+          }
+        }
+      }
+
+      // 4. Fix same-type combines (Alloy: floor(gem_to_bar / 2))
       for (const [key, data] of uniqueNodes) {
         if (data.isByproduct) continue;
         const m = registry.get(data.machine);
@@ -1290,7 +1308,8 @@ class GraphGenerator {
             // Only cascade through single-input same-type machines
             if (mm?.inputs?.length !== 1) break;
             const outType = mm.outputs?.[0]?.type;
-            if (outType && outType !== "same" && outType !== mm.inputs[0]) break; // Type converter, stop
+            // Continue through type converters (smelter: ore→bar) - sifted ore goes through
+            // Only stop at enhancement machines or fan-out nodes
             md.quantity += edgeQty;
             cascaded.add(mk);
             nextCascade = mk;
