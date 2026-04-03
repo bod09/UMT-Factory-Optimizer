@@ -1323,31 +1323,33 @@ class GraphGenerator {
         }
       }
 
-      // 5a2: Connect disconnected side chain nodes to their input sources
-      // e.g., Blasting Powder Chamber needs metal_dust + dust → connect from appropriate sources
+      // 5a2: Connect nodes that need side chain inputs
+      // Handles both disconnected side chain nodes AND main chain nodes needing side chain items
+      // e.g., BPC needs metal_dust (main chain crusher) + dust (side chain crusher)
       for (const [key, data] of uniqueNodes) {
-        if (!data.isByproduct) continue;
-        // Check if this node has any incoming edges
-        const hasIncoming = [...uniqueNodes.values()].some(d =>
-          (d.childKeys || []).includes(key) || (d.downstreamKeys || []).includes(key)
-        );
-        if (hasIncoming) continue;
-
-        // Find ALL input types this machine needs and connect each
         const m = registry.get(data.machine);
         if (!m?.inputs?.length) continue;
 
+        // For each input type, check if a side chain source exists but isn't connected
         for (const inputSpec of m.inputs) {
           const inputTypes = inputSpec.split("|");
-          // Find a side chain node that produces any of these types
+          // Check if this input is already connected via childKeys
+          const alreadyConnected = (data.childKeys || []).some(ck => {
+            const cd = uniqueNodes.get(ck);
+            return cd && inputTypes.includes(cd.type);
+          });
+          if (alreadyConnected) continue;
+
+          // Find a side chain node that produces this type and connect it
           for (const [srcKey, srcData] of uniqueNodes) {
-            if (srcKey === key || !srcData.isByproduct) continue;
+            if (srcKey === key) continue;
+            if (!srcData.isByproduct) continue;
             if (inputTypes.includes(srcData.type)) {
               if (!srcData.downstreamKeys) srcData.downstreamKeys = [];
               if (!srcData.downstreamKeys.includes(key)) {
                 srcData.downstreamKeys.push(key);
               }
-              break; // Found source for this input, move to next input
+              break;
             }
           }
         }
