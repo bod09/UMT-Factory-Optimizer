@@ -1122,81 +1122,39 @@ class GraphGenerator {
         }
         if (nextKeys.length === 0) break;
 
-        // Process ALL branches - add them to a processing queue
-        // Each branch gets the appropriate qty and continues downstream
-        for (let bi = 1; bi < nextKeys.length; bi++) {
-          const branchKey = nextKeys[bi];
-          chanceVisited.add(branchKey);
-          const branchNode = uniqueNodes.get(branchKey);
-          const branchM = registry.get(branchNode?.machine);
-          if (branchNode) {
-            const edgeQty2 = currentNode._edgeQty?.[branchKey];
-            let branchQty = edgeQty2 !== undefined ? edgeQty2 : remainingQty;
-            if (branchM?.inputs?.length >= 2) {
-              branchQty = Math.max(1, Math.ceil(branchQty / branchM.inputs.length));
+        // Process ALL downstream nodes with chance machine awareness
+        for (const nextKey of nextKeys) {
+          chanceVisited.add(nextKey);
+          const nextNode = uniqueNodes.get(nextKey);
+          const nextM = registry.get(nextNode?.machine);
+          if (!nextNode) continue;
+
+          if (nextM?.effect === "chance") {
+            // Chance machine: qty = items PRODUCED (gems/ores), not throughput
+            const chance = nextM.value || 0.05;
+            const produced = Math.round(remainingQty * chance);
+            nextNode.quantity = produced;
+            remainingQty = remainingQty - produced;
+            // Update edge quantities for produced items
+            if (nextNode._edgeQty) {
+              for (const ek of Object.keys(nextNode._edgeQty)) {
+                const edgeType = nextNode._edgeType?.[ek];
+                if (edgeType && edgeType !== nextNode.type) {
+                  nextNode._edgeQty[ek] = produced;
+                }
+              }
             }
-            branchNode.quantity = branchQty;
-            // Continue walking this branch's downstream nodes
-            let bKey = branchKey;
-            let bQty = branchQty;
-            while (bKey) {
-              const bNode = uniqueNodes.get(bKey);
-              if (!bNode) break;
-              let bNext = null;
-              for (const bds of (bNode.downstreamKeys || [])) {
-                if (chanceVisited.has(bds)) continue;
-                const bdsNode = uniqueNodes.get(bds);
-                if (!bdsNode || !bdsNode.isByproduct) continue;
-                bNext = bds;
-                break;
-              }
-              if (!bNext) break;
-              chanceVisited.add(bNext);
-              const bNextNode = uniqueNodes.get(bNext);
-              const bNextM = registry.get(bNextNode?.machine);
-              const bEdgeQty = bNode._edgeQty?.[bNext];
-              bQty = bEdgeQty !== undefined ? bEdgeQty : bQty;
-              if (bNextM?.inputs?.length >= 2) {
-                bQty = Math.max(1, Math.ceil(bQty / bNextM.inputs.length));
-              }
-              bNextNode.quantity = bQty;
-              bKey = bNext;
+          } else {
+            // Non-chance: gets remaining qty or specific edge qty
+            const edgeQty = currentNode._edgeQty?.[nextKey];
+            nextNode.quantity = edgeQty || remainingQty;
+            if (nextM?.inputs?.length >= 2) {
+              remainingQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
             }
           }
         }
-        const nextKey = nextKeys[0];
-        chanceVisited.add(nextKey);
-        const nextNode = uniqueNodes.get(nextKey);
-        const nextM = registry.get(nextNode.machine);
-        if (nextM?.effect === "chance") {
-          // Chance machine: qty = items PRODUCED (gems/ores), not throughput
-          const chance = nextM.value || 0.05;
-          const produced = Math.round(remainingQty * chance);
-          nextNode.quantity = produced; // Show what it produces
-          remainingQty = remainingQty - produced;
-          // Fix edge quantities for chance machine outputs
-          // The ore/gem output edge should show produced qty, not the old value
-          if (nextNode._edgeQty) {
-            for (const ek of Object.keys(nextNode._edgeQty)) {
-              // Any edge that carries the PRODUCED item (not the passthrough)
-              const edgeType = nextNode._edgeType?.[ek];
-              if (edgeType && edgeType !== nextNode.type) {
-                // This edge carries a different type (e.g., ore from dust sifter)
-                nextNode._edgeQty[ek] = produced;
-              }
-            }
-          }
-        } else {
-          // Non-chance machine (crusher, clay mixer, etc): gets remaining qty
-          // UNLESS this node has a specific edgeQty set (e.g., sifter → ore upgrader)
-          const edgeQty = currentNode._edgeQty?.[nextKey];
-          nextNode.quantity = edgeQty || remainingQty;
-          // Multi-input machines divide
-          if (nextM?.inputs?.length >= 2) {
-            remainingQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
-          }
-        }
-        currentKey = nextKey;
+        // Follow the MAIN path (first key) for the next iteration
+        currentKey = nextKeys[0];
       }
     }
 
