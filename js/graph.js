@@ -81,7 +81,7 @@ class MachineRegistry {
   isAvailable(machineId, config) {
     const m = this.get(machineId);
     if (!m) return false;
-    if (m.event) return false; // Event-exclusive machines not available
+    if (m.event && !m.eventActive) return false; // Removed event machines not available
     if (m.cost && m.cost > config.budget) return false;
     if (m.medals) {
       const prestigeKey = this.prestigeKey(machineId);

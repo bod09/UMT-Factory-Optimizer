@@ -86,7 +86,11 @@ export async function fetchMachinePage(name) {
     if (costMatch) fields.cost = parseInt(costMatch[1]);
     if (medalMatch) fields.medals = parseInt(medalMatch[1]);
 
-    // Also extract the full page text for description parsing
+    // Check if event machine is currently removed/inactive
+    const isRemoved = /has since been\s*'''?removed'''?/i.test(wikitext) ||
+                       /no longer available/i.test(wikitext);
+    if (isRemoved) fields._removed = true;
+
     fields._fullText = wikitext;
 
     return fields;
@@ -115,6 +119,8 @@ export async function fetchAllMachines() {
         desc: page.Description || '',
         category: page.Type || '',
         size: page.Size || '',
+        event: item.event || false,
+        _removed: page._removed || false,
       });
       console.log(' OK');
     } else {

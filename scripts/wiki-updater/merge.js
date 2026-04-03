@@ -61,7 +61,11 @@ export function mergeWikiData(existingMachines, wikiMachines) {
         _needsSetup: true,
       };
       if (wiki.medals) result[id].medals = wiki.medals;
-      if (wiki.event) result[id].event = true;
+      if (wiki.event) {
+        result[id].event = true;
+        // If wiki says "removed", mark as inactive. Otherwise potentially active.
+        result[id].eventActive = !wiki._removed;
+      }
       changes.added.push({ id, name: wiki.name });
     }
   }
