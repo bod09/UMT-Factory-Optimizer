@@ -203,8 +203,10 @@ function applyZone(value) {
 function updateDepthLabels() {
   const minDepth = parseInt($("#depth-min").value) || 0;
   const maxDepth = parseInt($("#depth-max").value) || 0;
-  $("#depth-min-layer").textContent = getLayerName(minDepth);
-  $("#depth-max-layer").textContent = getLayerName(maxDepth);
+  const minLabel = $("#depth-min-layer");
+  if (minLabel) minLabel.textContent = getLayerName(minDepth);
+  const maxLabel = $("#depth-max-layer");
+  if (maxLabel) maxLabel.textContent = getLayerName(maxDepth);
 }
 
 function attachEvents() {
