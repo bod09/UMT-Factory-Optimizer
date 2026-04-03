@@ -1413,7 +1413,7 @@
       "cost": 1750,
       "category": "stonework",
       "inputs": [
-        "bar|alloy_bar"
+        "bar"
       ],
       "outputs": [
         {
@@ -1424,7 +1424,7 @@
       ],
       "effect": "set",
       "value": 1,
-      "desc": "Crushes metal bars into metal dust worth $1. Used for Blasting Powder Chamber.",
+      "desc": "Crushes a raw metal bar into metal dust worth $1. Bar goes straight from smelter to crusher - no processing needed since it gets crushed anyway.",
       "size": "1x1",
       "_isVariant": true
     }

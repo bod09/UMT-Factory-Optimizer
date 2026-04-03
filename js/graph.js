@@ -1582,6 +1582,17 @@ class GraphGenerator {
           if (edgeSet.has(edgePair)) continue;
           edgeSet.add(edgePair);
           const dsData = uniqueNodes.get(dsKey);
+          // Skip edges where target doesn't actually accept this type
+          const dsM2 = registry.get(dsData?.machine);
+          if (dsM2?.inputs?.length > 0 && data.type) {
+            const accepts = dsM2.inputs.some(inp =>
+              inp === "any" || inp === data.type || inp.split("|").includes(data.type)
+            );
+            if (!accepts && dsData?.machine !== "seller" && dsData?.machine !== "quality_assurance") {
+              edgeSet.add(edgePair); // Mark as processed so it's not re-added
+              continue;
+            }
+          }
           // Edge quantity: from _edgeQty if set, otherwise use target's quantity
           // For combine machines, multiply by input count (items flowing IN)
           let edgeQty = data._edgeQty?.[dsKey];
