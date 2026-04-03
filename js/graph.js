@@ -1084,45 +1084,87 @@ class GraphGenerator {
       }
     }
 
-    // Cross-chain quantity propagation runs AFTER all qty fixes below
-    // (chance chain, combine machines, type converters)
+    // === SINGLE FORWARD PASS: Calculate ALL quantities ===
+    // Replace 6+ post-processing patches with one clean traversal.
+    // Walk each chain (main + side) from source to sink.
+    // Rules:
+    //   - Source nodes (ore_source, secondary_output): qty = actualOreCount or byproductRatio
+    //   - Single-input machines: output qty = input qty (1:1)
+    //   - Same-type combine (Prismatic, Alloy): output = floor(input / inputCount)
+    //   - Mixed-type combine (Power Core, Super, etc.): output = min of available inputs (usually 1)
+    //   - Chance machines: output = round(input × chance), passthrough = input - output
+    //   - Enhancement path: bar_to_gem = tempering qty, gem_cutter = bar_to_gem, etc.
+    //   - Side chain additions: add to main chain targets AFTER main chain is calculated
 
-    // MOVED: Global propagation now runs AFTER all quantity fixes (see below)
+    // Step A: Set main chain quantities by walking from ore_source forward
+    {
+      // Build adjacency: for each node, find which nodes consume its output
+      // (which nodes have this node in their childKeys)
+      const consumers = new Map(); // key → [keys of nodes that consume this]
+      for (const [key, data] of uniqueNodes) {
+        for (const ck of (data.childKeys || [])) {
+          if (!consumers.has(ck)) consumers.set(ck, []);
+          consumers.get(ck).push(key);
+        }
+      }
 
-    // (Combine fix moved to after all other quantity fixes - see below)
+      // Walk from ore_source forward through consumers
+      const oreSourceKey = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "ore_source")?.[0];
+      if (oreSourceKey) {
+        const visited = new Set();
+        const queue = [oreSourceKey];
+        // Set ore_source qty
+        uniqueNodes.get(oreSourceKey).quantity = actualOreCount;
 
-    // Final quantity fix: recalculate chance machine chain quantities
-    // Walk from Stone → Prospector1 → Prospector2 → ... → Crusher
-    // Each prospector gets the REMAINING stone count, which decreases
+        while (queue.length > 0) {
+          const key = queue.shift();
+          if (visited.has(key)) continue;
+          visited.add(key);
+          const data = uniqueNodes.get(key);
+          if (!data || data.isByproduct) continue;
+          const myQty = data.quantity;
+
+          // Find all nodes that consume this node's output
+          const myConsumers = consumers.get(key) || [];
+          for (const cKey of myConsumers) {
+            if (visited.has(cKey)) continue;
+            const cData = uniqueNodes.get(cKey);
+            if (!cData || cData.isByproduct) continue;
+            const cM = registry.get(cData.machine);
+
+            if (cM?.inputs?.length >= 2) {
+              // Combine machine
+              const inputTypes = new Set(cM.inputs.flatMap(i => i.split("|")));
+              if (inputTypes.size === 1) {
+                // Same-type combine (Prismatic, Alloy): divide
+                cData.quantity = Math.floor(myQty / cM.inputs.length);
+              }
+              // Mixed-type: keep walkChain value (usually 1)
+            } else {
+              // Single-input: inherits parent qty
+              cData.quantity = myQty;
+            }
+            queue.push(cKey);
+          }
+        }
+      }
+    }
+
+    // Step B: Side chain chance scaling (Stone → Prospectors → Crusher → Sifter → ...)
     for (const [key, data] of uniqueNodes) {
       if (data.machine !== "secondary_output") continue;
-      // Recalculate stone qty from smelter's CURRENT qty × byproduct ratio
-      const smelterEntry = [...uniqueNodes.entries()].find(([k, d]) =>
-        !d.isByproduct && (d.machine === "ore_smelter" || d.machine === "blast_furnace")
-      );
-      if (smelterEntry) {
-        const smelterM = registry.get(smelterEntry[1].machine);
-        const bpRatio = smelterM?.byproductRatio || 0.5;
-        data.quantity = Math.round(smelterEntry[1].quantity * bpRatio);
-      }
       let remainingQty = data.quantity;
       const chanceVisited = new Set([key]);
       let currentKey = key;
+
       while (currentKey) {
         const currentNode = uniqueNodes.get(currentKey);
         if (!currentNode) break;
-        // Process ALL downstream byproduct nodes using a queue
-        // This ensures EVERY node gets updated, not just the first branch
-        const nextKeys = [];
-        for (const dsKey of (currentNode.downstreamKeys || [])) {
-          if (chanceVisited.has(dsKey)) continue;
-          const dsNode = uniqueNodes.get(dsKey);
-          if (!dsNode || !dsNode.isByproduct) continue;
-          nextKeys.push(dsKey);
-        }
+        const nextKeys = (currentNode.downstreamKeys || []).filter(dk =>
+          !chanceVisited.has(dk) && uniqueNodes.get(dk)?.isByproduct
+        );
         if (nextKeys.length === 0) break;
 
-        // Process ALL downstream nodes with chance machine awareness
         for (const nextKey of nextKeys) {
           chanceVisited.add(nextKey);
           const nextNode = uniqueNodes.get(nextKey);
@@ -1133,162 +1175,83 @@ class GraphGenerator {
             const chance = nextM.value || 0.05;
             const produced = Math.round(remainingQty * chance);
             nextNode.quantity = produced;
-            remainingQty = remainingQty - produced;
-            // Set edge qty for ALL downstream connections that carry produced items
+            remainingQty -= produced;
+            // Set edge qty for all downstream connections
             if (!nextNode._edgeQty) nextNode._edgeQty = {};
             for (const dk of (nextNode.downstreamKeys || [])) {
               nextNode._edgeQty[dk] = produced;
             }
           } else {
-            // Non-chance: gets remaining qty or specific edge qty
+            // Non-chance: gets remaining qty
             const edgeQty = currentNode._edgeQty?.[nextKey];
-            nextNode.quantity = edgeQty || remainingQty;
+            nextNode.quantity = edgeQty !== undefined ? edgeQty : remainingQty;
             if (nextM?.inputs?.length >= 2) {
-              remainingQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
+              const newQty = Math.max(1, Math.ceil(remainingQty / nextM.inputs.length));
+              nextNode.quantity = newQty;
+              remainingQty = newQty;
             }
-            // Propagate qty to this node's downstream connections
-            // (e.g., Ore Upgrader → Ore Cleaner gets the sifter's produced qty)
-            const nodeQty = nextNode.quantity;
+            // Propagate to downstream connections
             for (const dk of (nextNode.downstreamKeys || [])) {
               if (!nextNode._edgeQty) nextNode._edgeQty = {};
-              nextNode._edgeQty[dk] = nodeQty;
+              nextNode._edgeQty[dk] = nextNode.quantity;
             }
           }
         }
-        // Follow the MAIN path (first key) for the next iteration
-        currentKey = nextKeys[0];
+        currentKey = nextKeys[0]; // Follow main path
       }
     }
 
-    // Final quantity fix: type-converting machines (smelter: ore→bar) should
-    // match their input producer's quantity, not the accumulated walkChain throughput.
-    // The ore chain processes actualOreCount ores, so the smelter processes that many too.
-    if (actualOreCount > 0) {
-      for (const [key, data] of uniqueNodes) {
-        if (data.isByproduct) continue;
-        const m3 = registry.get(data.machine);
-        if (!m3?.inputs?.length || m3.inputs.length !== 1) continue;
-        const outType = m3.outputs?.[0]?.type;
-        const inType = m3.inputs[0].split("|")[0];
-        if (!outType || outType === "same") continue; // Not a type converter
-        if (outType === inType) continue; // Same type in/out = modifier, not converter
-        if (m3.inputs[0] === "any") continue;
-        // This is a type converter (e.g., smelter: ore→bar)
-        // Skip enhancement path machines (bar_to_gem, gem_to_bar) - their qty
-        // is set correctly by the enhancement path code
-        if (data.machine === "bar_to_gem" || data.machine === "gem_to_bar") continue;
-        // Set qty from input type's FIRST processor (not last, which might be gem_to_bar)
-        const inputType = m3.inputs[0].split("|")[0];
-        let inputQty = actualOreCount;
-        for (const [ik, id] of uniqueNodes) {
-          if (id.isByproduct) continue;
-          if (id.type === inputType && id.machine !== "ore_source" && id.machine !== data.machine
-              && id.machine !== "bar_to_gem" && id.machine !== "gem_to_bar") {
-            inputQty = id.quantity;
-          }
-        }
-        data.quantity = inputQty;
-      }
-    }
-
-    // (Edge qty updates moved to FINAL section)
-
-    // (Side chain qty additions moved to after all fixes - see LAST section below)
-
-    // (Enhancement fix moved to after type converter fix - see below)
-
-    // Fix type converters after propagation
-    if (actualOreCount > 0) {
-      for (const [key, data] of uniqueNodes) {
-        if (data.isByproduct) continue;
-        const m3 = registry.get(data.machine);
-        if (!m3?.inputs?.length || m3.inputs.length !== 1) continue;
-        const outType2 = m3.outputs?.[0]?.type;
-        const inType2 = m3.inputs[0].split("|")[0];
-        if (!outType2 || outType2 === "same" || outType2 === inType2) continue;
-        if (m3.inputs[0] === "any") continue;
-        let inputQty = actualOreCount;
-        for (const [ik, id] of uniqueNodes) {
-          if (id.isByproduct) continue;
-          if (id.type === inType2 && id.machine !== "ore_source" && id.machine !== data.machine) {
-            inputQty = id.quantity;
-          }
-        }
-        data.quantity = inputQty;
-      }
-    }
-
-    // Fix enhancement path: set quantities from bar_to_gem (now corrected by type converter fix)
-    const barToGemNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "bar_to_gem" && !d.isByproduct);
-    const gemCutterNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_cutter" && !d.isByproduct);
-    const prismaticNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "prismatic_crucible" && !d.isByproduct);
-    const gemToBarNode = [...uniqueNodes.entries()].find(([k, d]) => d.machine === "gem_to_bar" && !d.isByproduct);
-    if (barToGemNode && gemCutterNode) {
-      const btgQty = barToGemNode[1].quantity;
-      gemCutterNode[1].quantity = btgQty;
-      if (prismaticNode) {
-        prismaticNode[1].quantity = Math.floor(btgQty / 2);
-        if (gemToBarNode) {
-          gemToBarNode[1].quantity = prismaticNode[1].quantity;
-        }
-      }
-    }
-
-    // FINAL: Find and create cross-chain connections + handle excess
-    // For each side chain endpoint (last node before connecting to main chain),
-    // find which main chain node needs its output type and connect them
+    // Step C: Cross-chain connections + excess handling
+    const connectedMainKeys = new Set();
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct) continue;
+      if (sideData.machine === "sell_excess") continue;
       const sideType = sideData.type;
       if (!sideType) continue;
-      // Skip if this side node already has a main chain connection
-      // (e.g., Ore Upgrader already connects to Ore Cleaner)
       const alreadyHasMainConnection = (sideData.downstreamKeys || []).some(dk => {
         const dkNode = uniqueNodes.get(dk);
         return dkNode && !dkNode.isByproduct;
       });
       if (alreadyHasMainConnection) continue;
 
-      // Find main chain nodes that accept this type
       for (const [mainKey, mainData] of uniqueNodes) {
-        if (mainData.isByproduct) continue;
-        const mainM = registry.get(mainData.machine);
-        if (!mainM?.inputs) continue;
-        const accepts = mainM.inputs.some(inp =>
+        if (mainData.isByproduct || connectedMainKeys.has(mainKey)) continue;
+        const mainMachine = registry.get(mainData.machine);
+        if (!mainMachine?.inputs) continue;
+        const acceptsType = mainMachine.inputs.some(inp =>
           inp === sideType || inp.split("|").includes(sideType)
         );
-        if (!accepts) continue;
+        if (!acceptsType) continue;
+        connectedMainKeys.add(mainKey);
 
-        // Find the LAST node in this side chain (follow downstream to end)
-        let lastKey = sideKey;
-        const traceV = new Set([sideKey]);
+        // Find LAST side chain node
+        let lastSideKey = sideKey;
+        const visited = new Set([sideKey]);
         while (true) {
-          const lastNode = uniqueNodes.get(lastKey);
+          const lastNode = uniqueNodes.get(lastSideKey);
           const dsKeys = (lastNode?.downstreamKeys || []).filter(dk =>
-            !traceV.has(dk) && uniqueNodes.get(dk)?.isByproduct
+            !visited.has(dk) && uniqueNodes.get(dk)?.isByproduct &&
+            uniqueNodes.get(dk)?.machine !== "sell_excess"
           );
           if (dsKeys.length === 0) break;
-          lastKey = dsKeys[0];
-          traceV.add(lastKey);
+          lastSideKey = dsKeys[0];
+          visited.add(lastSideKey);
         }
 
-        const lastNode = uniqueNodes.get(lastKey);
-        if (!lastNode) continue;
-        // Connection made - no global guard needed (each side node connects independently)
-
-        // Connect last side node → main chain node
-        if (!lastNode.downstreamKeys) lastNode.downstreamKeys = [];
-        if (!lastNode.downstreamKeys.includes(mainKey)) {
-          lastNode.downstreamKeys.push(mainKey);
-        }
-
-        // Set edge qty and handle excess
-        const sideQty = lastNode.quantity || 0;
+        const lastSideData = uniqueNodes.get(lastSideKey);
+        const lastSideQty = lastSideData?.quantity || 0;
         const mainQty = mainData.quantity || 1;
-        const excess = sideQty - mainQty;
-        if (!lastNode._edgeQty) lastNode._edgeQty = {};
-        lastNode._edgeQty[mainKey] = Math.min(sideQty, mainQty);
+        const excess = lastSideQty - mainQty;
 
+        // Connect last → main
+        if (!lastSideData.downstreamKeys) lastSideData.downstreamKeys = [];
+        if (!lastSideData.downstreamKeys.includes(mainKey)) {
+          lastSideData.downstreamKeys.push(mainKey);
+        }
+        if (!lastSideData._edgeQty) lastSideData._edgeQty = {};
+        lastSideData._edgeQty[mainKey] = Math.min(lastSideQty, mainQty);
+
+        // Handle excess
         if (excess > 0) {
           const qaEntry = [...uniqueNodes.entries()].find(([k, d]) =>
             d.machine === "quality_assurance" && !d.isByproduct
@@ -1298,107 +1261,17 @@ class GraphGenerator {
           );
           const targetKey = qaEntry?.[0] || sellerEntry?.[0];
           if (targetKey) {
-            if (!lastNode.downstreamKeys.includes(targetKey)) {
-              lastNode.downstreamKeys.push(targetKey);
+            if (!lastSideData.downstreamKeys.includes(targetKey)) {
+              lastSideData.downstreamKeys.push(targetKey);
             }
-            lastNode._edgeQty[targetKey] = excess;
+            lastSideData._edgeQty[targetKey] = excess;
           }
         }
-        break; // Only connect to first matching main node
+        break;
       }
     }
 
-    // Edge qty for side→main connections should already be set explicitly
-    // by the code that created the connection. Don't auto-set from node qty.
-
-    // Recalculate same-type combine machines ONLY if input increased from propagation
-    // Then propagate the increase downstream through single-input machines
-    for (const [key, data] of uniqueNodes) {
-      if (data.isByproduct) continue;
-      const m4 = registry.get(data.machine);
-      if (!m4?.inputs || m4.inputs.length < 2) continue;
-      const ut4 = new Set(m4.inputs.flatMap(i => i.split("|")));
-      if (ut4.size > 1) continue;
-      if (data.childKeys?.length > 0) {
-        const childData = uniqueNodes.get(data.childKeys[0]);
-        if (childData) {
-          const newQty = Math.floor(childData.quantity / m4.inputs.length);
-          const qtyIncreased = newQty > data.quantity;
-          if (qtyIncreased) data.quantity = newQty;
-          // Check for excess: if combine output > downstream consumption, sell extra
-          if (qtyIncreased) {
-            // Find downstream machine that consumes this output
-            for (const [dk, dd] of uniqueNodes) {
-              if (dd.isByproduct || dk === key) continue;
-              if (!dd.childKeys?.includes(key)) continue;
-              const excess = data.quantity - dd.quantity;
-              if (excess > 0) {
-                // Route excess to QA → Seller
-                const qaKey = [...uniqueNodes.entries()].find(([k, d]) =>
-                  d.machine === "quality_assurance" && !d.isByproduct
-                )?.[0];
-                const sellerKey = [...uniqueNodes.entries()].find(([k, d]) =>
-                  d.machine === "seller" && !d.isByproduct
-                )?.[0];
-                const target = qaKey || sellerKey;
-                if (target) {
-                  if (!data.downstreamKeys) data.downstreamKeys = [];
-                  if (!data.downstreamKeys.includes(target)) {
-                    data.downstreamKeys.push(target);
-                  }
-                  if (!data._edgeQty) data._edgeQty = {};
-                  data._edgeQty[target] = excess;
-                  data._edgeQty[dk] = dd.quantity; // Show how many go to the next machine
-                }
-              }
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // LAST fix: combine machines + downstream propagation
-    // 1. Set combine qty = floor(input/inputCount)
-    // 2. Propagate to downstream single-input machines
-    for (const [key, data] of uniqueNodes) {
-      if (data.isByproduct) continue;
-      const m = registry.get(data.machine);
-      if (!m?.inputs || m.inputs.length < 2) continue;
-      const inputTypes = new Set(m.inputs.flatMap(i => i.split("|")));
-      if (inputTypes.size > 1) continue;
-      const childKey = data.childKeys?.[0];
-      const childData = childKey ? uniqueNodes.get(childKey) : null;
-      if (childData) {
-        const newQty = Math.floor(childData.quantity / m.inputs.length);
-        data.quantity = newQty;
-        // Propagate: find single-input machines that have THIS as their child
-        // and set their qty to match (e.g., gem_to_bar after prismatic)
-        for (const [pk, pd] of uniqueNodes) {
-          if (pd.isByproduct || pk === key) continue;
-          if (!pd.childKeys?.includes(key)) continue;
-          const pm = registry.get(pd.machine);
-          if (pm?.inputs?.length === 1) {
-            pd.quantity = newQty;
-            // Continue one more level (e.g., alloy_furnace after gem_to_bar)
-            for (const [pk2, pd2] of uniqueNodes) {
-              if (pd2.isByproduct || pk2 === pk) continue;
-              if (!pd2.childKeys?.includes(pk)) continue;
-              const pm2 = registry.get(pd2.machine);
-              if (pm2?.inputs?.length >= 2) {
-                const it2 = new Set(pm2.inputs.flatMap(i => i.split("|")));
-                if (it2.size <= 1) {
-                  pd2.quantity = Math.floor(newQty / pm2.inputs.length);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // VERY LAST: Add side chain quantities to direct main chain targets
-    // Runs AFTER all other fixes so additions don't get amplified
+    // Step D: Add side chain quantities to main chain targets (direct only)
     for (const [sideKey, sideData] of uniqueNodes) {
       if (!sideData.isByproduct || !sideData.downstreamKeys) continue;
       for (const dsKey of sideData.downstreamKeys) {
@@ -1407,15 +1280,11 @@ class GraphGenerator {
         const edgeQty = sideData._edgeQty?.[dsKey];
         if (!edgeQty || edgeQty <= 0) continue;
         if (dsNode.machine === "quality_assurance" || dsNode.machine === "seller") continue;
-        const dsM = registry.get(dsNode.machine);
-        if (dsM?.inputs?.length >= 2) {
-          const ut = new Set(dsM.inputs.flatMap(i => i.split("|")));
-          if (ut.size > 1) continue;
-        }
         dsNode.quantity += edgeQty;
       }
     }
 
+    // (All old post-processing removed - replaced by single forward pass above)
     // Step 2: Assign layers (depth from leaves)
     const depthMap = new Map();
     const layerVisited = new Set();
