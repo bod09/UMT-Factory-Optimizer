@@ -279,7 +279,7 @@ main {
 /* Config Panel */
 .config-bar {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -324,6 +324,19 @@ main {
   font-family: var(--font-mono);
   font-size: 0.85rem;
   width: 100%;
+  -moz-appearance: textfield;
+}
+
+.config-item input[type="number"]::-webkit-inner-spin-button,
+.config-item input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.config-item input:disabled,
+.config-item select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .config-item input:focus,
@@ -506,13 +519,14 @@ main {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
   cursor: pointer;
-  margin-top: 0.25rem;
+  white-space: nowrap;
+  padding: 0.45rem 0;
 }
 
-.theoretical-toggle input { accent-color: var(--cyan); width: 13px; height: 13px; }
+.theoretical-toggle input { accent-color: var(--cyan); width: 14px; height: 14px; cursor: pointer; }
 
 /* Progression */
 .section-desc {

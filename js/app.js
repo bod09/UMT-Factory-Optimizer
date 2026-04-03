@@ -73,7 +73,10 @@ function loadConfig() {
       $("#ore-select").value = config.oreSelect;
     }
     if (config.doubleSeller) $("#double-seller").checked = config.doubleSeller;
-    if (config.theoreticalMax) $("#theoretical-max").checked = config.theoreticalMax;
+    if (config.theoreticalMax) {
+      $("#theoretical-max").checked = config.theoreticalMax;
+      $("#budget").disabled = config.theoreticalMax;
+    }
     if (config.startingMoneyLevel) {
       const sml = $("#starting-money-level");
       if (sml) sml.value = config.startingMoneyLevel;
@@ -214,6 +217,9 @@ function attachEvents() {
     if (machineRegistry) runOptimizer(false);
   });
   $("#theoretical-max").addEventListener("change", () => {
+    const checked = $("#theoretical-max").checked;
+    // Grey out budget when Best Possible is ticked (uses unlimited)
+    $("#budget").disabled = checked;
     saveConfig();
     if (machineRegistry) runOptimizer(false);
   });
