@@ -1203,7 +1203,13 @@ class GraphGenerator {
             }
           }
         }
-        currentKey = nextKeys[0]; // Follow main path
+        // Follow the non-chance key for continuation (e.g., Crusher after prospectors)
+        // If all are chance machines, follow the first one
+        const nonChanceKey = nextKeys.find(nk => {
+          const nkM = registry.get(uniqueNodes.get(nk)?.machine);
+          return nkM?.effect !== "chance";
+        });
+        currentKey = nonChanceKey || nextKeys[nextKeys.length - 1];
       }
     }
 
