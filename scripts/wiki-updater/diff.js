@@ -1,6 +1,19 @@
 // Generate PR body with diff report
-export function generateDiffReport(changes) {
+export function generateDiffReport(changes, events) {
   const lines = ['## Wiki Update Report\n'];
+
+  // Event status
+  if (events?.length > 0) {
+    const active = events.filter(e => e.active);
+    if (active.length > 0) {
+      lines.push('### Active Events');
+      for (const e of active) {
+        lines.push(`- **${e.name}** (${e.startDate} to ${e.endDate})`);
+        if (e.machines?.length) lines.push(`  - Event machines: ${e.machines.join(', ')}`);
+      }
+      lines.push('');
+    }
+  }
 
   if (changes.added.length > 0) {
     lines.push('### New Machines Found');
