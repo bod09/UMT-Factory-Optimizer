@@ -401,21 +401,12 @@ function renderDepthSummary(minDepth, maxDepth, ores, gems) {
 }
 
 function renderOreSummary(ore) {
-  const container = $("#depth-ore-summary");
-  const depthRange = ore.depthMin !== undefined ? `${ore.depthMin}m - ${ore.depthMax}m` : '';
+  const hint = $("#ore-info");
+  if (!hint) return;
   const layer = ore.depthMin !== undefined ? getLayerName(ore.depthMin) : '';
-  const pickaxe = ore.depthMin !== undefined ? getRequiredPickaxe(ore.depthMax) : null;
-
-  container.innerHTML = `
-    <div class="depth-summary-content">
-      <div class="depth-info">
-        <h3>${ore.name}</h3>
-        <span class="ore-tag" style="font-size:1rem"><em>${formatMoney(ore.value)}</em> base value</span>
-        ${depthRange ? `<span class="depth-layers">${layer} (${depthRange})</span>` : ''}
-        ${pickaxe ? `<span class="depth-pickaxe">Requires: ${pickaxe.name}</span>` : ''}
-      </div>
-    </div>
-  `;
+  const depth = ore.depthMin !== undefined ? `${ore.depthMin}-${ore.depthMax}m` : '';
+  const parts = [layer, depth].filter(Boolean);
+  hint.textContent = parts.length > 0 ? parts.join(' | ') : '';
 }
 
 function renderChainResults(results, oresAtDepth) {
