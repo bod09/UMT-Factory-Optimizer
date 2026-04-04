@@ -779,7 +779,8 @@ class FlowOptimizer {
 
   // Find the cheapest way to produce a type (lowest oreCount)
   // Used by set-effect machines where input value doesn't matter
-  _findCheapestProducer(type, baseOreValue) {
+  _findCheapestProducer(type, baseOreValue, depth = 0) {
+    if (depth > 5) return null; // Prevent infinite recursion
     const producers = this.registry.getProducers(type);
     let cheapest = null;
 
@@ -795,7 +796,9 @@ class FlowOptimizer {
 
       for (const inp of prodM.inputs) {
         const t = inp.split("|")[0];
-        const resolved = this.getItemValue(t, baseOreValue);
+        // Try cheapest producer first, fall back to memo
+        let resolved = this._findCheapestProducer(t, baseOreValue, depth + 1);
+        if (!resolved) resolved = this.getItemValue(t, baseOreValue);
         if (!resolved) { valid = false; break; }
         totalOres += resolved.oreCount;
         inputs.push(resolved);
