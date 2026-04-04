@@ -409,6 +409,18 @@ class FlowGraphBuilder {
                 return (am?.inputs?.length || 1) - (bm?.inputs?.length || 1);
               });
               for (const gp of gemProcessors) path.push(gp.name);
+              // Polisher and QA are applied by solver if available
+              const oreChainTags = [];
+              // Check what tags the ore chain has by looking at ore processing machines
+              for (const [mid, mm] of registry.machines) {
+                if (mm.tag && registry.isAvailable(mid, config)) oreChainTags.push(mm.tag);
+              }
+              if (oreChainTags.includes("Polished") && registry.isAvailable("polisher", config)) {
+                path.push('Polisher');
+              }
+              if (registry.isAvailable("quality_assurance", config)) {
+                path.push('QA');
+              }
               path.push('Sell');
               chanceProduced = { qty: producedQty, label: `${gemType} Gem`, value: step.byproductValue || 0, path };
             } else {
