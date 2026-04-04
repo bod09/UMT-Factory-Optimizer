@@ -1424,7 +1424,7 @@
       ],
       "effect": "set",
       "value": 1,
-      "desc": "Ore \u2192 Smelter \u2192 Crusher \u2192 Metal Dust ($1). Dedicated crusher for making metal dust from raw ore (no bar processing needed).",
+      "desc": "Ore \u2192 Smelter \u2192 Crusher \u2192 Metal Dust ($1). Uses 1 ore per metal dust (cheapest path, no bar processing needed).",
       "size": "1x1",
       "_isVariant": true
     }

@@ -619,13 +619,22 @@ class FlowOptimizer {
           if (!bestInput) {
             bestInput = { ...input, resolvedType: t };
           } else {
-            // Compare per-ore after effect
-            const simA = this.simulateEffect(machine, bestInput.value);
-            const simB = this.simulateEffect(machine, input.value);
-            const perOreA = bestInput.oreCount > 0 ? simA / bestInput.oreCount : simA;
-            const perOreB = input.oreCount > 0 ? simB / input.oreCount : simB;
-            if (perOreB > perOreA) {
-              bestInput = { ...input, resolvedType: t };
+            // For set-effect machines: output is fixed regardless of input value
+            // Pick the CHEAPEST input (lowest oreCount) since value doesn't matter
+            if (machine.effect === "set") {
+              if (input.oreCount < bestInput.oreCount ||
+                  (input.oreCount === bestInput.oreCount && input.value < bestInput.value)) {
+                bestInput = { ...input, resolvedType: t };
+              }
+            } else {
+              // Normal: compare per-ore after effect
+              const simA = this.simulateEffect(machine, bestInput.value);
+              const simB = this.simulateEffect(machine, input.value);
+              const perOreA = bestInput.oreCount > 0 ? simA / bestInput.oreCount : simA;
+              const perOreB = input.oreCount > 0 ? simB / input.oreCount : simB;
+              if (perOreB > perOreA) {
+                bestInput = { ...input, resolvedType: t };
+              }
             }
           }
         }
