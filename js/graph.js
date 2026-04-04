@@ -164,7 +164,10 @@ class GraphGenerator {
           if (machineId === "smelter_byproduct" || machineId === "byproduct_free" || machineId === "byproduct_source" || machineId === "cycle_ref") continue;
           const m = registry.get(machineId);
           const type = "ore";
-          const oreKeyPrefix = node._cheapPath ? "cheap_" : "";
+          // Cheap path ore_source shares the main chain's node (one ore input, output splits)
+          // Other cheap path ore machines (if any) get separate keys
+          const useMainKey = node._cheapPath && machineId === "ore_source";
+          const oreKeyPrefix = (node._cheapPath && !useMainKey) ? "cheap_" : "";
           const key = getKey(oreKeyPrefix + machineId, type);
 
           if (!uniqueNodes.has(key)) {

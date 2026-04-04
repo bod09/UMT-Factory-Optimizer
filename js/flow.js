@@ -837,12 +837,22 @@ class FlowOptimizer {
           }
           return inp;
         });
+        // Include byproduct outputs (e.g., blast furnace stone)
+        let byproductOutputs;
+        if (prodM.byproducts) {
+          byproductOutputs = prodM.byproducts.map(bp => ({
+            type: bp.type,
+            ratio: prodM.byproductRatio || 0.5,
+            result: { value: 0, oreCount: 0, machine: "crusher", resolvedType: bp.type },
+          }));
+        }
         cheapest = {
           value: outputValue,
           oreCount: totalOres,
           perOre: totalOres > 0 ? outputValue / totalOres : outputValue,
           machine: prodId,
           inputs: cleanInputs,
+          byproductOutputs,
           _cheapPath: true,
         };
       }
