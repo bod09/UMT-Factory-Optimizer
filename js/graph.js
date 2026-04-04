@@ -1250,9 +1250,10 @@ class GraphGenerator {
         for (const [key, data] of uniqueNodes) {
           if (data.isByproduct || key.startsWith("cheap_")) continue;
           if (skipMachines.has(data.machine)) continue;
-          // Skip combine machines (prismatic, alloy) - their qty comes from combine fix
+          // Skip combine machines and enhancement path - their qty comes from fixes
           const mReg = registry.get(data.machine);
           if (mReg?.inputs?.length >= 2) continue;
+          if (data.machine === "gem_to_bar") continue; // Set by enhancement fix
           // Skip fan-out machines (bolt, plate, coiler) - their qty comes from recipe
           const parentConsumers = (children.get(key) || []).filter(ck => !uniqueNodes.get(ck)?.isByproduct);
           if (parentConsumers.length > 1) continue;
