@@ -578,36 +578,47 @@ class ChainSolver {
       if (m.gemType) {
         const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === m.gemType) : null;
         let gemVal = gemData?.value || 0;
-        // Find best gem processing
-        let bestProcessed = gemVal;
+
+        // Chain gem processing in correct order:
+        // 1. Single-input processors (gem_cutter: multiply 1.4x)
+        // 2. Flat modifiers (polisher: +$10) — before percentages to maximize
+        // 3. Same-type combines (prismatic: gem+gem combine 1.15x)
+        // 4. QA (percent 1.2x) — last for max effect
+
+        // Step 1: Find and apply single-input gem processors (multiply/flat)
+        let processed = gemVal;
+        const skipEff = new Set(["chance", "transport", "split", "overflow", "filter", "gate", "duplicate", "preserve", "set", "combine"]);
         for (const [procId, procM] of this.registry.machines) {
           if (!this.registry.isAvailable(procId, this.config)) continue;
-          if (!procM.inputs) continue;
-          const acceptsGem = procM.inputs.some(inp =>
-            inp === "gem" || inp.split("|").includes("gem") || inp === "any"
-          );
-          if (!acceptsGem) continue;
-          const skipEff = new Set(["chance", "transport", "split", "overflow", "filter", "gate", "duplicate", "preserve", "set"]);
+          if (!procM.inputs || procM.inputs.length !== 1) continue;
           if (skipEff.has(procM.effect)) continue;
-          if (procM.inputs.length > 1) {
-            const allGem = procM.inputs.every(inp => inp === "gem" || inp.split("|").includes("gem"));
-            if (!allGem) continue;
-          }
-          let processed = gemVal;
-          if (procM.effect === "flat") processed += procM.value;
-          else if (procM.effect === "multiply") processed *= procM.value;
-          else if (procM.effect === "combine") {
-            processed = gemVal * procM.inputs.length * procM.value / procM.inputs.length;
-          }
-          if (processed > bestProcessed) bestProcessed = processed;
+          const acceptsGem = procM.inputs.some(inp => inp === "gem" || inp.split("|").includes("gem"));
+          if (!acceptsGem) continue;
+          if (procM.effect === "multiply") processed *= procM.value;
+          else if (procM.effect === "flat") processed += procM.value;
         }
-        // Stack QA + polisher if safe
-        if (this._oreChainTags?.has("Polished")) bestProcessed += 10;
+
+        // Step 2: Polisher (+$10 flat) — before combines/QA so they amplify it
+        if (this._oreChainTags?.has("Polished")) processed += 10;
+
+        // Step 3: Same-type combines (prismatic: gem+gem → 1.15x combined)
+        for (const [combId, combM] of this.registry.machines) {
+          if (!this.registry.isAvailable(combId, this.config)) continue;
+          if (combM.effect !== "combine") continue;
+          const allGem = (combM.inputs || []).every(inp => inp === "gem" || inp.split("|").includes("gem"));
+          if (!allGem) continue;
+          const inputCount = (combM.inputs || []).length;
+          // Combined value per gem input: (N gems × value) × multiplier / N
+          processed = processed * inputCount * (combM.value || 1) / inputCount;
+        }
+
+        // Step 4: QA (1.2x percent) — last
         const qa = this.registry.get("quality_assurance");
         if (qa && this.registry.isAvailable("quality_assurance", this.config)) {
-          bestProcessed *= (1 + qa.value);
+          processed *= (1 + qa.value);
         }
-        byproductValue = bestProcessed * ds;
+
+        byproductValue = processed * ds;
       } else if (m.byproducts?.[0]?.type) {
         const bpResult = this._solve(m.byproducts[0].type, baseOreValue);
         byproductValue = bpResult?.value || 0;

@@ -390,34 +390,40 @@ class FlowGraphBuilder {
               const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === gemType) : null;
               nodeValue = gemData?.value || step.byproductValue || 0;
               secondaryValue = step.value || 0;
-              // Build processing path for tooltip
+              // Build processing path for tooltip — must match solver order:
+              // 1. Single-input processors (Gem Cutter)
+              // 2. Polisher (+flat, before % machines)
+              // 3. Same-type combines (Prismatic)
+              // 4. QA (% last)
               const path = [gemType + ' Gem'];
-              const gemProcessors = [];
+              const skipEff = new Set(['chance','transport','split','overflow','filter','gate','duplicate','preserve','set','combine']);
+
+              // Step 1: single-input gem processors
               for (const [gpId, gpM] of registry.machines) {
                 if (!registry.isAvailable(gpId, config)) continue;
-                const acceptsGem = (gpM.inputs || []).some(inp => inp === 'gem' || inp.split('|').includes('gem'));
+                if (!gpM.inputs || gpM.inputs.length !== 1) continue;
+                if (skipEff.has(gpM.effect)) continue;
+                const acceptsGem = gpM.inputs.some(inp => inp === 'gem' || inp.split('|').includes('gem'));
                 if (!acceptsGem) continue;
-                const skip = new Set(['chance','transport','split','overflow','filter','gate','duplicate','preserve','set']);
-                if (skip.has(gpM.effect)) continue;
-                if (gpM.inputs.length > 1 && !gpM.inputs.every(inp => inp === 'gem' || inp.split('|').includes('gem'))) continue;
-                gemProcessors.push({ id: gpId, name: gpM.name || gpId, effect: gpM.effect });
+                path.push(gpM.name || gpId);
               }
-              // Sort: single-input first (gem_cutter), then combine (prismatic)
-              gemProcessors.sort((a, b) => {
-                const am = registry.get(a.id);
-                const bm = registry.get(b.id);
-                return (am?.inputs?.length || 1) - (bm?.inputs?.length || 1);
-              });
-              for (const gp of gemProcessors) path.push(gp.name);
-              // Polisher and QA are applied by solver if available
-              const oreChainTags = [];
-              // Check what tags the ore chain has by looking at ore processing machines
-              for (const [mid, mm] of registry.machines) {
-                if (mm.tag && registry.isAvailable(mid, config)) oreChainTags.push(mm.tag);
-              }
-              if (oreChainTags.includes("Polished") && registry.isAvailable("polisher", config)) {
+
+              // Step 2: Polisher (flat, before combines/QA)
+              const polisher = registry.get("polisher");
+              if (polisher?.tag && registry.isAvailable("polisher", config)) {
                 path.push('Polisher');
               }
+
+              // Step 3: same-type gem combines (Prismatic)
+              for (const [gpId, gpM] of registry.machines) {
+                if (!registry.isAvailable(gpId, config)) continue;
+                if (gpM.effect !== 'combine') continue;
+                const allGem = (gpM.inputs || []).every(inp => inp === 'gem' || inp.split('|').includes('gem'));
+                if (!allGem) continue;
+                path.push(gpM.name || gpId);
+              }
+
+              // Step 4: QA (percent, last)
               if (registry.isAvailable("quality_assurance", config)) {
                 path.push('QA');
               }
