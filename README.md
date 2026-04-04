@@ -49,7 +49,23 @@ Game data comes from the **[UMT Wiki](https://umt.miraheze.org/)**. If you notic
 
 ## Tech Stack
 
-Pure HTML/CSS/JavaScript - no build tools, no frameworks, no dependencies. Hosted on GitHub Pages.
+Pure HTML/CSS/JavaScript hosted on GitHub Pages. One external dependency: [dagre](https://github.com/dagrejs/dagre) (~15KB, CDN) for automatic graph layout.
+
+### Architecture
+
+```
+data/machines.json          ← Source of truth for all machines
+        ↓
+js/chain-solver.js          ← ChainSolver: finds optimal $/ore chains
+        ↓                      (memoized recursive value maximization)
+js/graph-builder.js         ← Single-pass graph construction from solver output
+        ↓
+js/graph-layout.js          ← dagre wrapper (Sugiyama layered DAG layout)
+        ↓
+js/visualizer.js            ← SVG rendering with pan/zoom
+```
+
+Supporting: `js/graph.js` (MachineRegistry), `js/optimizer.js` (config wrapper), `js/app.js` (UI), `js/data.js` (game constants).
 
 ## Attribution & License
 
