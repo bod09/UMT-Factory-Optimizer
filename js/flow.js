@@ -886,9 +886,24 @@ class FlowOptimizer {
     for (const modId of modifiers) {
       const mod = this.registry.get(modId);
       if (!mod || !this.registry.isAvailable(modId, this.config)) continue;
-      // Skip multi-input machines - they're not simple modifiers
-      // (e.g., blasting_powder_refiner needs dust + powder, not just powder)
-      if (mod.inputs && mod.inputs.length > 1) continue;
+      // Multi-input modifiers (like BPR: powder + dust → refined powder)
+      // Allow if: one input is the type being modified, other inputs are free (oreCount=0)
+      if (mod.inputs && mod.inputs.length > 1) {
+        const hasTargetType = mod.inputs.some(inp => inp === type || inp.split("|").includes(type));
+        if (!hasTargetType) continue;
+        // Check all OTHER inputs are free
+        let allOthersFree = true;
+        for (const inp of mod.inputs) {
+          if (inp === type || inp.split("|").includes(type)) continue;
+          const types = inp.split("|");
+          const anyFree = types.some(t => {
+            const v = this.getItemValue(t, 0);
+            return v && v.oreCount === 0;
+          });
+          if (!anyFree) { allOthersFree = false; break; }
+        }
+        if (!allOthersFree) continue;
+      }
 
       if (skipInputTypes && skipInputTypes.size > 0) {
         const modInputTypes = (mod.inputs || []).flatMap(i => i.split("|"));
