@@ -590,6 +590,50 @@ class FlowGraphBuilder {
       }
     }
 
+    // Fix byproduct quantities: secondary_output nodes were created during tree walk
+    // when the producer had initial qty, not final. Recalculate from producer's final qty.
+    for (const n of nodes) {
+      if (n.machine !== "secondary_output") continue;
+      // Find the producer: the edge TO this secondary_output
+      const producerEdge = edges.find(e => e.to === n.id);
+      if (!producerEdge) continue;
+      const producer = nodeById.get(producerEdge.from);
+      if (!producer) continue;
+      const producerMachine = registry.get(producer.machine);
+      const ratio = producerMachine?.byproductRatio || 0.5;
+      n.quantity = Math.max(1, Math.round(producer.quantity * ratio));
+    }
+
+    // Also propagate byproduct quantities to downstream nodes (prospectors, crushers, etc.)
+    // BFS from each secondary_output following byproduct edges downstream
+    for (const n of nodes) {
+      if (n.machine !== "secondary_output") continue;
+      let currentQty = n.quantity;
+      const bpVisited = new Set([n.id]);
+      const bpQueue = [n.id];
+      while (bpQueue.length > 0) {
+        const curId = bpQueue.shift();
+        // Walk downstream: find edges FROM curId (curId feeds TO downstream nodes)
+        const downstream = consumersOf.get(curId) || [];
+        for (const dsId of downstream) {
+          if (bpVisited.has(dsId)) continue;
+          const dsEdge = edges.find(e => e.from === curId && e.to === dsId);
+          if (!dsEdge || dsEdge.kind !== "byproduct") continue;
+          bpVisited.add(dsId);
+          const dsNode = nodeById.get(dsId);
+          if (dsNode) {
+            dsNode.quantity = currentQty;
+            // Chance machines reduce remaining for subsequent nodes
+            const dsMachine = registry.get(dsNode.machine);
+            if (dsMachine?.effect === "chance") {
+              currentQty = Math.round(currentQty * (1 - (dsMachine.value || 0.05)));
+            }
+          }
+          bpQueue.push(dsId);
+        }
+      }
+    }
+
     return { nodes, edges };
   }
 }
