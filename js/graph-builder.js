@@ -43,12 +43,14 @@ class FlowGraphBuilder {
     }
 
     // Walk the flow chain tree recursively, creating nodes and edges
-    function walkNode(node, parentId, parentKey, isEnhancement, isCheapPath) {
+    // parentQty: how many items the parent needs from this node
+    function walkNode(node, parentId, parentKey, isEnhancement, isCheapPath, parentQty) {
       if (!node) return null;
+      if (parentQty === undefined) parentQty = productQty;
 
       // Handle ore processing chain (flat machines[] array, no .machine property)
       if (node.machines && Array.isArray(node.machines)) {
-        return walkOreChain(node, parentId, parentKey, isCheapPath);
+        return walkOreChain(node, parentId, parentKey, isCheapPath, parentQty);
       }
 
       if (!node.machine) return null;
@@ -66,13 +68,13 @@ class FlowGraphBuilder {
       const prefix = (isCheapPath || node._cheapPath) ? "cheap_" : "";
       const key = nodeKey(machine, type, prefix);
 
-      // Dedup: if already visited, just add edge from this to parent
+      // Dedup: if already visited, just add edge
       if (visited.has(key)) {
         const existingId = visited.get(key);
         if (parentId !== null && existingId !== parentId) {
           edges.push({
             from: existingId, to: parentId,
-            itemType: type, quantity: 0, kind: isEnhancement ? "enhancement" : "main"
+            itemType: type, quantity: parentQty, kind: isEnhancement ? "enhancement" : "main"
           });
         }
         return existingId;
@@ -84,8 +86,8 @@ class FlowGraphBuilder {
 
       const isCheap = isCheapPath || !!node._cheapPath;
       const quantity = isCheap
-        ? (node.oreCount || 1) // Cheap path: use flow's ore count directly
-        : getQuantity(machine, type, node);
+        ? (node.oreCount || 1)
+        : parentQty; // Use demand from parent, not global formula
 
       nodes.push({
         id, machine, type,
@@ -107,12 +109,12 @@ class FlowGraphBuilder {
         });
       }
 
-      // Recurse into inputs
+      // Recurse into inputs — each input needs `quantity` items
       if (node.inputs) {
         for (const child of node.inputs) {
           if (!child) continue;
           const childIsCheap = isCheap || !!child._cheapPath;
-          walkNode(child, id, key, false, childIsCheap);
+          walkNode(child, id, key, false, childIsCheap, quantity);
         }
       }
 
@@ -243,7 +245,7 @@ class FlowGraphBuilder {
     }
 
     // Walk ore processing chain (flat machines[] array like [ore_upgrader, ore_cleaner, polisher, philosophers_stone])
-    function walkOreChain(node, parentId, parentKey, isCheapPath) {
+    function walkOreChain(node, parentId, parentKey, isCheapPath, parentQty) {
       const prefix = (isCheapPath || node._cheapPath) ? "cheap_" : "";
       let prevId = null;
 
@@ -507,7 +509,69 @@ class FlowGraphBuilder {
     }
 
     // Walk the chain tree
-    walkNode(chainResult, topParentId, null, false, false);
+    walkNode(chainResult, topParentId, null, false, false, productQty);
+
+    // === QUANTITY PROPAGATION ===
+    // The tree walk sets initial quantities from parentQty, but shared nodes
+    // (alloy_furnace used by 5 consumers) only got the FIRST consumer's qty.
+    // Fix: top-down BFS from seller, each node's qty = sum of consumer demand.
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+
+    // Build consumer map: for each node, which nodes consume it? (edges FROM this TO consumer)
+    const consumersOf = new Map(); // nodeId → [consumerId, ...]
+    for (const edge of edges) {
+      if (!consumersOf.has(edge.from)) consumersOf.set(edge.from, []);
+      consumersOf.get(edge.from).push(edge.to);
+    }
+    // Build supplier map: for each node, which nodes supply it? (edges TO this FROM supplier)
+    const suppliersOf = new Map();
+    for (const edge of edges) {
+      if (!suppliersOf.has(edge.to)) suppliersOf.set(edge.to, []);
+      suppliersOf.get(edge.to).push(edge.from);
+    }
+
+    // Topological sort (BFS from seller) then propagate quantities top-down
+    const inDegree = new Map();
+    for (const n of nodes) inDegree.set(n.id, 0);
+    for (const edge of edges) {
+      inDegree.set(edge.from, (inDegree.get(edge.from) || 0) + 1);
+    }
+    // Start from nodes with no consumers (seller)
+    const topo = [];
+    const q = [];
+    for (const [id, deg] of inDegree) {
+      if (deg === 0) q.push(id);
+    }
+    while (q.length > 0) {
+      const id = q.shift();
+      topo.push(id);
+      for (const suppId of (suppliersOf.get(id) || [])) {
+        inDegree.set(suppId, inDegree.get(suppId) - 1);
+        if (inDegree.get(suppId) === 0) q.push(suppId);
+      }
+    }
+
+    // Propagate: each node's qty = sum of qty demanded by its consumers
+    // Seller starts at productQty, everything flows down from there
+    for (const id of topo) {
+      const nd = nodeById.get(id);
+      if (!nd) continue;
+
+      // For the root (seller), keep productQty
+      const consumers = consumersOf.get(id) || [];
+      if (consumers.length > 0) {
+        // This node's qty = sum of what each consumer needs from it
+        let totalDemand = 0;
+        for (const consId of consumers) {
+          const consNode = nodeById.get(consId);
+          if (consNode) totalDemand += consNode.quantity;
+        }
+        // Only update if we have consumer demand (don't override root nodes)
+        if (totalDemand > 0 && nd.machine !== "seller" && nd.machine !== "quality_assurance") {
+          nd.quantity = totalDemand;
+        }
+      }
+    }
 
     return { nodes, edges };
   }
