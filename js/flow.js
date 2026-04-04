@@ -837,14 +837,17 @@ class FlowOptimizer {
           }
           return inp;
         });
-        // Include byproduct outputs (e.g., blast furnace stone)
+        // Include byproduct outputs using the actual memoized result (with full chain data)
         let byproductOutputs;
         if (prodM.byproducts) {
-          byproductOutputs = prodM.byproducts.map(bp => ({
-            type: bp.type,
-            ratio: prodM.byproductRatio || 0.5,
-            result: { value: 0, oreCount: 0, machine: "crusher", resolvedType: bp.type },
-          }));
+          byproductOutputs = prodM.byproducts.map(bp => {
+            const bpResult = this.getItemValue(bp.type, baseOreValue);
+            return {
+              type: bp.type,
+              ratio: prodM.byproductRatio || 0.5,
+              result: bpResult || { value: 0, oreCount: 0, machine: "crusher", resolvedType: bp.type },
+            };
+          });
         }
         cheapest = {
           value: outputValue,
