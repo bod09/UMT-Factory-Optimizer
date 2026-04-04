@@ -527,6 +527,49 @@ class FlowGraphBuilder {
       }
     }
 
+    // --- Phase C: Excess routing ---
+    // Byproduct chain nodes that produce more than their main chain consumers
+    // need get "Sell Excess" nodes to show where surplus goes.
+    // Rebuild consumersOf after all edges are finalized
+    const finalConsumersOf = new Map();
+    for (const edge of edges) {
+      if (!finalConsumersOf.has(edge.from)) finalConsumersOf.set(edge.from, []);
+      finalConsumersOf.get(edge.from).push(edge);
+    }
+
+    for (const n of nodes) {
+      if (n.quantity <= 0) continue;
+      // Only check nodes that have at least one main/enhancement consumer
+      const outEdges = finalConsumersOf.get(n.id) || [];
+      const mainOutEdges = outEdges.filter(e => e.kind !== "byproduct");
+      if (mainOutEdges.length === 0) continue;
+
+      // Sum demand from main chain consumers
+      let totalConsumed = 0;
+      for (const e of mainOutEdges) {
+        totalConsumed += e.quantity || 0;
+      }
+
+      const excess = n.quantity - totalConsumed;
+      if (excess > 0 && totalConsumed > 0) {
+        // Create a "Sell Excess" node
+        const excessId = nextId++;
+        const ds = config.hasDoubleSeller ? 2 : 1;
+        const excessValue = Math.round((n.value || 0) * ds);
+        nodes.push({
+          id: excessId, machine: "sell_excess", type: n.type,
+          name: "Sell Excess", value: excessValue,
+          quantity: excess, category: "source",
+        });
+        nodeById.set(excessId, nodes[nodes.length - 1]);
+        edges.push({
+          from: n.id, to: excessId,
+          itemType: ITEM_TYPES[n.type] || n.type,
+          quantity: excess, kind: "byproduct",
+        });
+      }
+    }
+
     return { nodes, edges };
   }
 }

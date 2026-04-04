@@ -17,11 +17,11 @@ class GraphLayoutEngine {
     const g = new dagre.graphlib.Graph();
     g.setGraph({
       rankdir: "LR",        // Left to right flow
-      nodesep: 30,           // Vertical gap between nodes in same layer
-      ranksep: 180,          // Horizontal gap between layers
-      edgesep: 12,           // Gap between edges
-      marginx: 40,
-      marginy: 40,
+      nodesep: 20,           // Vertical gap between nodes in same layer
+      ranksep: 120,          // Horizontal gap between layers
+      edgesep: 8,            // Gap between edges
+      marginx: 20,
+      marginy: 20,
     });
     g.setDefaultEdgeLabel(() => ({}));
 
