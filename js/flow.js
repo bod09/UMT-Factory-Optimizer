@@ -612,29 +612,33 @@ class FlowOptimizer {
         let bestInput = null;
 
         for (const t of types) {
-          const input = this.getItemValue(t, baseOreValue);
+          let input;
+          if (machine.effect === "set") {
+            // Set-effect: find the CHEAPEST producer (lowest oreCount)
+            // Don't use memo (which has the most valuable/expensive version)
+            input = this._findCheapestProducer(t, baseOreValue);
+          }
+          if (!input) {
+            input = this.getItemValue(t, baseOreValue);
+          }
           if (!input || input.value === null) continue;
 
-          // For union types: pick best output per ore after applying machine effect
           if (!bestInput) {
             bestInput = { ...input, resolvedType: t };
+          } else if (machine.effect === "set") {
+            // Set-effect: pick lowest oreCount
+            if (input.oreCount < bestInput.oreCount ||
+                (input.oreCount === bestInput.oreCount && input.value < bestInput.value)) {
+              bestInput = { ...input, resolvedType: t };
+            }
           } else {
-            // For set-effect machines: output is fixed regardless of input value
-            // Pick the CHEAPEST input (lowest oreCount) since value doesn't matter
-            if (machine.effect === "set") {
-              if (input.oreCount < bestInput.oreCount ||
-                  (input.oreCount === bestInput.oreCount && input.value < bestInput.value)) {
-                bestInput = { ...input, resolvedType: t };
-              }
-            } else {
-              // Normal: compare per-ore after effect
-              const simA = this.simulateEffect(machine, bestInput.value);
-              const simB = this.simulateEffect(machine, input.value);
-              const perOreA = bestInput.oreCount > 0 ? simA / bestInput.oreCount : simA;
-              const perOreB = input.oreCount > 0 ? simB / input.oreCount : simB;
-              if (perOreB > perOreA) {
-                bestInput = { ...input, resolvedType: t };
-              }
+            // Normal: compare per-ore after effect
+            const simA = this.simulateEffect(machine, bestInput.value);
+            const simB = this.simulateEffect(machine, input.value);
+            const perOreA = bestInput.oreCount > 0 ? simA / bestInput.oreCount : simA;
+            const perOreB = input.oreCount > 0 ? simB / input.oreCount : simB;
+            if (perOreB > perOreA) {
+              bestInput = { ...input, resolvedType: t };
             }
           }
         }
@@ -771,6 +775,49 @@ class FlowOptimizer {
       case "set": return machine.value;
       default: return inputValue;
     }
+  }
+
+  // Find the cheapest way to produce a type (lowest oreCount)
+  // Used by set-effect machines where input value doesn't matter
+  _findCheapestProducer(type, baseOreValue) {
+    const producers = this.registry.getProducers(type);
+    let cheapest = null;
+
+    for (const prodId of producers) {
+      const prodM = this.registry.get(prodId);
+      if (!this.registry.isAvailable(prodId, this.config)) continue;
+      if (!prodM?.inputs?.length) continue;
+
+      // Calculate ore cost for this producer
+      let totalOres = 0;
+      let valid = true;
+      const inputs = [];
+
+      for (const inp of prodM.inputs) {
+        const t = inp.split("|")[0];
+        const resolved = this.getItemValue(t, baseOreValue);
+        if (!resolved) { valid = false; break; }
+        totalOres += resolved.oreCount;
+        inputs.push(resolved);
+      }
+
+      if (!valid || totalOres <= 0) continue;
+
+      // Compute output value
+      const outputValue = this.simulateEffect(prodM, inputs[0]?.value || 0);
+
+      if (!cheapest || totalOres < cheapest.oreCount) {
+        cheapest = {
+          value: outputValue,
+          oreCount: totalOres,
+          perOre: totalOres > 0 ? outputValue / totalOres : outputValue,
+          machine: prodId,
+          inputs,
+        };
+      }
+    }
+
+    return cheapest;
   }
 
   // Apply machine effect to compute output value

@@ -1413,7 +1413,7 @@
       "cost": 1750,
       "category": "stonework",
       "inputs": [
-        "ore"
+        "bar"
       ],
       "outputs": [
         {
@@ -1424,7 +1424,7 @@
       ],
       "effect": "set",
       "value": 1,
-      "desc": "Ore \u2192 Smelter \u2192 Crusher \u2192 Metal Dust ($1). Uses 1 ore per metal dust (cheapest path, no bar processing needed).",
+      "desc": "Crushes a bar into metal dust ($1). Best paired with Blast Furnace: 1 ore \u2192 bar (crush to metal dust) + stone (crush to stone dust) \u2192 both into BPC.",
       "size": "1x1",
       "_isVariant": true
     }
