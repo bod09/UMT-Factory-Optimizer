@@ -1167,16 +1167,26 @@ class GraphGenerator {
       }
 
       // Phase 3: Forward propagate main chain quantities in topo order
+      let cheapPathOres = 0; // Track ores used by cheap path (BPC etc.)
       for (const key of topoOrder) {
         const data = uniqueNodes.get(key);
         if (!data) continue;
         const m = registry.get(data.machine);
 
         if (data.machine === "ore_source") {
-          // Cheap path ore_source keeps its walkChain value (e.g., 1 for BPC)
-          // Main chain ore_source gets actualOreCount
           if (!key.startsWith("cheap_")) {
             data.quantity = actualOreCount;
+          }
+          continue;
+        }
+
+        // Cheap path nodes: use oreCount from flow (1 for BPC), not walkChain throughput
+        if (key.startsWith("cheap_")) {
+          data.quantity = data.oreCount || 1;
+          // Track total cheap path ores so main chain can subtract
+          if (!cheapPathOres) cheapPathOres = 0;
+          if (data.machine === "blast_furnace" || data.machine === "ore_smelter") {
+            cheapPathOres += data.quantity;
           }
           continue;
         }
@@ -1221,6 +1231,23 @@ class GraphGenerator {
           } else {
             // Single consumer: inherit parent qty
             data.quantity = inputQty;
+          }
+        }
+      }
+
+      // Phase 3b: Subtract cheap path ores from main chain
+      // If BPC uses 1 ore via cheap path, main chain gets 16 instead of 17
+      if (cheapPathOres > 0) {
+        for (const [key, data] of uniqueNodes) {
+          if (data.isByproduct || key.startsWith("cheap_")) continue;
+          // Reduce ore processors (ore_source excluded - it shows total)
+          if (data.machine === "ore_source") continue;
+          // Only reduce nodes in the ore processing chain (type=ore or smelter/tempering)
+          const isOreProcessor = data.type === "ore" ||
+            data.machine === "blast_furnace" || data.machine === "ore_smelter" ||
+            data.machine === "tempering_forge";
+          if (isOreProcessor && data.quantity > cheapPathOres) {
+            data.quantity -= cheapPathOres;
           }
         }
       }
