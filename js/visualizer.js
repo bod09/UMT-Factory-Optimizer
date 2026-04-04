@@ -71,10 +71,11 @@ class GraphVisualizer {
       svg.appendChild(path);
       edgeElements.push(path);
 
-      // Edge label: show item type, and quantity ONLY when source splits
+      // Edge label: show item type + quantity when output splits
       if (edge.itemType) {
         const isSplit = (outgoingCount.get(edge.from) || 0) > 1;
-        const showQty = isSplit ? edge.qty : null;
+        const qty = edge.quantity || edge.qty;
+        const showQty = isSplit && qty ? qty : null;
         const label = this.createEdgeLabel(from, to, edge.itemType, showQty, edge);
         label.dataset.from = edge.from;
         label.dataset.to = edge.to;

@@ -18,6 +18,7 @@ class FlowGraphBuilder {
     const edges = [];
     let nextId = 1;
     const visited = new Map(); // nodeKey → nodeId (dedup)
+    const finalOutput = new Map(); // nodeKey → final output nodeId (after modifiers/enhancement)
 
     // Helper: get display-ready quantity for a machine/type
     function getQuantity(machine, type, node) {
@@ -68,16 +69,17 @@ class FlowGraphBuilder {
       const prefix = (isCheapPath || node._cheapPath) ? "cheap_" : "";
       const key = nodeKey(machine, type, prefix);
 
-      // Dedup: if already visited, just add edge
+      // Dedup: if already visited, add edge from the FINAL output
+      // (after modifiers/enhancement, not the raw producer)
       if (visited.has(key)) {
-        const existingId = visited.get(key);
-        if (parentId !== null && existingId !== parentId) {
+        const outputId = finalOutput.get(key) || visited.get(key);
+        if (parentId !== null && outputId !== parentId) {
           edges.push({
-            from: existingId, to: parentId,
+            from: outputId, to: parentId,
             itemType: type, quantity: parentQty, kind: isEnhancement ? "enhancement" : "main"
           });
         }
-        return existingId;
+        return outputId;
       }
 
       // Create node
@@ -238,7 +240,14 @@ class FlowGraphBuilder {
           if (directIdx >= 0) edges.splice(directIdx, 1);
           edges.push({ from: lastId, to: dupId, itemType: type, quantity, kind: "main" });
           edges.push({ from: dupId, to: parentId, itemType: type, quantity: quantity * 2, kind: "main" });
+          lastId = dupId;
         }
+      }
+
+      // Record the final output node (after modifiers/enhancement/dup wrapping)
+      // so dedup can connect to the RIGHT node, not the raw producer
+      if (lastId !== id) {
+        finalOutput.set(key, lastId);
       }
 
       return id;
