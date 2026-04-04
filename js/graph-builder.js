@@ -146,8 +146,9 @@ class FlowGraphBuilder {
         }
       }
 
-      // Duplicator insertion
-      if (dupAt && type === dupAt && !visited.has(nodeKey("duplicator", type))) {
+      // Duplicator insertion (dupAt format: "type" or "type in terminal")
+      const dupTargetType = dupAt?.split(" in ")[0];
+      if (dupTargetType && type === dupTargetType && !visited.has(nodeKey("duplicator", type))) {
         const dupId = nextId++;
         visited.set(nodeKey("duplicator", type), dupId);
         nodes.push({
@@ -421,14 +422,30 @@ class FlowGraphBuilder {
       const nd = nodeById.get(id);
       if (!nd) continue;
 
-      // Find all main/enhancement edges where this node is the consumer (edge.to = id)
-      for (const edge of edges) {
-        if (edge.to !== id || edge.kind === "byproduct") continue;
+      const machine = registry.get(nd.machine);
 
+      // Find all main/enhancement edges where this node is the consumer (edge.to = id)
+      const supplierEdges = edges.filter(e => e.to === id && e.kind !== "byproduct");
+
+      // Same-type combine (prismatic: 2 gems → 1 output):
+      // Needs inputCount × demand from its supplier.
+      // BUT NOT for enhancement edges — enhancement is a value loop on the same items.
+      const isSameTypeCombine = machine?.effect === "combine" &&
+        machine.inputs?.length >= 2 &&
+        new Set(machine.inputs.flatMap(i => i.split("|"))).size === 1;
+
+      for (const edge of supplierEdges) {
         const supplier = nodeById.get(edge.from);
         if (!supplier) continue;
 
         let demand = nd.quantity;
+
+        // Same-type combine: multiply demand only for MAIN edges (real production).
+        // Enhancement edges pass through 1:1 (same items looping through value transform).
+        if (isSameTypeCombine && edge.kind !== "enhancement") {
+          demand = nd.quantity * (machine.inputs?.length || 2);
+        }
+
         // Duplicator: upstream only needs half (it doubles output)
         if (nd.machine === "duplicator") {
           demand = Math.ceil(nd.quantity / 2);
