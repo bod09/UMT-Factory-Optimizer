@@ -1441,6 +1441,9 @@ class GraphGenerator {
               if (!cd || cd.isByproduct) continue;
               const cm = registry.get(cd.machine);
               if (cm?.inputs?.length !== 1) break; // Stop at combines
+              // Stop at enhancement machines - prospector gems shouldn't cascade into ore chain
+              if (cd.machine === "gem_cutter" || cd.machine === "bar_to_gem" ||
+                  cd.machine === "prismatic_crucible" || cd.machine === "gem_to_bar") break;
               cd.quantity += cascadeExtra;
               cascaded.add(ck);
               nextKey = ck;
