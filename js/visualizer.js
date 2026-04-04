@@ -121,27 +121,16 @@ class GraphVisualizer {
       if (nodeData?.chanceProduced?.path) {
         const cp = nodeData.chanceProduced;
         tooltipEl = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        const tipX = nodeData.x + this.nodeWidth + 8;
-        const tipY = nodeData.y;
-        tooltipEl.setAttribute("transform", `translate(${tipX}, ${tipY})`);
 
-        const pathStr = cp.path.join(' → ');
+        const pathStr = cp.path.join(' \u2192 ');
         const lines = [`${cp.qty < 1 ? cp.qty.toFixed(1) : Math.round(cp.qty)} ${cp.label}`, pathStr];
         if (cp.value > 0) lines.push(`= ${formatMoney(cp.value)} each`);
 
         const lineH = 14;
-        const padX = 8, padY = 6;
-        const maxW = Math.max(...lines.map(l => l.length * 5.5)) + padX * 2;
-        const totalH = lines.length * lineH + padY * 2;
+        const padX = 10, padY = 6;
 
-        const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        bg.setAttribute("x", 0); bg.setAttribute("y", 0);
-        bg.setAttribute("width", maxW); bg.setAttribute("height", totalH);
-        bg.setAttribute("rx", "4"); bg.setAttribute("fill", "#1a1d28");
-        bg.setAttribute("stroke", "#f59e0b"); bg.setAttribute("stroke-width", "1");
-        bg.setAttribute("filter", "drop-shadow(0 2px 4px rgba(0,0,0,0.5))");
-        tooltipEl.appendChild(bg);
-
+        // Render text first to measure actual width
+        const tempTexts = [];
         lines.forEach((line, i) => {
           const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
           t.setAttribute("x", padX); t.setAttribute("y", padY + (i + 1) * lineH - 2);
@@ -151,9 +140,29 @@ class GraphVisualizer {
           if (i === 0) t.setAttribute("font-weight", "600");
           t.textContent = line;
           tooltipEl.appendChild(t);
+          tempTexts.push(t);
         });
 
+        // Temporarily add to SVG to measure text widths
         svg.appendChild(tooltipEl);
+        const maxTextW = Math.max(...tempTexts.map(t => t.getComputedTextLength()));
+        const boxW = maxTextW + padX * 2;
+        const totalH = lines.length * lineH + padY * 2;
+
+        // Position below the node, centered
+        const nodeH = nodeData.chanceProduced ? this.nodeHeight + 14 : this.nodeHeight;
+        const tipX = nodeData.x + (this.nodeWidth - boxW) / 2;
+        const tipY = nodeData.y + nodeH + 6;
+        tooltipEl.setAttribute("transform", `translate(${tipX}, ${tipY})`);
+
+        // Insert background behind text
+        const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        bg.setAttribute("x", 0); bg.setAttribute("y", 0);
+        bg.setAttribute("width", boxW); bg.setAttribute("height", totalH);
+        bg.setAttribute("rx", "4"); bg.setAttribute("fill", "#1a1d28");
+        bg.setAttribute("stroke", "#f59e0b"); bg.setAttribute("stroke-width", "1");
+        bg.setAttribute("filter", "drop-shadow(0 2px 4px rgba(0,0,0,0.5))");
+        tooltipEl.insertBefore(bg, tooltipEl.firstChild);
       }
 
       // Find connected edges and nodes
