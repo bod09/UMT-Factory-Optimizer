@@ -614,9 +614,11 @@ class FlowOptimizer {
         for (const t of types) {
           let input;
           if (machine.effect === "set") {
-            // Set-effect: find the CHEAPEST producer (lowest oreCount)
+            // Set-effect: find the CHEAPEST path (lowest oreCount, fewest machines)
             // Don't use memo (which has the most valuable/expensive version)
             input = this._findCheapestProducer(t, baseOreValue);
+            // Mark this input as "cheap path" so the graph uses it
+            if (input) input._cheapPath = true;
           }
           if (!input) {
             input = this.getItemValue(t, baseOreValue);
@@ -626,9 +628,11 @@ class FlowOptimizer {
           if (!bestInput) {
             bestInput = { ...input, resolvedType: t };
           } else if (machine.effect === "set") {
-            // Set-effect: pick lowest oreCount
+            // Set-effect: pick lowest oreCount, then fewest machines as tiebreaker
+            const inputMachines = input.machines?.length || 0;
+            const bestMachines = bestInput.machines?.length || 0;
             if (input.oreCount < bestInput.oreCount ||
-                (input.oreCount === bestInput.oreCount && input.value < bestInput.value)) {
+                (input.oreCount === bestInput.oreCount && inputMachines < bestMachines)) {
               bestInput = { ...input, resolvedType: t };
             }
           } else {
