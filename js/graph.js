@@ -1238,15 +1238,22 @@ class GraphGenerator {
       // Phase 3b: Subtract cheap path ores from main chain
       // If BPC uses 1 ore via cheap path, main chain gets 16 instead of 17
       if (cheapPathOres > 0) {
+        // Reduce ALL main chain machines that process ores/bars from the shared input
+        // (everything from ore_upgrader through to gem_to_bar, excluding terminal products)
+        const skipMachines = new Set([
+          "ore_source", "seller", "quality_assurance",
+          // Terminal combine machines keep their product qty
+          "power_core", "explosives_maker", "tablet_factory", "engine_factory",
+          "laser_maker", "superconductor", "casing_machine", "frame_maker",
+          "magnetic_machine", "amulet_maker", "ring_maker", "gilder",
+        ]);
         for (const [key, data] of uniqueNodes) {
           if (data.isByproduct || key.startsWith("cheap_")) continue;
-          // Reduce ore processors (ore_source excluded - it shows total)
-          if (data.machine === "ore_source") continue;
-          // Only reduce nodes in the ore processing chain (type=ore or smelter/tempering)
-          const isOreProcessor = data.type === "ore" ||
-            data.machine === "blast_furnace" || data.machine === "ore_smelter" ||
-            data.machine === "tempering_forge";
-          if (isOreProcessor && data.quantity > cheapPathOres) {
+          if (skipMachines.has(data.machine)) continue;
+          // Skip fan-out machines (bolt, plate, coiler) - their qty comes from recipe
+          const parentConsumers = (children.get(key) || []).filter(ck => !uniqueNodes.get(ck)?.isByproduct);
+          if (parentConsumers.length > 1) continue; // Fan-out node
+          if (data.quantity > cheapPathOres) {
             data.quantity -= cheapPathOres;
           }
         }
