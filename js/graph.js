@@ -279,8 +279,9 @@ class GraphGenerator {
         }
         return false;
       })();
-      const nodeIsSideChain = !isDirectRecipeInput && (node.isByproduct ||
-        (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance"));
+      // Cheap path nodes go to side chain (bottom row) to avoid main chain layout conflicts
+      const nodeIsSideChain = node._cheapPath || (!isDirectRecipeInput && (node.isByproduct ||
+        (node.oreCount === 0 && machine !== "ore_source" && machine !== "seller" && machine !== "quality_assurance")));
       if (!uniqueNodes.has(key)) {
         uniqueNodes.set(key, {
           machine,
