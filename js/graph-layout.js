@@ -28,7 +28,7 @@ class GraphLayoutEngine {
     // Add nodes
     for (const node of graphData.nodes) {
       // Taller node for chance machines with secondary value
-      const h = node.secondaryValue ? nodeHeight + 14 : nodeHeight;
+      const h = (node.secondaryValue || node.chanceProduced) ? nodeHeight + 14 : nodeHeight;
       g.setNode(String(node.id), {
         width: nodeWidth,
         height: h,

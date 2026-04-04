@@ -200,7 +200,7 @@ class GraphVisualizer {
 
     // Background rect
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    const actualHeight = node.secondaryValue ? this.nodeHeight + 14 : this.nodeHeight;
+    const actualHeight = (node.secondaryValue || node.chanceProduced) ? this.nodeHeight + 14 : this.nodeHeight;
     rect.setAttribute("width", this.nodeWidth);
     rect.setAttribute("height", actualHeight);
     rect.setAttribute("rx", "6");
@@ -268,8 +268,24 @@ class GraphVisualizer {
       g.appendChild(valText);
     }
 
-    // Secondary value for chance machines (e.g., "Stone $315" below gem value)
-    if (node.secondaryValue) {
+    // Chance machine output annotation (e.g., "→ 0.3 Diamond Gem @ $5.1K")
+    if (node.chanceProduced) {
+      const cp = node.chanceProduced;
+      const qtyStr = cp.qty < 1 ? cp.qty.toFixed(1) : Math.round(cp.qty);
+      const label = cp.value > 0
+        ? `→ ${qtyStr} ${cp.label} @ ${formatMoney(cp.value)}`
+        : `→ ${qtyStr} ${cp.label}`;
+      const prodText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      prodText.setAttribute("x", "8");
+      prodText.setAttribute("y", "50");
+      prodText.setAttribute("fill", "#f59e0b");
+      prodText.setAttribute("font-size", "9");
+      prodText.setAttribute("font-family", "'JetBrains Mono', monospace");
+      prodText.setAttribute("font-weight", "500");
+      prodText.textContent = label;
+      g.appendChild(prodText);
+    } else if (node.secondaryValue) {
+      // Fallback: passthrough value for non-annotated chance machines
       const secText = document.createElementNS("http://www.w3.org/2000/svg", "text");
       secText.setAttribute("x", this.nodeWidth - 8);
       secText.setAttribute("y", "50");

@@ -380,11 +380,24 @@ class FlowGraphBuilder {
           let nodeValue = step.value || 0;
           let secondaryValue = null;
 
-          if (isChance && gemType) {
-            displayType = `${gemType} Gem (${Math.round((chance || 0.05) * 100)}%)`;
-            const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === gemType) : null;
-            nodeValue = gemData?.value || step.byproductValue || 0;
-            secondaryValue = step.value || 0;
+          // Chance machine annotation: show what it produces
+          let chanceProduced = null;
+          if (isChance) {
+            const ch = chance || 0.05;
+            const producedQty = remaining * ch;
+            if (gemType) {
+              displayType = `${gemType} Gem (${Math.round(ch * 100)}%)`;
+              const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === gemType) : null;
+              nodeValue = gemData?.value || step.byproductValue || 0;
+              secondaryValue = step.value || 0;
+              chanceProduced = { qty: producedQty, label: `${gemType} Gem`, value: step.byproductValue || 0 };
+            } else {
+              // Sifter-type: produces ore byproduct
+              const bpType = sideM?.byproducts?.[0]?.type || "ore";
+              const bpLabel = ITEM_TYPES[bpType] || bpType;
+              chanceProduced = { qty: producedQty, label: bpLabel, value: 0 };
+              displayType = `${ITEM_TYPES[sideType] || sideType} (${Math.round(ch * 100)}% ${bpLabel})`;
+            }
           }
 
           nodes.push({
@@ -394,7 +407,7 @@ class FlowGraphBuilder {
             value: Math.round(nodeValue),
             quantity: remaining,
             category: sideM?.category || "stonework",
-            displayType, secondaryValue,
+            displayType, secondaryValue, chanceProduced,
           });
         }
 
