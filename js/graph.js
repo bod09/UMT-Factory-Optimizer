@@ -164,7 +164,8 @@ class GraphGenerator {
           if (machineId === "smelter_byproduct" || machineId === "byproduct_free" || machineId === "byproduct_source" || machineId === "cycle_ref") continue;
           const m = registry.get(machineId);
           const type = "ore";
-          const key = getKey(machineId, type);
+          const oreKeyPrefix = node._cheapPath ? "cheap_" : "";
+          const key = getKey(oreKeyPrefix + machineId, type);
 
           if (!uniqueNodes.has(key)) {
             uniqueNodes.set(key, {
@@ -221,7 +222,10 @@ class GraphGenerator {
       const type = (registryOutputType && registryOutputType !== "same")
         ? registryOutputType
         : (node.resolvedType || node.type || "?");
-      const key = getKey(machine, type);
+      // Cheap path nodes (from set-effect machines) get separate keys
+      // to avoid merging with the main chain's fully-processed version
+      const keyPrefix = node._cheapPath ? "cheap_" : "";
+      const key = getKey(keyPrefix + machine, type);
 
       // Byproduct-sourced nodes (oreCount=0) are now part of the unified chain
       // They get isByproduct flag for visual placement in the bottom row
@@ -306,6 +310,8 @@ class GraphGenerator {
       // childQty = parentQty (each child runs once per parent invocation)
       if (node.inputs) {
         for (const child of node.inputs) {
+          // Propagate cheap path flag to children
+          if (node._cheapPath && !child._cheapPath) child._cheapPath = true;
           const childKey = walkChain(child, key, parentQty);
           if (childKey) {
             const n = uniqueNodes.get(key);
@@ -1161,7 +1167,11 @@ class GraphGenerator {
         const m = registry.get(data.machine);
 
         if (data.machine === "ore_source") {
-          data.quantity = actualOreCount;
+          // Cheap path ore_source keeps its walkChain value (e.g., 1 for BPC)
+          // Main chain ore_source gets actualOreCount
+          if (!key.startsWith("cheap_")) {
+            data.quantity = actualOreCount;
+          }
           continue;
         }
 
