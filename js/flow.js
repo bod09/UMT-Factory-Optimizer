@@ -814,12 +814,25 @@ class FlowOptimizer {
       const outputValue = this.simulateEffect(prodM, inputs[0]?.value || 0);
 
       if (!cheapest || totalOres < cheapest.oreCount) {
+        // For set-effect paths, strip unnecessary ore processing
+        // (cleaner, polisher, philosopher etc. are wasted on items being crushed)
+        const cleanInputs = inputs.map(inp => {
+          if (inp.machines) {
+            // Ore chain: only keep ore_source + the producer machine
+            return {
+              ...inp,
+              machines: ["ore_source"],
+            };
+          }
+          return inp;
+        });
         cheapest = {
           value: outputValue,
           oreCount: totalOres,
           perOre: totalOres > 0 ? outputValue / totalOres : outputValue,
           machine: prodId,
-          inputs,
+          inputs: cleanInputs,
+          _cheapPath: true,
         };
       }
     }
