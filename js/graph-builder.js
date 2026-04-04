@@ -390,12 +390,33 @@ class FlowGraphBuilder {
               const gemData = typeof GEMS !== 'undefined' ? GEMS.find(g => g.name === gemType) : null;
               nodeValue = gemData?.value || step.byproductValue || 0;
               secondaryValue = step.value || 0;
-              chanceProduced = { qty: producedQty, label: `${gemType} Gem`, value: step.byproductValue || 0 };
+              // Build processing path for tooltip
+              const path = [gemType + ' Gem'];
+              const gemProcessors = [];
+              for (const [gpId, gpM] of registry.machines) {
+                if (!registry.isAvailable(gpId, config)) continue;
+                const acceptsGem = (gpM.inputs || []).some(inp => inp === 'gem' || inp.split('|').includes('gem'));
+                if (!acceptsGem) continue;
+                const skip = new Set(['chance','transport','split','overflow','filter','gate','duplicate','preserve','set']);
+                if (skip.has(gpM.effect)) continue;
+                if (gpM.inputs.length > 1 && !gpM.inputs.every(inp => inp === 'gem' || inp.split('|').includes('gem'))) continue;
+                gemProcessors.push({ id: gpId, name: gpM.name || gpId, effect: gpM.effect });
+              }
+              // Sort: single-input first (gem_cutter), then combine (prismatic)
+              gemProcessors.sort((a, b) => {
+                const am = registry.get(a.id);
+                const bm = registry.get(b.id);
+                return (am?.inputs?.length || 1) - (bm?.inputs?.length || 1);
+              });
+              for (const gp of gemProcessors) path.push(gp.name);
+              path.push('Sell');
+              chanceProduced = { qty: producedQty, label: `${gemType} Gem`, value: step.byproductValue || 0, path };
             } else {
               // Sifter-type: produces ore byproduct
               const bpType = sideM?.byproducts?.[0]?.type || "ore";
               const bpLabel = ITEM_TYPES[bpType] || bpType;
-              chanceProduced = { qty: producedQty, label: bpLabel, value: 0 };
+              const sifterPath = [bpLabel, 'Ore Processing Chain', 'Sell'];
+              chanceProduced = { qty: producedQty, label: bpLabel, value: 0, path: sifterPath };
               displayType = `${ITEM_TYPES[sideType] || sideType} (${Math.round(ch * 100)}% ${bpLabel})`;
             }
           }

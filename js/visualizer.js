@@ -96,16 +96,65 @@ class GraphVisualizer {
 
     // Click-to-highlight: click a node to show its connections
     let selectedNodeId = null;
+
+    // Tooltip for chance machine processing path
+    let tooltipEl = null;
+    const removeTooltip = () => {
+      if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+    };
+
     const clearSelection = () => {
       selectedNodeId = null;
+      removeTooltip();
       nodeElements.forEach(el => { el.style.opacity = ""; el.style.filter = ""; });
       edgeElements.forEach(el => { el.style.opacity = ""; el.style.strokeWidth = ""; });
       labelElements.forEach(el => { el.style.opacity = ""; });
     };
 
     const selectNode = (nodeId) => {
+      removeTooltip();
       if (selectedNodeId === nodeId) { clearSelection(); return; }
       selectedNodeId = nodeId;
+
+      // Show tooltip for chance machines
+      const nodeData = layout.find(n => n.id === nodeId);
+      if (nodeData?.chanceProduced?.path) {
+        const cp = nodeData.chanceProduced;
+        tooltipEl = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const tipX = nodeData.x + this.nodeWidth + 8;
+        const tipY = nodeData.y;
+        tooltipEl.setAttribute("transform", `translate(${tipX}, ${tipY})`);
+
+        const pathStr = cp.path.join(' → ');
+        const lines = [`${cp.qty < 1 ? cp.qty.toFixed(1) : Math.round(cp.qty)} ${cp.label}`, pathStr];
+        if (cp.value > 0) lines.push(`= ${formatMoney(cp.value)} each`);
+
+        const lineH = 14;
+        const padX = 8, padY = 6;
+        const maxW = Math.max(...lines.map(l => l.length * 5.5)) + padX * 2;
+        const totalH = lines.length * lineH + padY * 2;
+
+        const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        bg.setAttribute("x", 0); bg.setAttribute("y", 0);
+        bg.setAttribute("width", maxW); bg.setAttribute("height", totalH);
+        bg.setAttribute("rx", "4"); bg.setAttribute("fill", "#1a1d28");
+        bg.setAttribute("stroke", "#f59e0b"); bg.setAttribute("stroke-width", "1");
+        bg.setAttribute("filter", "drop-shadow(0 2px 4px rgba(0,0,0,0.5))");
+        tooltipEl.appendChild(bg);
+
+        lines.forEach((line, i) => {
+          const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          t.setAttribute("x", padX); t.setAttribute("y", padY + (i + 1) * lineH - 2);
+          t.setAttribute("fill", i === 1 ? "#f59e0b" : "#e8eaf0");
+          t.setAttribute("font-size", "10");
+          t.setAttribute("font-family", "'JetBrains Mono', monospace");
+          if (i === 0) t.setAttribute("font-weight", "600");
+          t.textContent = line;
+          tooltipEl.appendChild(t);
+        });
+
+        svg.appendChild(tooltipEl);
+      }
 
       // Find connected edges and nodes
       const connectedNodes = new Set([nodeId]);
