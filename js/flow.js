@@ -615,10 +615,15 @@ class FlowOptimizer {
           let input;
           if (machine.effect === "set") {
             // Set-effect: find the CHEAPEST path (lowest oreCount, fewest machines)
-            // Don't use memo (which has the most valuable/expensive version)
+            const memoVal = this.getItemValue(t, baseOreValue);
             input = this._findCheapestProducer(t, baseOreValue);
-            // Mark this input as "cheap path" so the graph uses it
-            if (input) input._cheapPath = true;
+            // Only use cheap path if it actually saves ores vs memo
+            // (don't bother for free inputs like stone dust where oreCount=0)
+            if (input && memoVal && input.oreCount < memoVal.oreCount) {
+              input._cheapPath = true;
+            } else {
+              input = null; // Fall through to memo
+            }
           }
           if (!input) {
             input = this.getItemValue(t, baseOreValue);
