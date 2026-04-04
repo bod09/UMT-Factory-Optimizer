@@ -869,7 +869,10 @@ class GraphGenerator {
           continue;
         }
         if (data.machine === "ore_source") {
-          data.quantity = actualOreCount;
+          // Cheap path ore_source keeps walkChain value (1 for BPC)
+          if (!key.startsWith("cheap_")) {
+            data.quantity = actualOreCount;
+          }
           continue;
         }
         // Compute quantity from flow data
