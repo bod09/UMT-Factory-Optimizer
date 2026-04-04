@@ -1250,9 +1250,12 @@ class GraphGenerator {
         for (const [key, data] of uniqueNodes) {
           if (data.isByproduct || key.startsWith("cheap_")) continue;
           if (skipMachines.has(data.machine)) continue;
+          // Skip combine machines (prismatic, alloy) - their qty comes from combine fix
+          const mReg = registry.get(data.machine);
+          if (mReg?.inputs?.length >= 2) continue;
           // Skip fan-out machines (bolt, plate, coiler) - their qty comes from recipe
           const parentConsumers = (children.get(key) || []).filter(ck => !uniqueNodes.get(ck)?.isByproduct);
-          if (parentConsumers.length > 1) continue; // Fan-out node
+          if (parentConsumers.length > 1) continue;
           if (data.quantity > cheapPathOres) {
             data.quantity -= cheapPathOres;
           }
