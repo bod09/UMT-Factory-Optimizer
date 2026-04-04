@@ -813,12 +813,12 @@ class FlowOptimizer {
       // Compute output value
       const outputValue = this.simulateEffect(prodM, inputs[0]?.value || 0);
 
-      // Prefer machines with byproducts (blast furnace stone → both dust types from one ore)
-      const hasByproducts = prodM.byproducts?.length > 0;
-      const cheapestHasBP = cheapest && this.registry.get(cheapest.machine)?.byproducts?.length > 0;
+      // Prefer machines with higher byproduct ratio (blast furnace 1:1 > smelter 0.5:1)
+      const bpRatio = prodM.byproductRatio || 0;
+      const cheapestBPRatio = cheapest ? (this.registry.get(cheapest.machine)?.byproductRatio || 0) : 0;
       const isBetter = !cheapest ||
         totalOres < cheapest.oreCount ||
-        (totalOres === cheapest.oreCount && hasByproducts && !cheapestHasBP);
+        (totalOres === cheapest.oreCount && bpRatio > cheapestBPRatio);
       if (isBetter) {
         // For set-effect paths, strip unnecessary ore processing
         // (cleaner, polisher, philosopher etc. are wasted on items being crushed)
