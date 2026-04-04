@@ -354,17 +354,23 @@ class FlowGraphBuilder {
       value: Math.round(sellerValue), quantity: productQty, category: "source", // Seller = demand root
     });
 
+    // Terminal type: use registry output type of the terminal machine, not resolvedType
+    // (resolvedType can be an input type like "casing" instead of "power_core")
+    const terminalMachine = registry.get(chainResult.machine);
+    const terminalType = terminalMachine?.outputs?.[0]?.type || chainResult.type || "?";
+
     let topParentId = sellerId;
+    let qaNodeId = null;
     if (hasQA) {
-      const qaId = nextId++;
+      qaNodeId = nextId++;
       nodes.push({
-        id: qaId, machine: "quality_assurance", type: chainResult.resolvedType || chainResult.type || "?",
+        id: qaNodeId, machine: "quality_assurance", type: terminalType,
         name: "Quality Assurance",
         value: Math.round(chainResult.value * (1 + qa.value)),
-        quantity: 0, category: qa.category || "multipurpose", // Set by Pass 2
+        quantity: 0, category: qa.category || "multipurpose",
       });
-      edges.push({ from: qaId, to: sellerId, itemType: chainResult.resolvedType || "?", quantity: 0, kind: "main" });
-      topParentId = qaId;
+      edges.push({ from: qaNodeId, to: sellerId, itemType: terminalType, quantity: 0, kind: "main" });
+      topParentId = qaNodeId;
     }
 
     walkNode(chainResult, topParentId, false, false);
@@ -529,8 +535,9 @@ class FlowGraphBuilder {
 
     // --- Phase C: Excess routing ---
     // Byproduct chain nodes that produce more than their main chain consumers
-    // need get "Sell Excess" nodes to show where surplus goes.
-    // Rebuild consumersOf after all edges are finalized
+    // need get routed to QA → Seller to show where surplus goes.
+    const excessTarget = qaNodeId || sellerId;
+
     const finalConsumersOf = new Map();
     for (const edge of edges) {
       if (!finalConsumersOf.has(edge.from)) finalConsumersOf.set(edge.from, []);
@@ -539,12 +546,10 @@ class FlowGraphBuilder {
 
     for (const n of nodes) {
       if (n.quantity <= 0) continue;
-      // Only check nodes that have at least one main/enhancement consumer
       const outEdges = finalConsumersOf.get(n.id) || [];
       const mainOutEdges = outEdges.filter(e => e.kind !== "byproduct");
       if (mainOutEdges.length === 0) continue;
 
-      // Sum demand from main chain consumers
       let totalConsumed = 0;
       for (const e of mainOutEdges) {
         totalConsumed += e.quantity || 0;
@@ -552,18 +557,9 @@ class FlowGraphBuilder {
 
       const excess = n.quantity - totalConsumed;
       if (excess > 0 && totalConsumed > 0) {
-        // Create a "Sell Excess" node
-        const excessId = nextId++;
-        const ds = config.hasDoubleSeller ? 2 : 1;
-        const excessValue = Math.round((n.value || 0) * ds);
-        nodes.push({
-          id: excessId, machine: "sell_excess", type: n.type,
-          name: "Sell Excess", value: excessValue,
-          quantity: excess, category: "source",
-        });
-        nodeById.set(excessId, nodes[nodes.length - 1]);
+        // Route excess to QA (or seller if no QA)
         edges.push({
-          from: n.id, to: excessId,
+          from: n.id, to: excessTarget,
           itemType: ITEM_TYPES[n.type] || n.type,
           quantity: excess, kind: "byproduct",
         });
