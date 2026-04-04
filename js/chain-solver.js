@@ -663,8 +663,24 @@ class ChainSolver {
   // ─── MODIFIERS ─────────────────────────────────────────
 
   _applyModifiers(type, value, skipInputTypes, baseOreValue) {
-    const skipMods = new Set(["quality_assurance", "ore_cleaner", "polisher", "philosophers_stone", "ore_upgrader", "duplicator", "crusher"]);
-    const modifiers = this.registry.getModifiers(type).filter(id => !skipMods.has(id));
+    // Skip machines that are handled elsewhere:
+    // - ore_cleaner, philosophers_stone, ore_upgrader: ore chain modifiers only
+    // - quality_assurance: applied at terminal product level in buildFlow
+    // - duplicator, crusher: not value modifiers
+    // Polisher: Only apply to byproduct-derived items (oreCount=0) like ceramic, glass.
+    // Ore-derived items (bar, bolts, etc.) already inherit "Polished" from the ore chain.
+    // Check via skipInputTypes: if any input is ore-derived, polisher tag is inherited.
+    const skipAlways = new Set(["quality_assurance", "ore_cleaner", "philosophers_stone", "ore_upgrader", "duplicator", "crusher"]);
+    const hasOreInputs = type === "ore" || (skipInputTypes && [...skipInputTypes].some(t => {
+      const r = this.memo.get(t);
+      return r && r.oreCount > 0;
+    }));
+    const modifiers = this.registry.getModifiers(type).filter(id => {
+      if (skipAlways.has(id)) return false;
+      // Polisher: skip if any input is ore-derived (they inherit Polished from ore chain)
+      if (id === "polisher" && hasOreInputs) return false;
+      return true;
+    });
     const applied = [];
 
     for (const modId of modifiers) {

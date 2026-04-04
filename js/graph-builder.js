@@ -467,6 +467,14 @@ class FlowGraphBuilder {
             itemType: step.type || sideType, quantity: remaining,
             kind: "byproduct"
           });
+
+          // If this step is a modifier wrapping the previous step (same output type),
+          // set finalOutput so dedup routes through the modifier, not the raw producer
+          const prevNode = nodes.find(n => n.id === prevSideId);
+          if (prevNode && sideType === (prevNode.type || '')) {
+            const prevKey = nodeKey(prevNode.machine, prevNode.type);
+            finalOutput.set(prevKey, sideId);
+          }
         }
 
         // Chance machines reduce remaining
