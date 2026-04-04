@@ -178,6 +178,7 @@ class GraphGenerator {
               quantity: qty,
               childKeys: [],
               oreCount: machineId === "ore_source" ? node.oreCount : 0,
+              isByproduct: !!node._cheapPath, // Cheap path ore nodes go to side chain
             });
           } else {
             // Accumulate oreCount from each visit (each branch needs its ores)
