@@ -1163,8 +1163,8 @@ class FlowOptimizer {
     const suffix = tags.length ? " [" + tags.join(", ") + "]" : "";
     const displayType = ITEM_TYPES[terminalType] || terminalType;
 
-    // Build graph directly from flow chain result - single source of truth
-    const graph = GraphGenerator.fromFlowChain(
+    // Build graph from flow chain result using new single-pass builder
+    const graph = FlowGraphBuilder.buildGraph(
       chainResult, this.registry, this.config,
       { dupAt, productQty }, {}, this.memo, totalOres
     );

@@ -17,12 +17,16 @@ class GraphVisualizer {
       return;
     }
 
-    // Layout
-    const layout = this.computeLayout(graph);
+    // Layout using dagre
+    const layoutResult = GraphLayoutEngine.layout(graph, {
+      nodeWidth: this.nodeWidth,
+      nodeHeight: this.nodeHeight,
+    });
+    const layout = layoutResult.nodes;
 
-    // SVG dimensions
-    const maxX = Math.max(...layout.map(n => n.x)) + this.nodeWidth + this.padding * 2;
-    const maxY = Math.max(...layout.map(n => n.y)) + this.nodeHeight + this.padding * 2;
+    // SVG dimensions from dagre
+    const maxX = layoutResult.width;
+    const maxY = layoutResult.height;
 
     // Build SVG
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -71,7 +75,7 @@ class GraphVisualizer {
       if (edge.itemType) {
         const isSplit = (outgoingCount.get(edge.from) || 0) > 1;
         const showQty = isSplit ? edge.qty : null;
-        const label = this.createEdgeLabel(from, to, edge.itemType, showQty);
+        const label = this.createEdgeLabel(from, to, edge.itemType, showQty, edge);
         label.dataset.from = edge.from;
         label.dataset.to = edge.to;
         label.classList.add("graph-edge-label");
@@ -181,83 +185,8 @@ class GraphVisualizer {
     this.addPanZoom(svg, wrapper);
   }
 
-  // Compute layout positions using layered approach
-  computeLayout(graph) {
-    const nodes = graph.nodes.map(n => ({ ...n }));
-
-    // Split into main chain and byproduct chain
-    const mainNodes = nodes.filter(n => !n.isByproduct);
-    const bpNodes = nodes.filter(n => n.isByproduct);
-
-    // Layout main chain: group by layer, stack vertically within each layer
-    const mainLayers = {};
-    for (const n of mainNodes) {
-      const layer = n.layer || 0;
-      if (!mainLayers[layer]) mainLayers[layer] = [];
-      mainLayers[layer].push(n);
-    }
-
-    const mainLayerKeys = Object.keys(mainLayers).map(Number).sort((a, b) => a - b);
-
-    // Find the tallest layer to use as reference for centering
-    let maxLayerHeight = 0;
-    for (const layerIdx of mainLayerKeys) {
-      const count = mainLayers[layerIdx].length;
-      const height = (count - 1) * this.nodeGap + this.nodeHeight;
-      maxLayerHeight = Math.max(maxLayerHeight, height);
-    }
-
-    // Position each layer centered relative to the tallest layer
-    let mainMaxY = 0;
-    for (const layerIdx of mainLayerKeys) {
-      const layerNodes = mainLayers[layerIdx];
-      const col = mainLayerKeys.indexOf(layerIdx);
-      const x = this.padding + col * this.layerGap;
-      const layerHeight = (layerNodes.length - 1) * this.nodeGap + this.nodeHeight;
-      const yOffset = this.padding + (maxLayerHeight - layerHeight) / 2;
-      for (let i = 0; i < layerNodes.length; i++) {
-        layerNodes[i].x = x;
-        layerNodes[i].y = yOffset + i * this.nodeGap;
-        mainMaxY = Math.max(mainMaxY, layerNodes[i].y + this.nodeHeight);
-      }
-    }
-
-    // Layout byproduct chain independently below main chain
-    if (bpNodes.length > 0) {
-      const rowGap = 60; // gap between main and byproduct rows
-      const bpStartY = mainMaxY + rowGap;
-
-      // Assign independent layers for byproduct nodes
-      const bpLayers = {};
-      for (const n of bpNodes) {
-        const layer = n.layer || 0;
-        if (!bpLayers[layer]) bpLayers[layer] = [];
-        bpLayers[layer].push(n);
-      }
-
-      // Re-index byproduct layers starting from 0, centered like main flow
-      const bpLayerKeys = Object.keys(bpLayers).map(Number).sort((a, b) => a - b);
-      let maxBpLayerHeight = 0;
-      for (const layerIdx of bpLayerKeys) {
-        const count = bpLayers[layerIdx].length;
-        const height = (count - 1) * this.nodeGap + this.nodeHeight;
-        maxBpLayerHeight = Math.max(maxBpLayerHeight, height);
-      }
-      for (const layerIdx of bpLayerKeys) {
-        const layerNodes = bpLayers[layerIdx];
-        const col = bpLayerKeys.indexOf(layerIdx);
-        const x = this.padding + col * this.layerGap;
-        const layerHeight = (layerNodes.length - 1) * this.nodeGap + this.nodeHeight;
-        const yOffset = bpStartY + (maxBpLayerHeight - layerHeight) / 2;
-        for (let i = 0; i < layerNodes.length; i++) {
-          layerNodes[i].x = x;
-          layerNodes[i].y = yOffset + i * this.nodeGap;
-        }
-      }
-    }
-
-    return nodes;
-  }
+  // Layout is now handled by GraphLayoutEngine (dagre) in graph-layout.js
+  // computeLayout() removed - was 76 lines of manual layering with main/byproduct split
 
   // Create SVG group for a node
   createNode(node) {
@@ -391,104 +320,65 @@ class GraphVisualizer {
     return g;
   }
 
-  // Create SVG path for an edge (bezier curve)
-  // Two simple rules:
-  //   1. Within same flow (same row): left→right using right/left ports
-  //   2. Between flows (different rows): top/bottom ports
+  // Create SVG path for an edge using dagre's computed waypoints
   createEdgePath(from, to, edge, allNodes) {
-    const dy = to.y - from.y;
-    const sameFlow = (!!from.isByproduct) === (!!to.isByproduct);
-
-    let x1, y1, x2, y2;
-    let connectionType;
-
-    if (sameFlow) {
-      connectionType = to.x > from.x ? 'horizontal' : 'back-edge';
-      x1 = from.x + this.nodeWidth;
-      y1 = from.y + this.nodeHeight / 2;
-      x2 = to.x;
-      y2 = to.y + this.nodeHeight / 2;
-    } else {
-      connectionType = 'vertical';
-      if (dy > 0) {
-        x1 = from.x + this.nodeWidth / 2;
-        y1 = from.y + this.nodeHeight;
-        x2 = to.x + this.nodeWidth / 2;
-        y2 = to.y;
-      } else {
-        x1 = from.x + this.nodeWidth / 2;
-        y1 = from.y;
-        x2 = to.x + this.nodeWidth / 2;
-        y2 = to.y + this.nodeHeight;
-      }
-    }
-
-    // Build path with obstacle avoidance
-    let d;
-    if (connectionType === 'horizontal') {
-      const dx = x2 - x1;
-      const cp1x = x1 + dx * 0.4;
-      const cp2x = x1 + dx * 0.6;
-
-      // Check for nodes between source and target that the line would cross
-      const blockers = (allNodes || []).filter(n => {
-        if (n.id === from.id || n.id === to.id) return false;
-        const nx = n.x;
-        const ny = n.y;
-        // Node is horizontally between source and target
-        if (nx + this.nodeWidth <= Math.min(from.x, to.x) + this.nodeWidth) return false;
-        if (nx >= Math.max(from.x, to.x)) return false;
-        // Node vertically overlaps with the line's Y range
-        const minY = Math.min(y1, y2) - this.nodeHeight / 2;
-        const maxY = Math.max(y1, y2) + this.nodeHeight / 2;
-        return ny < maxY && ny + this.nodeHeight > minY;
-      });
-
-      if (blockers.length > 0 && Math.abs(y1 - y2) < 5) {
-        // Route around: curve above or below the blockers
-        const blockCenter = blockers.reduce((s, n) => s + n.y, 0) / blockers.length;
-        const goAbove = y1 < blockCenter;
-        const detourY = goAbove
-          ? Math.min(...blockers.map(n => n.y)) - 25
-          : Math.max(...blockers.map(n => n.y + this.nodeHeight)) + 25;
-        d = `M ${x1} ${y1} C ${cp1x} ${detourY}, ${cp2x} ${detourY}, ${x2} ${y2}`;
-      } else {
-        d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
-      }
-    } else if (connectionType === 'vertical') {
-      const dx = Math.abs(x2 - x1);
-      if (dx < 10) {
-        d = `M ${x1} ${y1} L ${x2} ${y2}`;
-      } else {
-        // Smooth S-curve for cross-flow connections
-        const midY = (y1 + y2) / 2;
-        d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
-      }
-    } else {
-      const midY = Math.min(from.y, to.y) - 40;
-      d = `M ${x1} ${y1} C ${x1 + 50} ${midY}, ${x2 - 50} ${midY}, ${x2} ${y2}`;
-    }
-
-    const isBackEdge = connectionType === 'back-edge';
-
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
     path.setAttribute("fill", "none");
 
-    if (edge.isByproduct) {
+    // Use dagre's computed edge points if available
+    if (edge.points && edge.points.length >= 2) {
+      const pts = edge.points;
+      if (pts.length === 2) {
+        // Straight line
+        path.setAttribute("d", `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`);
+      } else {
+        // Smooth curve through waypoints
+        let d = `M ${pts[0].x} ${pts[0].y}`;
+        if (pts.length === 3) {
+          // Quadratic bezier through midpoint
+          d += ` Q ${pts[1].x} ${pts[1].y}, ${pts[2].x} ${pts[2].y}`;
+        } else {
+          // Smooth spline through all waypoints
+          for (let i = 1; i < pts.length - 1; i++) {
+            const curr = pts[i];
+            const next = pts[i + 1];
+            const midX = (curr.x + next.x) / 2;
+            const midY = (curr.y + next.y) / 2;
+            if (i === pts.length - 2) {
+              d += ` Q ${curr.x} ${curr.y}, ${next.x} ${next.y}`;
+            } else {
+              d += ` Q ${curr.x} ${curr.y}, ${midX} ${midY}`;
+            }
+          }
+        }
+        path.setAttribute("d", d);
+      }
+    } else {
+      // Fallback: simple bezier
+      const x1 = from.x + this.nodeWidth;
+      const y1 = from.y + this.nodeHeight / 2;
+      const x2 = to.x;
+      const y2 = to.y + this.nodeHeight / 2;
+      const dx = x2 - x1;
+      path.setAttribute("d", `M ${x1} ${y1} C ${x1 + dx * 0.4} ${y1}, ${x1 + dx * 0.6} ${y2}, ${x2} ${y2}`);
+    }
+
+    // Style by edge kind
+    const kind = edge.kind || "main";
+    if (kind === "byproduct") {
       path.setAttribute("stroke", "#f59e0b");
       path.setAttribute("stroke-width", "1.5");
       path.setAttribute("stroke-dasharray", "6 3");
       path.setAttribute("marker-end", "url(#dot-byproduct)");
-    } else if (edge.dashed) {
-      path.setAttribute("stroke", "#4b5563");
+    } else if (kind === "enhancement") {
+      path.setAttribute("stroke", "#a855f7");
+      path.setAttribute("stroke-width", "1.5");
+      path.setAttribute("marker-end", "url(#dot-back)");
+    } else if (kind === "chance") {
+      path.setAttribute("stroke", "#f59e0b");
       path.setAttribute("stroke-width", "1");
       path.setAttribute("stroke-dasharray", "4 3");
-      path.setAttribute("marker-end", "url(#dot)");
-    } else if (isBackEdge) {
-      path.setAttribute("stroke", "#a855f7");
-      path.setAttribute("stroke-width", "2");
-      path.setAttribute("marker-end", "url(#dot-back)");
+      path.setAttribute("marker-end", "url(#dot-byproduct)");
     } else {
       path.setAttribute("stroke", "#6b7280");
       path.setAttribute("stroke-width", "1.5");
@@ -499,11 +389,19 @@ class GraphVisualizer {
   }
 
   // Create edge label
-  createEdgeLabel(from, to, itemType, qty) {
+  createEdgeLabel(from, to, itemType, qty, edge) {
     let label = ITEM_TYPES[itemType] || itemType;
     if (qty && qty > 1) label += ` x${qty}`;
-    const x = (from.x + this.nodeWidth + to.x) / 2;
-    const y = (from.y + to.y) / 2 + this.nodeHeight / 2 - 5;
+    // Use dagre's edge midpoint if available
+    let x, y;
+    if (edge?.points && edge.points.length > 0) {
+      const mid = edge.points[Math.floor(edge.points.length / 2)];
+      x = mid.x;
+      y = mid.y - 8;
+    } else {
+      x = (from.x + this.nodeWidth + to.x) / 2;
+      y = (from.y + to.y) / 2 + this.nodeHeight / 2 - 5;
+    }
 
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.setAttribute("x", x);
