@@ -813,7 +813,13 @@ class FlowOptimizer {
       // Compute output value
       const outputValue = this.simulateEffect(prodM, inputs[0]?.value || 0);
 
-      if (!cheapest || totalOres < cheapest.oreCount) {
+      // Prefer machines with byproducts (blast furnace stone → both dust types from one ore)
+      const hasByproducts = prodM.byproducts?.length > 0;
+      const cheapestHasBP = cheapest && this.registry.get(cheapest.machine)?.byproducts?.length > 0;
+      const isBetter = !cheapest ||
+        totalOres < cheapest.oreCount ||
+        (totalOres === cheapest.oreCount && hasByproducts && !cheapestHasBP);
+      if (isBetter) {
         // For set-effect paths, strip unnecessary ore processing
         // (cleaner, polisher, philosopher etc. are wasted on items being crushed)
         const cleanInputs = inputs.map(inp => {
