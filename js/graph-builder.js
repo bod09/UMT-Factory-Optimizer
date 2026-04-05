@@ -483,7 +483,8 @@ class FlowGraphBuilder {
         if (!curNode) continue;
         // Find non-byproduct edges FROM this node
         const outEdges = edges.filter(e => e.from === curId && e.kind !== "byproduct");
-        const isFanOut = outEdges.length > 1;
+        const uniqueConsumers = new Set(outEdges.map(e => e.to)).size;
+        const isFanOut = uniqueConsumers > 1;
 
         for (const edge of outEdges) {
           if (supplyVisited.has(edge.to)) continue;
