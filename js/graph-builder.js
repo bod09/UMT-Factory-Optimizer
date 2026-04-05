@@ -446,9 +446,9 @@ class FlowGraphBuilder {
 
         let demand = nd.quantity;
 
-        // Same-type combine: multiply demand only for MAIN edges (real production).
-        // Enhancement edges pass through 1:1 (same items looping through value transform).
-        if (isSameTypeCombine && edge.kind !== "enhancement") {
+        // Same-type combine (prismatic 2:1, alloy 2:1): always multiply demand.
+        // This is real physical consumption — 2 gems become 1 output, even in enhancement paths.
+        if (isSameTypeCombine) {
           demand = nd.quantity * (machine.inputs?.length || 2);
         }
 
@@ -462,13 +462,47 @@ class FlowGraphBuilder {
       }
     }
 
-    // Special: ore_source gets actualOreCount (externally known total)
-    for (const n of nodes) {
-      if (n.machine === "ore_source" && !n.machine?.startsWith?.("cheap_")) {
-        // Only override non-cheap ore source
-        const key = [...visited.entries()].find(([k, v]) => v === n.id)?.[0];
-        if (key && !key.startsWith("cheap_")) {
-          n.quantity = actualOreCount;
+    // --- Phase A2: Forward supply propagation from ore_source ---
+    // The demand propagation may produce quantities exceeding ore supply.
+    // Fix: set ore_source to actualOreCount, then forward-propagate through
+    // main/enhancement chain, halving at same-type combine machines.
+    // This gives supply-constrained quantities that match what actually flows.
+    const oreSourceNode = nodes.find(n => {
+      if (n.machine !== "ore_source") return false;
+      const key = [...visited.entries()].find(([k, v]) => v === n.id)?.[0];
+      return key && !key.startsWith("cheap_");
+    });
+    if (oreSourceNode) {
+      oreSourceNode.quantity = actualOreCount;
+      // Forward BFS from ore_source through main/enhancement edges
+      const supplyVisited = new Set([oreSourceNode.id]);
+      const supplyQueue = [oreSourceNode.id];
+      while (supplyQueue.length > 0) {
+        const curId = supplyQueue.shift();
+        const curNode = nodeById.get(curId);
+        if (!curNode) continue;
+        // Find edges FROM this node (it feeds downstream consumers)
+        for (const edge of edges) {
+          if (edge.from !== curId || edge.kind === "byproduct") continue;
+          if (supplyVisited.has(edge.to)) continue;
+          supplyVisited.add(edge.to);
+          const downstream = nodeById.get(edge.to);
+          if (!downstream) continue;
+          // Don't override seller/QA — those are demand-driven (productQty)
+          if (downstream.machine === "seller" || downstream.machine === "quality_assurance") continue;
+          // Downstream gets same qty as supplier...
+          let qty = curNode.quantity;
+          // ...unless downstream is a same-type combine (halves)
+          const dsMachine = registry.get(downstream.machine);
+          const dsIsCombine = dsMachine?.effect === "combine" &&
+            dsMachine.inputs?.length >= 2 &&
+            new Set(dsMachine.inputs.flatMap(i => i.split("|"))).size === 1;
+          if (dsIsCombine) {
+            qty = Math.floor(qty / (dsMachine.inputs?.length || 2));
+          }
+          downstream.quantity = qty;
+          edge.quantity = curNode.quantity; // Edge shows items flowing IN
+          supplyQueue.push(edge.to);
         }
       }
     }
