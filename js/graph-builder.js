@@ -481,18 +481,28 @@ class FlowGraphBuilder {
         const curId = supplyQueue.shift();
         const curNode = nodeById.get(curId);
         if (!curNode) continue;
-        // Find edges FROM this node (it feeds downstream consumers)
-        for (const edge of edges) {
-          if (edge.from !== curId || edge.kind === "byproduct") continue;
+        // Find non-byproduct edges FROM this node
+        const outEdges = edges.filter(e => e.from === curId && e.kind !== "byproduct");
+        const isFanOut = outEdges.length > 1;
+
+        for (const edge of outEdges) {
           if (supplyVisited.has(edge.to)) continue;
-          supplyVisited.add(edge.to);
           const downstream = nodeById.get(edge.to);
           if (!downstream) continue;
           // Don't override seller/QA — those are demand-driven (productQty)
           if (downstream.machine === "seller" || downstream.machine === "quality_assurance") continue;
-          // Downstream gets same qty as supplier...
+
+          // At fan-out points (multiple consumers), STOP propagating.
+          // Consumers keep their demand-based quantities from Phase A.
+          if (isFanOut) {
+            edge.quantity = downstream.quantity;
+            continue;
+          }
+
+          supplyVisited.add(edge.to);
+          // Serial chain: override with supply-constrained quantity
           let qty = curNode.quantity;
-          // ...unless downstream is a same-type combine (halves)
+          // Same-type combine machines halve the flow
           const dsMachine = registry.get(downstream.machine);
           const dsIsCombine = dsMachine?.effect === "combine" &&
             dsMachine.inputs?.length >= 2 &&
@@ -501,7 +511,7 @@ class FlowGraphBuilder {
             qty = Math.floor(qty / (dsMachine.inputs?.length || 2));
           }
           downstream.quantity = qty;
-          edge.quantity = curNode.quantity; // Edge shows items flowing IN
+          edge.quantity = curNode.quantity;
           supplyQueue.push(edge.to);
         }
       }
