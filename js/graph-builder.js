@@ -475,6 +475,7 @@ class FlowGraphBuilder {
     if (oreSourceNode) {
       oreSourceNode.quantity = actualOreCount;
       // Forward BFS from ore_source through main/enhancement edges
+      const _fanOutScaled = new Set(); // Track which fan-out nodes have been scaled
       const supplyVisited = new Set([oreSourceNode.id]);
       const supplyQueue = [oreSourceNode.id];
       while (supplyQueue.length > 0) {
@@ -493,9 +494,28 @@ class FlowGraphBuilder {
           // Don't override seller/QA — those are demand-driven (productQty)
           if (downstream.machine === "seller" || downstream.machine === "quality_assurance") continue;
 
-          // At fan-out points (multiple consumers), STOP propagating.
-          // Consumers keep their demand-based quantities from Phase A.
+          // At fan-out points, scale consumers proportionally if supply < demand
           if (isFanOut) {
+            if (!_fanOutScaled.has(curId)) {
+              _fanOutScaled.add(curId);
+              // Calculate total demand from all consumers
+              let totalDemand = 0;
+              for (const oe of outEdges) {
+                const ds = nodeById.get(oe.to);
+                if (ds) totalDemand += ds.quantity;
+              }
+              // If supply < demand, scale each consumer proportionally
+              if (totalDemand > curNode.quantity && curNode.quantity > 0) {
+                const scale = curNode.quantity / totalDemand;
+                for (const oe of outEdges) {
+                  const ds = nodeById.get(oe.to);
+                  if (ds) {
+                    ds.quantity = Math.max(1, Math.round(ds.quantity * scale));
+                    oe.quantity = ds.quantity;
+                  }
+                }
+              }
+            }
             edge.quantity = downstream.quantity;
             continue;
           }
